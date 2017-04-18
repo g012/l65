@@ -1,0 +1,51 @@
+-- -{ extension("comprehension", ...) }
+-{ extension("match", ...) }
+
+local bit = require 'bit'
+local gg  = require 'metalua.grammar.generator'
+
+--local M = {}
+--M.program = {}
+
+local function extend(M)
+    local _M = gg.future(M)
+
+    local function op_assign(kw, op)
+        local function f(a, b)
+            if #a ~= #b then gg.parse_error "assymetric operator+assignment" end
+            --local right = { }
+            local right = +{ bit[op](-{a}, -{b}) }
+            print(right)
+
+            --for i=1,#a do right[i] = +{ bit[op](-{a[i]},-{b[i]}) } end
+            --for i=1,#a do right[i] = `Call{`Index{bit, `Id{op}}, a[i], b[i]} end
+            --for i=1, #a do right[i] = { tag="Op", op, a[i], b[i] } end
+            return { tag="Set", a, right }
+        end
+        M.lexer:add(kw)
+        M.assignments[kw] = f
+    end
+    local ops = {
+        lshift='<<=',
+        rshift='>>='
+    }
+    for ast_op_name, keyword in pairs(ops) do op_assign(keyword, ast_op_name) end
+
+    M.lexer:add{ '//', '<<<', '>>>', '<<', '>>' }
+    M.expr.infix:add{ '//', prec=70, builder = |a,_,b| +{ bit.idiv(-{a}, -{b}) }}
+    M.expr.infix:add{ '<<', prec=34, builder = |a,_,b| +{ bit.lshift(-{a}, -{b}) }}
+    M.expr.infix:add{ '>>', prec=34, builder = |a,_,b| +{ bit.rshift(-{a}, -{b}) }}
+    M.expr.infix:add{ '<<<', prec=34, builder = |a,_,b| +{ bit.rol(-{a}, -{b}) }}
+    M.expr.infix:add{ '>>>', prec=34, builder = |a,_,b| +{ bit.ror(-{a}, -{b}) }}
+    M.expr.infix:add{ '&', prec=33, builder = |a,_,b| +{ bit.band(-{a}, -{b}) }}
+    M.expr.infix:add{ '~', prec=32, builder = |a,_,b| +{ bit.bxor(-{a}, -{b}) }}
+    M.expr.infix:add{ '|', prec=31, builder = |a,_,b| +{ bit.bor(-{a}, -{b}) }}
+    M.expr.prefix:add{ '~', prec=80, builder = |_,b| +{ bit.bnot(-{b}) }}
+
+    M.lexer:add{ 'c', '\\' }
+    M.stat:add{ "\\", builder = |x| +{ print("nop") } }
+    M.stat:add{ "\\", M.expr, builder = |x| +{ print("nop*" .. -{x[1]}) } }
+    M.stat:add{ "c", '+', builder = |x| +{ print("sec") } }
+end
+
+return extend
