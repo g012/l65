@@ -46,7 +46,9 @@ local Keywords_6502 = {
     'shs', 'shx', 'shy', 'slo', 'sre',
 }
 
+local syntax6502_on
 local function syntax6502(on)
+    syntax6502_on = on
     lookupify(Keywords_6502, Keywords, on)
 end
 syntax6502(true)
@@ -502,6 +504,9 @@ local function LexLua(src)
                 toEmit = {Type = 'Symbol', Data = consume(':') and '::' or ':'}
             elseif consume('/') then
                 toEmit = {Type = 'Symbol', Data = consume('/') and '//' or '/'}
+
+            elseif syntax6502_on and consume('@') then
+                toEmit = {Type = 'Symbol', Data = '@'}
 
             elseif Symbols[c] then
                 get()
@@ -1084,15 +1089,15 @@ local function ParseLua(src)
         local tokenList = {}
         local opcode_tok
 
-        local function emit_opcode(op, expr)
+        local function emit_call(func_name, args_expr)
             local c,l = opcode_tok.Char, opcode_tok.Line
             local op_var = {
-                AstType = 'VarExpr', Name = op, Variable = { IsGlobal=true, Name=op, Scope=CreateScope(scope) }, Tokens = {
-                    { LeadingWhite = opcode_tok.LeadingWhite, Type='Ident', Data=op, Char=c, Line=l, Print=function() return '<Ident   '..op..' >' end },
+                AstType = 'VarExpr', Name = func_name, Variable = { IsGlobal=true, Name=func_name, Scope=CreateScope(scope) }, Tokens = {
+                    { LeadingWhite = opcode_tok.LeadingWhite, Type='Ident', Data=func_name, Char=c, Line=l, Print=function() return '<Ident   '..func_name..' >' end },
                 }
             }
             local exp_call = {
-                AstType = 'CallExpr', Base = op_var, Arguments = {expr}, Tokens = {
+                AstType = 'CallExpr', Base = op_var, Arguments = {args_expr}, Tokens = {
                     { LeadingWhite = {}, Type='Symbol', Data='(', Char=c, Line=l, Print=function() return '<Symbol   ( >' end },
                     { LeadingWhite = {}, Type='Symbol', Data=')', Char=c, Line=l, Print=function() return '<Symbol   ) >' end },
                 }
@@ -1100,23 +1105,37 @@ local function ParseLua(src)
             return { AstType = 'CallStatement', Expression = exp_call, Tokens = {} }
         end
 
+        local function emit_opcode(op, expr)
+            return emit_call(op, expr)
+        end
+
+        local function as_string_expr(expr, s)
+            local ss = '"'..s..'"'
+            local c,l = opcode_tok.Char, opcode_tok.Line
+            local lw = expr.Tokens and #expr.Tokens > 0 and expr.Tokens[1].LeadingWhite or {}
+            local p = function() return '<String   '..s..' >' end
+            local v = { LeadingWhite=lw, Type='String', Data=ss, Constant=s, Char=c, Line=l, Print=p }
+            return { AstType = 'StringExpr', Value = v, Tokens = {v} }
+        end
+
+        -- label declarations
+        if tok:ConsumeSymbol('@', tokenList) then
+            if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
+            local label_name = tok:Get(tokenList)
+            opcode_tok = tokenList[1]
+            label_name = as_string_expr(label_name, label_name.Data)
+            stat = emit_call('label', label_name)
+        end
+
+        -- 6502 opcodes
+        if not stat then
         for _,op in pairs(Keywords_6502) do
             if tok:ConsumeKeyword(op, tokenList) then
                 opcode_tok = tokenList[1]
                 if opcode_relative[op] then
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     if expr.AstType == 'VarExpr' and expr.Variable.IsGlobal then
-                        local s = expr.Name
-                        local ss = '"'..s..'"'
-                        local t = expr.Tokens[1]
-                        local c,l = t.Char, t.Line
-                        local p = function() return '<String   '..s..' >' end
-                        expr.AstType = 'StringExpr'
-                        t.Type = 'String'
-                        t.Data = ss
-                        t.Constant = s
-                        t.Print = p
-                        expr.Value = { LeadingWhite = {}, Type='String', Data=ss, Constant=s, Char=c, Line=l, Print=p }
+                        expr = as_string_expr(expr, expr.Name)
                     end
                     stat = emit_opcode(op .. "_relative", expr) break
                 end
@@ -1174,7 +1193,8 @@ local function ParseLua(src)
                 end
                 if opcode_implied[op] then stat = emit_opcode(op .. "_implied") break end
             end
-        end
+        end end
+
         if stat then -- nothing
         elseif tok:ConsumeKeyword('if', tokenList) then
             --setup

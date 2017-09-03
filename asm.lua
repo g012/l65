@@ -10,6 +10,9 @@ if toto ~= 15 then end
 abc = 13 ~ 0x7
 xyz = 1 << 2
 
+x:f()
+::lualabel::
+
 section "waitForIntim"
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
@@ -22,6 +25,7 @@ section "waitForIntim"
     lda #INTIM
     lda 0xbeef
     lda INTIM
+    lda.w INTIM
     lda INTIM,x
     lda INTIM,y
     lda (INTIM,x)
@@ -30,11 +34,13 @@ section "waitForIntim"
     asl
     asl INTIM
     asl
-
+@_toto
     bne "test"
     bne waitForIntim
     bne f()
     bne _toto
+
+    jam asl lsr ldx #16 ldy 0xf0f0
 
     rts
 
