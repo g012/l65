@@ -9,125 +9,6 @@ local function lookupify(tb, dst, val)
 	return tb
 end
 
-
-local function CountTable(tb)
-	local c = 0
-	for _ in pairs(tb) do c = c + 1 end
-	return c
-end
-
-
-local function PrintTable(tb, atIndent)
-	if tb.Print then
-		return tb.Print()
-	end
-	atIndent = atIndent or 0
-	local useNewlines = (CountTable(tb) > 1)
-	local baseIndent = string.rep('    ', atIndent+1)
-	local out = "{"..(useNewlines and '\n' or '')
-	for k, v in pairs(tb) do
-		if type(v) ~= 'function' then
-		--do
-			out = out..(useNewlines and baseIndent or '')
-			if type(k) == 'number' then
-				--nothing to do
-			elseif type(k) == 'string' and k:match("^[A-Za-z_][A-Za-z0-9_]*$") then 
-				out = out..k.." = "
-			elseif type(k) == 'string' then
-				out = out.."[\""..k.."\"] = "
-			else
-				out = out.."["..tostring(k).."] = "
-			end
-			if type(v) == 'string' then
-				out = out.."\""..v.."\""
-			elseif type(v) == 'number' then
-				out = out..v
-			elseif type(v) == 'table' then
-				out = out..PrintTable(v, atIndent+(useNewlines and 1 or 0))
-			else
-				out = out..tostring(v)
-			end
-			if next(tb, k) then
-				out = out..","
-			end
-			if useNewlines then
-				out = out..'\n'
-			end
-		end
-	end
-	out = out..(useNewlines and string.rep('    ', atIndent) or '').."}"
-	return out
-end
-
-local Scope = {
-	new = function(self, parent)
-		local s = {
-			Parent = parent,
-			Locals = { },
-			Globals = { },
-			Children = { },
-		}
-		
-		if parent then
-			table.insert(parent.Children, s)
-		end
-		
-		return setmetatable(s, { __index = self })
-	end,
-	
-	AddLocal = function(self, v)
-		table.insert(self.Locals, v)
-	end,
-	
-	AddGlobal = function(self, v)
-		table.insert(self.Globals, v)
-	end,
-	
-	CreateLocal = function(self, name)
-		local v
-		v = self:GetLocal(name)
-		if v then return v end
-		v = { }
-		v.Scope = self
-		v.Name = name
-		v.IsGlobal = false
-		self:AddLocal(v)
-		return v
-	end,
-	
-	GetLocal = function(self, name)
-		for k, var in pairs(self.Locals) do
-			if var.Name == name then return var end
-		end
-		
-		if self.Parent then
-			return self.Parent:GetLocal(name)
-		end
-	end,
-	
-	CreateGlobal = function(self, name)
-		local v
-		v = self:GetGlobal(name)
-		if v then return v end
-		v = { }
-		v.Scope = self
-		v.Name = name
-		v.IsGlobal = true
-		self:AddGlobal(v)
-		return v
-	end, 
-	
-	GetGlobal = function(self, name)
-		for k, v in pairs(self.Globals) do
-			if v.Name == name then return v end
-		end
-		
-		if self.Parent then
-			return self.Parent:GetGlobal(name)
-		end
-	end,
-}
-
 local WhiteChars = lookupify{' ', '\n', '\t', '\r'}
 local EscapeLookup = {['\r'] = '\\r', ['\n'] = '\\n', ['\t'] = '\\t', ['"'] = '\\"', ["'"] = "\\'"}
 local LowerChars = lookupify{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
@@ -139,6 +20,7 @@ local UpperChars = lookupify{'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
 local Digits = lookupify{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9'}
 local HexDigits = lookupify{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
 							'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E', 'e', 'F', 'f'}
+local BinDigits = lookupify{'0', '1'}
 
 local Symbols = lookupify{'+', '-', '*', '/', '^', '%', ',', '{', '}', '[', ']', '(', ')', ';', '#'}
 
@@ -224,6 +106,75 @@ local opcode_indirect_y = lookupify{
 }
 local opcode_relative = lookupify{
     'bcc', 'bcs', 'beq', 'bmi', 'bne', 'bpl', 'bvc', 'bvs',
+}
+
+local Scope = {
+	new = function(self, parent)
+		local s = {
+			Parent = parent,
+			Locals = { },
+			Globals = { },
+			Children = { },
+		}
+		
+		if parent then
+			table.insert(parent.Children, s)
+		end
+		
+		return setmetatable(s, { __index = self })
+	end,
+	
+	AddLocal = function(self, v)
+		table.insert(self.Locals, v)
+	end,
+	
+	AddGlobal = function(self, v)
+		table.insert(self.Globals, v)
+	end,
+	
+	CreateLocal = function(self, name)
+		local v
+		v = self:GetLocal(name)
+		if v then return v end
+		v = { }
+		v.Scope = self
+		v.Name = name
+		v.IsGlobal = false
+		self:AddLocal(v)
+		return v
+	end,
+	
+	GetLocal = function(self, name)
+		for k, var in pairs(self.Locals) do
+			if var.Name == name then return var end
+		end
+		
+		if self.Parent then
+			return self.Parent:GetLocal(name)
+		end
+	end,
+	
+	CreateGlobal = function(self, name)
+		local v
+		v = self:GetGlobal(name)
+		if v then return v end
+		v = { }
+		v.Scope = self
+		v.Name = name
+		v.IsGlobal = true
+		self:AddGlobal(v)
+		return v
+	end, 
+	
+	GetGlobal = function(self, name)
+		for k, v in pairs(self.Globals) do
+			if v.Name == name then return v end
+		end
+		
+		if self.Parent then
+			return self.Parent:GetGlobal(name)
+		end
+	end,
 }
 
 local function LexLua(src)
@@ -463,6 +414,7 @@ local function LexLua(src)
 			elseif Digits[c] or (peek() == '.' and Digits[peek(1)]) then
 				--number const
 				local start = p
+                local data_override
 				if c == '0' and peek(1) == 'x' then
 					get();get()
 					while HexDigits[peek()] do get() end
@@ -470,6 +422,18 @@ local function LexLua(src)
 						consume('+-')
 						while Digits[peek()] do get() end
 					end
+                elseif c == '0' and peek(1) == 'b' then
+					get();get()
+					while BinDigits[peek()] do get() end
+                    local pstart, val_s, val = p, src:sub(start+2, p-1), 0
+                    for i=1,#val_s do
+                        if val_s:sub(i,i) == '1' then val = val + (1<<(#val_s-i)) end
+                    end
+					if consume('Pp') then
+						consume('+-')
+						while Digits[peek()] do get() end
+					end
+                    data_override = val .. src:sub(pstart, p-1)
 				else
 					while Digits[peek()] do get() end
 					if consume('.') then
@@ -480,7 +444,7 @@ local function LexLua(src)
 						while Digits[peek()] do get() end
 					end
 				end
-				toEmit = {Type = 'Number', Data = src:sub(start, p-1)}
+				toEmit = {Type = 'Number', Data = data_override or src:sub(start, p-1)}
 
 			elseif c == '\'' or c == '\"' then
 				local start = p
@@ -1121,7 +1085,7 @@ local function ParseLua(src)
             local c,l = opcode_tok.Char, opcode_tok.Line
             local op_var = {
                 AstType = 'VarExpr', Name = op, Variable = { IsGlobal=true, Name=op, Scope=CreateScope(scope) }, Tokens = {
-                    { LeadingWhite = {}, Type='Ident', Data=op, Char=c, Line=l, Print=function() return '<Ident   '..op..' >' end },
+                    { LeadingWhite = opcode_tok.LeadingWhite, Type='Ident', Data=op, Char=c, Line=l, Print=function() return '<Ident   '..op..' >' end },
                 }
             }
             local exp_call = {
@@ -1133,9 +1097,9 @@ local function ParseLua(src)
             return { AstType = 'CallStatement', Expression = exp_call, Tokens = {} }
         end
 
-        opcode_tok = tok:Peek()
         for _,op in pairs(Keywords_6502) do
             if tok:ConsumeKeyword(op, tokenList) then
+                opcode_tok = tokenList[1]
                 if opcode_relative[op] then
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     if expr.AstType == 'VarExpr' and expr.Variable.IsGlobal then
@@ -1607,342 +1571,423 @@ local function ParseLua(src)
 	end
 
 	local st, main = mainfunc()
-	--print("Last Token: "..PrintTable(tok:Peek()))
 	return st, main
 end
 
 
 local function Format65(ast)
+    local function splitLines(str)
+        if str:match("\n") then
+            local lines = {}
+            for line in str:gmatch("[^\n]*") do 
+                table.insert(lines, line)
+            end
+            assert(#lines > 0)
+            return lines
+        else
+            return { str }
+        end
+    end
+
 	local formatStatlist, formatExpr
-	local indent = 0
-	local EOL = "\n"
-	
-	local function getIndentation()
-		return string.rep("    ", indent)
-	end
-	
-	local function joinStatementsSafe(a, b, sep)
-		sep = sep or ''
-		local aa, bb = a:sub(-1,-1), b:sub(1,1)
-		if UpperChars[aa] or LowerChars[aa] or aa == '_' then
-			if not (UpperChars[bb] or LowerChars[bb] or bb == '_' or Digits[bb]) then
-				--bb is a symbol, can join without sep
-				return a .. b
-			elseif bb == '(' then
-				--prevent ambiguous syntax
-				return a..sep..b
+	local out = {
+		rope = {},  -- List of strings
+		line = 1,
+		char = 1,
+
+		appendStr = function(self, str)
+			table.insert(self.rope, str)
+
+			local lines = splitLines(str)
+			if #lines == 1 then
+				self.char = self.char + #str
 			else
-				return a..sep..b
+				self.line = self.line + #lines - 1
+				local lastLine = lines[#lines]
+				self.char = #lastLine
 			end
-		elseif Digits[aa] then
-			if bb == '(' then
-				--can join statements directly
-				return a..b
-			else
-				return a..sep..b
+		end,
+
+		appendToken = function(self, token)
+			self:appendWhite(token)
+			self:appendStr(token.Data)
+		end,
+
+		appendTokens = function(self, tokens)
+			for _,token in ipairs(tokens) do
+				self:appendToken( token )
 			end
-		elseif aa == '' then
-			return a..b
-		else
-			if bb == '(' then
-				--don't want to accidentally call last statement, can't join directly
-				return a..sep..b
-			else
-				return a..b
+		end,
+
+		appendWhite = function(self, token)
+			if token.LeadingWhite then
+				self:appendTokens( token.LeadingWhite )
 			end
 		end
-	end
-
+	}
 	formatExpr = function(expr)
-		local out = string.rep('(', expr.ParenCount or 0)
+		local tok_it = 1
+		local function appendNextToken(str)
+			local tok = expr.Tokens[tok_it];
+			if str and tok.Data ~= str then
+				error("Expected token '" .. str .. "'.")
+			end
+			out:appendToken( tok )
+			tok_it = tok_it + 1
+		end
+		local function appendToken(token)
+			out:appendToken( token )
+			tok_it = tok_it + 1
+		end
+		local function appendWhite()
+			local tok = expr.Tokens[tok_it];
+			if not tok then error("Missing token") end
+			out:appendWhite( tok )
+			tok_it = tok_it + 1
+		end
+		local function appendStr(str)
+			appendWhite()
+			out:appendStr(str)
+		end
+		local function peek()
+			if tok_it < #expr.Tokens then
+				return expr.Tokens[tok_it].Data
+			end
+		end
+		local function appendComma(mandatory, seperators)
+			if true then
+				seperators = seperators or { "," }
+				seperators = lookupify( seperators )
+				if not mandatory and not seperators[peek()] then
+					return
+				end
+				assert(seperators[peek()], "Missing comma or semicolon")
+				appendNextToken()
+			else
+				local p = peek()
+				if p == "," or p == ";" then
+					appendNextToken()
+				end
+			end
+		end
+
 		if expr.AstType == 'VarExpr' then
 			if expr.Variable then
-				out = out .. expr.Variable.Name
+				appendStr( expr.Variable.Name )
 			else
-				out = out .. expr.Name
+				appendStr( expr.Name )
 			end
 
 		elseif expr.AstType == 'NumberExpr' then
-			out = out..expr.Value.Data
+			appendToken( expr.Value )
 
 		elseif expr.AstType == 'StringExpr' then
-			out = out..expr.Value.Data
+			appendToken( expr.Value )
 
 		elseif expr.AstType == 'BooleanExpr' then
-			out = out..tostring(expr.Value)
+			appendNextToken( expr.Value and "true" or "false" )
 
 		elseif expr.AstType == 'NilExpr' then
-			out = joinStatementsSafe(out, "nil")
+			appendNextToken( "nil" )
 
 		elseif expr.AstType == 'BinopExpr' then
-			out = joinStatementsSafe(out, formatExpr(expr.Lhs)) .. " "
-			out = joinStatementsSafe(out, expr.Op) .. " "
-			out = joinStatementsSafe(out, formatExpr(expr.Rhs))
+			formatExpr(expr.Lhs)
+			appendStr( expr.Op )
+			formatExpr(expr.Rhs)
 
 		elseif expr.AstType == 'UnopExpr' then
-			out = joinStatementsSafe(out, expr.Op) .. (#expr.Op ~= 1 and " " or "")
-			out = joinStatementsSafe(out, formatExpr(expr.Rhs))
+			appendStr( expr.Op )
+			formatExpr(expr.Rhs)
 
 		elseif expr.AstType == 'DotsExpr' then
-			out = out.."..."
+			appendNextToken( "..." )
 
 		elseif expr.AstType == 'CallExpr' then
-			out = out..formatExpr(expr.Base)
-			out = out.."("
-			for i = 1, #expr.Arguments do
-				out = out..formatExpr(expr.Arguments[i])
-				if i ~= #expr.Arguments then
-					out = out..", "
-				end
+			formatExpr(expr.Base)
+			appendNextToken( "(" )
+			for i,arg in ipairs( expr.Arguments ) do
+				formatExpr(arg)
+				appendComma( i ~= #expr.Arguments )
 			end
-			out = out..")"
+			appendNextToken( ")" )
 
 		elseif expr.AstType == 'TableCallExpr' then
-			out = out..formatExpr(expr.Base) .. " "
-			out = out..formatExpr(expr.Arguments[1])
+			formatExpr( expr.Base )
+			formatExpr( expr.Arguments[1] )
 
 		elseif expr.AstType == 'StringCallExpr' then
-			out = out..formatExpr(expr.Base) .. " "
-			out = out..expr.Arguments[1].Data
+			formatExpr(expr.Base)
+			appendToken( expr.Arguments[1] )
 
 		elseif expr.AstType == 'IndexExpr' then
-			out = out..formatExpr(expr.Base).."["..formatExpr(expr.Index).."]"
+			formatExpr(expr.Base)
+			appendNextToken( "[" )
+			formatExpr(expr.Index)
+			appendNextToken( "]" )
 
 		elseif expr.AstType == 'MemberExpr' then
-			out = out..formatExpr(expr.Base)..expr.Indexer..expr.Ident.Data
+			formatExpr(expr.Base)
+			appendNextToken()  -- . or :
+			appendToken(expr.Ident)
 
 		elseif expr.AstType == 'Function' then
 			-- anonymous function
-			out = out.."function("
+			appendNextToken( "function" )
+			appendNextToken( "(" )
 			if #expr.Arguments > 0 then
 				for i = 1, #expr.Arguments do
-					out = out..expr.Arguments[i].Name
+					appendStr( expr.Arguments[i].Name )
 					if i ~= #expr.Arguments then
-						out = out..", "
+						appendNextToken(",")
 					elseif expr.VarArg then
-						out = out..", ..."
+						appendNextToken(",")
+						appendNextToken("...")
 					end
 				end
 			elseif expr.VarArg then
-				out = out.."..."
+				appendNextToken("...")
 			end
-			out = out..")" .. EOL
-			indent = indent + 1
-			out = joinStatementsSafe(out, formatStatlist(expr.Body))
-			indent = indent - 1
-			out = joinStatementsSafe(out, getIndentation() .. "end")
+			appendNextToken(")")
+			formatStatlist(expr.Body)
+			appendNextToken("end")
+
 		elseif expr.AstType == 'ConstructorExpr' then
-			out = out.."{ "
+			appendNextToken( "{" )
 			for i = 1, #expr.EntryList do
 				local entry = expr.EntryList[i]
 				if entry.Type == 'Key' then
-					out = out.."["..formatExpr(entry.Key).."] = "..formatExpr(entry.Value)
+					appendNextToken( "[" )
+					formatExpr(entry.Key)
+					appendNextToken( "]" )
+					appendNextToken( "=" )
+					formatExpr(entry.Value)
 				elseif entry.Type == 'Value' then
-					out = out..formatExpr(entry.Value)
+					formatExpr(entry.Value)
 				elseif entry.Type == 'KeyString' then
-					out = out..entry.Key.." = "..formatExpr(entry.Value)
+					appendStr(entry.Key)
+					appendNextToken( "=" )
+					formatExpr(entry.Value)
 				end
-				if i ~= #expr.EntryList then
-					out = out..", "
-				end
+				appendComma( i ~= #expr.EntryList, { ",", ";" } )
 			end
-			out = out.." }"
+			appendNextToken( "}" )
 
 		elseif expr.AstType == 'Parentheses' then
-			out = out.."("..formatExpr(expr.Inner)..")"
+			appendNextToken( "(" )
+			formatExpr(expr.Inner)
+			appendNextToken( ")" )
 
-		end
-		out = out..string.rep(')', expr.ParenCount or 0)
-		return out
-	end
-
-	local formatStatement = function(statement)
-		local out = ""
-		if statement.AstType == 'AssignmentStatement' then
-			out = getIndentation()
-			for i = 1, #statement.Lhs do
-				out = out..formatExpr(statement.Lhs[i])
-				if i ~= #statement.Lhs then
-					out = out..", "
-				end
-			end
-			if #statement.Rhs > 0 then
-				out = out.." = "
-				for i = 1, #statement.Rhs do
-					out = out..formatExpr(statement.Rhs[i])
-					if i ~= #statement.Rhs then
-						out = out..", "
-					end
-				end
-			end
-		elseif statement.AstType == 'CallStatement' then
-			out = getIndentation() .. formatExpr(statement.Expression)
-		elseif statement.AstType == 'LocalStatement' then
-			out = getIndentation() .. out.."local "
-			for i = 1, #statement.LocalList do
-				out = out..statement.LocalList[i].Name
-				if i ~= #statement.LocalList then
-					out = out..", "
-				end
-			end
-			if #statement.InitList > 0 then
-				out = out.." = "
-				for i = 1, #statement.InitList do
-					out = out..formatExpr(statement.InitList[i])
-					if i ~= #statement.InitList then
-						out = out..", "
-					end
-				end
-			end
-		elseif statement.AstType == 'IfStatement' then
-			out = getIndentation() .. joinStatementsSafe("if ", formatExpr(statement.Clauses[1].Condition))
-			out = joinStatementsSafe(out, " then") .. EOL
-			indent = indent + 1
-			out = joinStatementsSafe(out, formatStatlist(statement.Clauses[1].Body))
-			indent = indent - 1
-			for i = 2, #statement.Clauses do
-				local st = statement.Clauses[i]
-				if st.Condition then
-					out = getIndentation() .. joinStatementsSafe(out, getIndentation() .. "elseif ")
-					out = joinStatementsSafe(out, formatExpr(st.Condition))
-					out = joinStatementsSafe(out, " then") .. EOL
-				else
-					out = joinStatementsSafe(out, getIndentation() .. "else") .. EOL
-				end
-				indent = indent + 1
-				out = joinStatementsSafe(out, formatStatlist(st.Body))
-				indent = indent - 1
-			end
-			out = joinStatementsSafe(out, getIndentation() .. "end") .. EOL
-		elseif statement.AstType == 'WhileStatement' then
-			out = getIndentation() .. joinStatementsSafe("while ", formatExpr(statement.Condition))
-			out = joinStatementsSafe(out, " do") .. EOL
-			indent = indent + 1
-			out = joinStatementsSafe(out, formatStatlist(statement.Body))
-			indent = indent - 1
-			out = joinStatementsSafe(out, getIndentation() .. "end") .. EOL
-		elseif statement.AstType == 'DoStatement' then
-			out = getIndentation() .. joinStatementsSafe(out, "do") .. EOL
-			indent = indent + 1
-			out = joinStatementsSafe(out, formatStatlist(statement.Body))
-			indent = indent - 1
-			out = joinStatementsSafe(out, getIndentation() .. "end") .. EOL
-		elseif statement.AstType == 'ReturnStatement' then
-			out = getIndentation() .. "return "
-			for i = 1, #statement.Arguments do
-				out = joinStatementsSafe(out, formatExpr(statement.Arguments[i]))
-				if i ~= #statement.Arguments then
-					out = out..", "
-				end
-			end
-		elseif statement.AstType == 'BreakStatement' then
-			out = getIndentation() .. "break"
-		elseif statement.AstType == 'RepeatStatement' then
-			out = getIndentation() .. "repeat" .. EOL
-			indent = indent + 1
-			out = joinStatementsSafe(out, formatStatlist(statement.Body))
-			indent = indent - 1
-			out = joinStatementsSafe(out, getIndentation() .. "until ")
-			out = joinStatementsSafe(out, formatExpr(statement.Condition)) .. EOL
-		elseif statement.AstType == 'Function' then
-			if statement.IsLocal then
-				out = "local "
-			end
-			out = joinStatementsSafe(out, "function ")
-			out = getIndentation() .. out
-			if statement.IsLocal then
-				out = out..statement.Name.Name
-			else
-				out = out..formatExpr(statement.Name)
-			end
-			out = out.."("
-			if #statement.Arguments > 0 then
-				for i = 1, #statement.Arguments do
-					out = out..statement.Arguments[i].Name
-					if i ~= #statement.Arguments then
-						out = out..", "
-					elseif statement.VarArg then
-						out = out..",..."
-					end
-				end
-			elseif statement.VarArg then
-				out = out.."..."
-			end
-			out = out..")" .. EOL
-			indent = indent + 1
-			out = joinStatementsSafe(out, formatStatlist(statement.Body))
-			indent = indent - 1
-			out = joinStatementsSafe(out, getIndentation() .. "end") .. EOL
-		elseif statement.AstType == 'GenericForStatement' then
-			out = getIndentation() .. "for "
-			for i = 1, #statement.VariableList do
-				out = out..statement.VariableList[i].Name
-				if i ~= #statement.VariableList then
-					out = out..", "
-				end
-			end
-			out = out.." in "
-			for i = 1, #statement.Generators do
-				out = joinStatementsSafe(out, formatExpr(statement.Generators[i]))
-				if i ~= #statement.Generators then
-					out = joinStatementsSafe(out, ', ')
-				end
-			end
-			out = joinStatementsSafe(out, " do") .. EOL
-			indent = indent + 1
-			out = joinStatementsSafe(out, formatStatlist(statement.Body))
-			indent = indent - 1
-			out = joinStatementsSafe(out, getIndentation() .. "end") .. EOL
-		elseif statement.AstType == 'NumericForStatement' then
-			out = getIndentation() .. "for "
-			out = out..statement.Variable.Name.." = "
-			out = out..formatExpr(statement.Start)..", "..formatExpr(statement.End)
-			if statement.Step then
-				out = out..", "..formatExpr(statement.Step)
-			end
-			out = joinStatementsSafe(out, " do") .. EOL
-			indent = indent + 1
-			out = joinStatementsSafe(out, formatStatlist(statement.Body))
-			indent = indent - 1
-			out = joinStatementsSafe(out, getIndentation() .. "end") .. EOL
-		elseif statement.AstType == 'LabelStatement' then
-			out = getIndentation() .. "::" .. statement.Label .. "::" .. EOL
-		elseif statement.AstType == 'GotoStatement' then
-			out = getIndentation() .. "goto " .. statement.Label .. EOL
-		elseif statement.AstType == 'Comment' then
-			if statement.CommentType == 'Shebang' then
-				out = getIndentation() .. statement.Data
-				--out = out .. EOL
-			elseif statement.CommentType == 'Comment' then
-				out = getIndentation() .. statement.Data
-				--out = out .. EOL
-			elseif statement.CommentType == 'LongComment' then
-				out = getIndentation() .. statement.Data
-				--out = out .. EOL
-			end
-		elseif statement.AstType == 'Eof' then
-			-- Ignore
 		else
 			print("Unknown AST Type: ", statement.AstType)
 		end
-		return out
+
+		assert(tok_it == #expr.Tokens + 1)
+	end
+
+
+	local formatStatement = function(statement)
+		local tok_it = 1
+		local function appendNextToken(str)
+			local tok = statement.Tokens[tok_it];
+			assert(tok, string.format("Not enough tokens for %q. First token at %i:%i",
+				str, statement.Tokens[1].Line, statement.Tokens[1].Char))
+			assert(tok.Data == str,
+				string.format('Expected token %q, got %q', str, tok.Data))
+			out:appendToken( tok )
+			tok_it = tok_it + 1
+		end
+		local function appendToken(token)
+			out:appendToken( str )
+			tok_it = tok_it + 1
+		end
+		local function appendWhite()
+			local tok = statement.Tokens[tok_it];
+			out:appendWhite( tok )
+			tok_it = tok_it + 1
+		end
+		local function appendStr(str)
+			appendWhite()
+			out:appendStr(str)
+		end
+		local function appendComma(mandatory)
+			if mandatory
+			   or (tok_it < #statement.Tokens and statement.Tokens[tok_it].Data == ",") then
+			   appendNextToken( "," )
+			end
+		end
+
+		if statement.AstType == 'AssignmentStatement' then
+			for i,v in ipairs(statement.Lhs) do
+				formatExpr(v)
+				appendComma( i ~= #statement.Lhs )
+			end
+			if #statement.Rhs > 0 then
+				appendNextToken( "=" )
+				for i,v in ipairs(statement.Rhs) do
+					formatExpr(v)
+					appendComma( i ~= #statement.Rhs )
+				end
+			end
+
+		elseif statement.AstType == 'CallStatement' then
+			formatExpr(statement.Expression)
+
+		elseif statement.AstType == 'LocalStatement' then
+			appendNextToken( "local" )
+			for i = 1, #statement.LocalList do
+				appendStr( statement.LocalList[i].Name )
+				appendComma( i ~= #statement.LocalList )
+			end
+			if #statement.InitList > 0 then
+				appendNextToken( "=" )
+				for i = 1, #statement.InitList do
+					formatExpr(statement.InitList[i])
+					appendComma( i ~= #statement.InitList )
+				end
+			end
+
+		elseif statement.AstType == 'IfStatement' then
+			appendNextToken( "if" )
+			formatExpr( statement.Clauses[1].Condition )
+			appendNextToken( "then" )
+			formatStatlist( statement.Clauses[1].Body )
+			for i = 2, #statement.Clauses do
+				local st = statement.Clauses[i]
+				if st.Condition then
+					appendNextToken( "elseif" )
+					formatExpr(st.Condition)
+					appendNextToken( "then" )
+				else
+					appendNextToken( "else" )
+				end
+				formatStatlist(st.Body)
+			end
+			appendNextToken( "end" )
+
+		elseif statement.AstType == 'WhileStatement' then
+			appendNextToken( "while" )
+			formatExpr(statement.Condition)
+			appendNextToken( "do" )
+			formatStatlist(statement.Body)
+			appendNextToken( "end" )
+
+		elseif statement.AstType == 'DoStatement' then
+			appendNextToken( "do" )
+			formatStatlist(statement.Body)
+			appendNextToken( "end" )
+
+		elseif statement.AstType == 'ReturnStatement' then
+			appendNextToken( "return" )
+			for i = 1, #statement.Arguments do
+				formatExpr(statement.Arguments[i])
+				appendComma( i ~= #statement.Arguments )
+			end
+
+		elseif statement.AstType == 'BreakStatement' then
+			appendNextToken( "break" )
+
+		elseif statement.AstType == 'RepeatStatement' then
+			appendNextToken( "repeat" )
+			formatStatlist(statement.Body)
+			appendNextToken( "until" )
+			formatExpr(statement.Condition)
+
+		elseif statement.AstType == 'Function' then
+			if statement.IsLocal then
+				appendNextToken( "local" )
+			end
+			appendNextToken( "function" )
+
+			if statement.IsLocal then
+				appendStr(statement.Name.Name)
+			else
+				formatExpr(statement.Name)
+			end
+
+			appendNextToken( "(" )
+			if #statement.Arguments > 0 then
+				for i = 1, #statement.Arguments do
+					appendStr( statement.Arguments[i].Name )
+					appendComma( i ~= #statement.Arguments or statement.VarArg )
+					if i == #statement.Arguments and statement.VarArg then
+						appendNextToken( "..." )
+					end
+				end
+			elseif statement.VarArg then
+				appendNextToken( "..." )
+			end
+			appendNextToken( ")" )
+
+			formatStatlist(statement.Body)
+			appendNextToken( "end" )
+
+		elseif statement.AstType == 'GenericForStatement' then
+			appendNextToken( "for" )
+			for i = 1, #statement.VariableList do
+				appendStr( statement.VariableList[i].Name )
+				appendComma( i ~= #statement.VariableList )
+			end
+			appendNextToken( "in" )
+			for i = 1, #statement.Generators do
+				formatExpr(statement.Generators[i])
+				appendComma( i ~= #statement.Generators )
+			end
+			appendNextToken( "do" )
+			formatStatlist(statement.Body)
+			appendNextToken( "end" )
+
+		elseif statement.AstType == 'NumericForStatement' then
+			appendNextToken( "for" )
+			appendStr( statement.Variable.Name )
+			appendNextToken( "=" )
+			formatExpr(statement.Start)
+			appendNextToken( "," )
+			formatExpr(statement.End)
+			if statement.Step then
+				appendNextToken( "," )
+				formatExpr(statement.Step)
+			end
+			appendNextToken( "do" )
+			formatStatlist(statement.Body)
+			appendNextToken( "end" )
+
+		elseif statement.AstType == 'LabelStatement' then
+			appendNextToken( "::" )
+			appendStr( statement.Label )
+			appendNextToken( "::" )
+
+		elseif statement.AstType == 'GotoStatement' then
+			appendNextToken( "goto" )
+			appendStr( statement.Label )
+
+		elseif statement.AstType == 'Eof' then
+			appendWhite()
+
+		else
+			print("Unknown AST Type: ", statement.AstType)
+		end
+
+		if statement.Semicolon then
+			appendNextToken(";")
+		end
+
+		assert(tok_it == #statement.Tokens + 1)
 	end
 
 	formatStatlist = function(statList)
-		local out = ''
-		for _, stat in pairs(statList.Body) do
-			out = joinStatementsSafe(out, formatStatement(stat) .. EOL)
+		for _, stat in ipairs(statList.Body) do
+			formatStatement(stat)
 		end
-		return out
 	end
 
-	return formatStatlist(ast)
+	formatStatlist(ast)
+	
+	return table.concat(out.rope)
 end
 
 
 
 local function splitFilename(name)
-	--table.foreach(arg, print)
 	if name:find(".") then
 		local p, ext = name:match("()%.([^%.]*)$")
 		if p and ext then
@@ -1990,7 +2035,6 @@ if #arg == 1 then
 	outf:write(Format65(ast))
 	outf:close()
 	--
-	print("Minification complete")
 
 elseif #arg == 2 then
 	--keep the user from accidentally overwriting their non-minified file with 
@@ -2045,7 +2089,6 @@ elseif #arg == 2 then
 	outf:write(Format65(ast))
 	outf:close()
 	--
-	print("Minification complete")
 
 else
 	print("Invalid arguments, Usage:\nLuaMinify source [destination]")
