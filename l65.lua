@@ -1145,21 +1145,29 @@ local function ParseLua(src)
                     end
                 end
                 if opcode_absolute[op] or opcode_absolute_x[op] or opcode_absolute_y[op] then
+                    local suffix = ''
+                    tok:Save()
+                    if tok:ConsumeSymbol('.', tokenList) then
+                        if tok:Get(tokenList).Data == 'w' then suffix = '_nozp'
+                        else tok:Restore() tok:Save() end
+                    end
                     local st, expr = ParseExpr(scope)
-                    if st then
+                    if not st then tok:Restore()
+                    else
+                        tok:Commit()
                         if not tok:ConsumeSymbol(',', tokenList) then
                             if not opcode_absolute[op] then return false, expr end
-                            stat = emit_opcode(op .. "_absolute", expr) break
+                            stat = emit_opcode(op .. "_absolute" .. suffix, expr) break
                         end
                         if tok:Peek().Data == 'x' then
                             if not opcode_absolute_x[op] then return false, expr end
                             tok:Get(tokenList)
-                            stat = emit_opcode(op .. "_absolute_x", expr) break
+                            stat = emit_opcode(op .. "_absolute_x" .. suffix, expr) break
                         end
                         if tok:Peek().Data == 'y' then
                             if not opcode_absolute_y[op] then return false, expr end
                             tok:Get(tokenList)
-                            stat = emit_opcode(op .. "_absolute_x", expr) break
+                            stat = emit_opcode(op .. "_absolute_x" .. suffix, expr) break
                         end
                         return false, expr
                     end
