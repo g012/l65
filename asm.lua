@@ -5,11 +5,18 @@ TIM_VBLANK      = 61 -- TIM64T,  3904 cycles = ~ 51 scanlines
 TIM_KERNEL      = 17 -- T1024T, 17408 cycles = ~229 scanlines
 location(0xf000, 0xffff)
 
+if toto ~= 15 then end
+
+abc = 13 ~ 0x7
+xyz = 1 << 2
+
 section "waitForIntim"
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
     --bne "waitForIntim"
     ldx #0xf0
+    ldx #0b1101
+    ldy #0xAB - 16 + 0b11011 & 3 | 6 ~ 0xf >> ~3 << 1 // 5
 
     lda #0xac
     lda #INTIM
