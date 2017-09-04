@@ -17,7 +17,11 @@ syntax6502_off
 lda = 5 if lda < 6 then print('yep') end
 syntax6502_on
 
-section "waitForIntim"
+--@@data samepage byte(1, 2) crosspage byte(3, 4)
+
+--section{ "toto", align = 256, offset = 16 }
+--section{ "toto", org = 0xf100 }
+section "waitForIntim" --alt short syntax when no other option: @@waitForIntim ?
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
     --bne "waitForIntim"
@@ -38,11 +42,11 @@ section "waitForIntim"
     asl
     asl INTIM
     asl
-@_toto
+@.toto
     bne "test"
     bne waitForIntim
     bne f()
-    bne _toto
+    bne .toto
 
     jam asl lsr ldx #16 ldy 0xf0f0
 

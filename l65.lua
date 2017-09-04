@@ -1128,11 +1128,13 @@ local function ParseLua(src)
         -- label declarations
         if not stat then
         if tok:ConsumeSymbol('@', tokenList) then
+            local is_local
+            if tok:ConsumeSymbol('.', tokenList) then is_local = true end
             if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
             local label_name = tok:Get(tokenList)
             opcode_tok = tokenList[1]
             label_name = as_string_expr(label_name, label_name.Data)
-            stat = emit_call('label', label_name)
+            stat = emit_call(is_local and 'label_local' or 'label', label_name)
         end end
 
         -- 6502 opcodes
@@ -1141,11 +1143,12 @@ local function ParseLua(src)
             if tok:ConsumeKeyword(op, tokenList) then
                 opcode_tok = tokenList[1]
                 if opcode_relative[op] then
+                    if tok:ConsumeSymbol('.', tokenList) then is_local = true end
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     if expr.AstType == 'VarExpr' and expr.Variable.IsGlobal then
                         expr = as_string_expr(expr, expr.Name)
                     end
-                    stat = emit_opcode(op .. "_relative", expr) break
+                    stat = emit_opcode(op .. "_relative" .. (is_local and '_local' or ''), expr) break
                 end
                 if opcode_immediate[op] and tok:ConsumeSymbol('#') then
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
