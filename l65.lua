@@ -1,8 +1,8 @@
 #!/usr/bin/env lua
 
-local function lookupify(tb, dst, val)
+local function lookupify(tb, dst, not_val)
     if not dst then dst = tb end
-    if not val then val = true end
+    local val = not not_val
     for _, v in pairs(tb) do
         dst[v] = val
     end
@@ -49,7 +49,7 @@ local Keywords_6502 = {
 local syntax6502_on
 local function syntax6502(on)
     syntax6502_on = on
-    lookupify(Keywords_6502, Keywords, on)
+    lookupify(Keywords_6502, Keywords, not on)
 end
 syntax6502(true)
 
@@ -410,7 +410,14 @@ local function LexLua(src)
                 if Keywords[dat] then
                     toEmit = {Type = 'Keyword', Data = dat}
                 else
-                    toEmit = {Type = 'Ident', Data = dat}
+                    if dat == 'syntax6502_on' then
+                        syntax6502(true)
+                        toEmit = {Type = 'Symbol', Data = ';'}
+                    elseif dat == 'syntax6502_off' then
+                        syntax6502(false)
+                        toEmit = {Type = 'Symbol', Data = ';'}
+                    else toEmit = {Type = 'Ident', Data = dat}
+                    end
                 end
 
             elseif Digits[c] or (peek() == '.' and Digits[peek(1)]) then
@@ -1119,13 +1126,14 @@ local function ParseLua(src)
         end
 
         -- label declarations
+        if not stat then
         if tok:ConsumeSymbol('@', tokenList) then
             if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
             local label_name = tok:Get(tokenList)
             opcode_tok = tokenList[1]
             label_name = as_string_expr(label_name, label_name.Data)
             stat = emit_call('label', label_name)
-        end
+        end end
 
         -- 6502 opcodes
         if not stat then
@@ -2015,6 +2023,8 @@ local function Format65(ast)
     
     return table.concat(out.rope)
 end
+
+
 
 
 

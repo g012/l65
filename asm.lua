@@ -13,6 +13,10 @@ xyz = 1 << 2
 x:f()
 ::lualabel::
 
+syntax6502_off
+lda = 5 if lda < 6 then print('yep') end
+syntax6502_on
+
 section "waitForIntim"
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
