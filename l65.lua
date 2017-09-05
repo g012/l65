@@ -10,6 +10,7 @@ local function lookupify(tb, dst, not_val)
 end
 
 local WhiteChars = lookupify{' ', '\n', '\t', '\r'}
+local Spaces = lookupify{' ', '\t'}
 local EscapeLookup = {['\r'] = '\\r', ['\n'] = '\\n', ['\t'] = '\\t', ['"'] = '\\"', ["'"] = "\\'"}
 local LowerChars = lookupify{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
                              'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
@@ -201,15 +202,25 @@ local function LexLua(src)
             p = p + 1
             return c
         end
+        local function get_n(count) for i=1,count do get() end end
         local function peek(n)
             n = n or 0
             return src:sub(p+n,p+n)
         end
+        local function peek_n(sz) return src:sub(p, p+sz-1) end
         local function consume(chars)
             local c = peek()
             for i = 1, #chars do
                 if c == chars:sub(i,i) then return get() end
             end
+        end
+        local function get_word(spaces)
+            if not spaces then spaces = Spaces end
+            local c
+            repeat get() c = peek() until not spaces[c]
+            local start = p
+            repeat get() c = peek() until not (UpperChars[c] or LowerChars[c] or Digits[c] or c == '_')
+            return src:sub(start, p-1)
         end
 
         --shared stuff
@@ -394,8 +405,23 @@ local function LexLua(src)
             --symbol to emit
             local toEmit = nil
 
+            --pragma
+            if char == 1 and peek_n(7) == '#pragma' then
+                get_n(7)
+                local dat = get_word()
+                if dat == 'syntax6502' then
+                    local opt = get_word()
+                    if opt == 'on' then syntax6502(true)
+                    elseif opt == 'off' then syntax6502(false)
+                    else generateError("invalid option for pragma syntax6502, expected: [on,off]")
+                    end
+                else
+                    generateError("unknown pragma: " .. dat)
+                end
+                toEmit = {Type = 'Symbol', Data = ';'}
+
             --branch on type
-            if c == '' then
+            elseif c == '' then
                 --eof
                 toEmit = { Type = 'Eof' }
 
@@ -410,14 +436,7 @@ local function LexLua(src)
                 if Keywords[dat] then
                     toEmit = {Type = 'Keyword', Data = dat}
                 else
-                    if dat == 'syntax6502_on' then
-                        syntax6502(true)
-                        toEmit = {Type = 'Symbol', Data = ';'}
-                    elseif dat == 'syntax6502_off' then
-                        syntax6502(false)
-                        toEmit = {Type = 'Symbol', Data = ';'}
-                    else toEmit = {Type = 'Ident', Data = dat}
-                    end
+                    toEmit = {Type = 'Ident', Data = dat}
                 end
 
             elseif Digits[c] or (peek() == '.' and Digits[peek(1)]) then
