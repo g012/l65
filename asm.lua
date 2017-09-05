@@ -13,9 +13,9 @@ xyz = 1 << 2
 x:f()
 ::lualabel::
 
-syntax6502_off
+#pragma syntax6502 off
 lda = 5 if lda < 6 then print('yep') end
-syntax6502_on
+#pragma syntax6502 on
 
 --@@data samepage byte(1, 2) crosspage byte(3, 4)
 
