@@ -13,9 +13,9 @@ xyz = 1 << 2
 x:f()
 ::lualabel::
 
-;
+#pragma syntax6502 off
 lda = 5 if lda < 6 then print('yep') end
-;
+#pragma syntax6502 on
 
 --@@data samepage byte(1, 2) crosspage byte(3, 4)
 
@@ -25,34 +25,34 @@ section "waitForIntim" --alt short syntax when no other option: @@waitForIntim ?
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
     --bne "waitForIntim"
-    ldx_immediate(0xf0)
-    ldx_immediate(13)
-    ldy_immediate(0xAB - 16 + 27 & 3 | 6 ~ 0xf >> ~3 << 1 // 5)
+    ldx #0xf0
+    ldx #0b1101
+    ldy #0xAB - 16 + 0b11011 & 3 | 6 ~ 0xf >> ~3 << 1 // 5
 
-    do samepage()
-    lda_immediate(0xac)
-    lda_immediate(INTIM)
-    lda_absolute( 0xbeef)
-    lda_absolute( INTIM)
-    lda_absolute_nozp( INTIM)
-    lda_absolute_x( INTIM)
-    lda_absolute_x( INTIM)
-    lda_indirect_x(INTIM)
-    lda_indirect_y(INTIM) endpage()
+    samepage
+    lda #0xac
+    lda #INTIM
+    lda 0xbeef
+    lda INTIM
+    lda.w INTIM
+    lda INTIM,x
+    lda INTIM,y
+    lda (INTIM,x)
+    lda (INTIM),y
     end
 
-    asl_implied()
-    asl_absolute( INTIM)
-    asl_implied()
-label_local("toto")
-    bne_relative( "test")
-    bne_relative( "waitForIntim")
-    bne_relative( f())
-    bne_relative_local("toto")
+    asl
+    asl INTIM
+    asl
+@.toto
+    bne "test"
+    bne waitForIntim
+    bne f()
+    bne .toto
 
-    jam_implied() asl_implied() lsr_implied() ldx_immediate(16) ldy_absolute( 0xf0f0)
+    jam asl lsr ldx #16 ldy 0xf0f0
 
-    rts_implied()
+    rts
 
 --[[
 section "doOverscan"

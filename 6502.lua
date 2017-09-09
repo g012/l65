@@ -206,14 +206,23 @@ M.section = function(t)
         for _,instruction in ipairs(self.instructions) do
             -- TODO
         end
+        -- TODO update start and finish fields of constraints to actual addresses
     end
 end
 
 M.samepage = function()
+    local section = sections[#sections]
+    table.insert(section.constraints, { type='samepage', start=#section.instructions })
 end
 M.crosspage = function()
+    local section = sections[#sections]
+    table.insert(section.constraints, { type='crosspage', start=#section.instructions })
 end
 M.endpage = function()
+    local section = sections[#sections]
+    local constraint = section.constraints[#section.constraints]
+    assert(constraint and not constraint.finish, "closing constraint, but no constraint is open")
+    constraint.finish = #section.instructions
 end
 
 M.byte = function(...)
