@@ -33,7 +33,12 @@ local Keywords = lookupify{
 };
 
 -- 6502 opcodes
+local Keywords_control = {
+    -- control keywords
+    'samepage', 'crosspage',
+}
 local Keywords_6502 = {
+    -- opcodes
     'adc', 'and', 'asl', 'bcc', 'bcs', 'beq', 'bit', 'bmi',
     'bne', 'bpl', 'brk', 'bvc', 'bvs', 'clc', 'cld', 'cli',
     'clv', 'cmp', 'cpx', 'cpy', 'dec', 'dex', 'dey', 'eor',
@@ -50,6 +55,7 @@ local Keywords_6502 = {
 local syntax6502_on
 local function syntax6502(on)
     syntax6502_on = on
+    lookupify(Keywords_control, Keywords, not on)
     lookupify(Keywords_6502, Keywords, not on)
 end
 syntax6502(true)
@@ -245,7 +251,7 @@ local function LexLua(src)
                     while true do
                         --check for eof
                         if peek() == '' then
-                            generateError("Expected `]"..string.rep('=', equalsCount).."]` near <eof>.", 3)
+                            generateError("Expected ']"..string.rep('=', equalsCount).."]' near <eof>.", 3)
                         end
 
                         --check for the end
@@ -543,7 +549,7 @@ local function LexLua(src)
                 if contents then
                     toEmit = {Type = 'String', Data = all, Constant = contents}
                 else
-                    generateError("Unexpected Symbol `"..c.."` in source.", 2)
+                    generateError("Unexpected Symbol '"..c.."' in source.", 2)
                 end
             end
 
@@ -683,7 +689,7 @@ local function ParseLua(src)
                 if line:sub(-1,-1) == '\n' then line = line:sub(1,-2) end
                 lineNum = lineNum+1
                 if lineNum == tok:Peek().Line then
-                    err = err..">> `"..line:gsub('\t','    ').."`\n"
+                    err = err..">> '"..line:gsub('\t','    ').."'\n"
                     for i = 1, tok:Peek().Char do
                         local c = line:sub(i,i)
                         if c == '\t' then
@@ -717,7 +723,7 @@ local function ParseLua(src)
     local function ParseFunctionArgsAndBody(scope, tokenList)
         local funcScope = CreateScope(scope)
         if not tok:ConsumeSymbol('(', tokenList) then
-            return false, GenerateError("`(` expected.")
+            return false, GenerateError("'(' expected.")
         end
 
         --arg list
@@ -731,17 +737,17 @@ local function ParseLua(src)
                     if tok:ConsumeSymbol(')', tokenList) then
                         break
                     else
-                        return false, GenerateError("`)` expected.")
+                        return false, GenerateError("')' expected.")
                     end
                 end
             elseif tok:ConsumeSymbol('...', tokenList) then
                 isVarArg = true
                 if not tok:ConsumeSymbol(')', tokenList) then
-                    return false, GenerateError("`...` must be the last argument of a function.")
+                    return false, GenerateError("'...' must be the last argument of a function.")
                 end
                 break
             else
-                return false, GenerateError("Argument name or `...` expected")
+                return false, GenerateError("Argument name or '...' expected")
             end
         end
 
@@ -751,7 +757,7 @@ local function ParseLua(src)
 
         --end
         if not tok:ConsumeKeyword('end', tokenList) then
-            return false, GenerateError("`end` expected after function body")
+            return false, GenerateError("'end' expected after function body")
         end
         local nodeFunc = {}
         nodeFunc.AstType   = 'Function'
@@ -772,7 +778,7 @@ local function ParseLua(src)
             local st, ex = ParseExpr(scope)
             if not st then return false, ex end
             if not tok:ConsumeSymbol(')', tokenList) then
-                return false, GenerateError("`)` Expected.")
+                return false, GenerateError("')' Expected.")
             end
             if false then
                 --save the information about parenthesized expressions somewhere
@@ -835,7 +841,7 @@ local function ParseLua(src)
                 local st, ex = ParseExpr(scope)
                 if not st then return false, ex end
                 if not tok:ConsumeSymbol(']', tokenList) then
-                    return false, GenerateError("`]` expected.")
+                    return false, GenerateError("']' expected.")
                 end
                 local nodeIndex = {}
                 nodeIndex.AstType  = 'IndexExpr'
@@ -855,7 +861,7 @@ local function ParseLua(src)
                         if tok:ConsumeSymbol(')', tokenList) then
                             break
                         else
-                            return false, GenerateError("`)` Expected.")
+                            return false, GenerateError("')' Expected.")
                         end
                     end
                 end
@@ -949,10 +955,10 @@ local function ParseLua(src)
                         return false, GenerateError("Key Expression Expected")
                     end
                     if not tok:ConsumeSymbol(']', tokenList) then
-                        return false, GenerateError("`]` Expected")
+                        return false, GenerateError("']' Expected")
                     end
                     if not tok:ConsumeSymbol('=', tokenList) then
-                        return false, GenerateError("`=` Expected")
+                        return false, GenerateError("'=' Expected")
                     end
                     local st, value = ParseExpr(scope)
                     if not st then
@@ -971,7 +977,7 @@ local function ParseLua(src)
                         --we are a key
                         local key = tok:Get(tokenList)
                         if not tok:ConsumeSymbol('=', tokenList) then
-                            return false, GenerateError("`=` Expected")
+                            return false, GenerateError("'=' Expected")
                         end
                         local st, value = ParseExpr(scope)
                         if not st then
@@ -1015,7 +1021,7 @@ local function ParseLua(src)
                 elseif tok:ConsumeSymbol('}', tokenList) then
                     break
                 else
-                    return false, GenerateError("`}` or table entry Expected")
+                    return false, GenerateError("'}' or table entry Expected")
                 end
             end
             v.Tokens  = tokenList
@@ -1115,11 +1121,12 @@ local function ParseLua(src)
         local tokenList = {}
         local opcode_tok
 
-        local function emit_call(func_name, args_expr)
+        local function emit_call(func_name, args_expr, white)
+            if not white then white = opcode_tok.LeadingWhite end
             local c,l = opcode_tok.Char, opcode_tok.Line
             local op_var = {
                 AstType = 'VarExpr', Name = func_name, Variable = { IsGlobal=true, Name=func_name, Scope=CreateScope(scope) }, Tokens = {
-                    { LeadingWhite = opcode_tok.LeadingWhite, Type='Ident', Data=func_name, Char=c, Line=l, Print=function() return '<Ident   '..func_name..' >' end },
+                    { LeadingWhite = white, Type='Ident', Data=func_name, Char=c, Line=l, Print=function() return '<Ident   '..func_name..' >' end },
                 }
             }
             local exp_call = {
@@ -1155,6 +1162,34 @@ local function ParseLua(src)
             label_name = as_string_expr(label_name, label_name.Data)
             stat = emit_call(is_local and 'label_local' or 'label', label_name)
         end end
+
+        -- new statements
+        if not stat then
+            local pagestat = function(fpage)
+                opcode_tok = tokenList[1]
+                local st, nodeBlock = ParseStatementList(scope)
+                if not st then return false, nodeBlock end
+                if not tok:ConsumeKeyword('end', tokenList) then
+                    return false, GenerateError("'end' expected.")
+                end
+
+                local nodeDoStat = {}
+                nodeDoStat.AstType = 'DoStatement'
+                nodeDoStat.Body    = nodeBlock
+                nodeDoStat.Tokens  = tokenList
+                stat = nodeDoStat
+
+                tokenList[1].Data = 'do'
+
+                local space = {{ Char=opcode_tok.Char, Line=opcode_tok.Line, Data=' ', Type='Whitespace' }}
+                local opencall,closecall = emit_call(fpage,nil,space),emit_call('endpage',nil,space)
+                table.insert(nodeBlock.Body, 1, opencall)
+                table.insert(nodeBlock.Body, closecall)
+            end
+            if tok:ConsumeKeyword('samepage', tokenList) then pagestat('samepage')
+            elseif tok:ConsumeKeyword('crosspage', tokenList) then pagestat('crosspage')
+            end
+        end
 
         -- 6502 opcodes
         if not stat then
@@ -1237,7 +1272,7 @@ local function ParseLua(src)
                 local st, nodeCond = ParseExpr(scope)
                 if not st then return false, nodeCond end
                 if not tok:ConsumeKeyword('then', tokenList) then
-                    return false, GenerateError("`then` expected.")
+                    return false, GenerateError("'then' expected.")
                 end
                 local st, nodeBody = ParseStatementList(scope)
                 if not st then return false, nodeBody end
@@ -1258,7 +1293,7 @@ local function ParseLua(src)
 
             --end
             if not tok:ConsumeKeyword('end', tokenList) then
-                return false, GenerateError("`end` expected.")
+                return false, GenerateError("'end' expected.")
             end
 
             nodeIfStat.Tokens = tokenList
@@ -1275,7 +1310,7 @@ local function ParseLua(src)
 
             --do
             if not tok:ConsumeKeyword('do', tokenList) then
-                return false, GenerateError("`do` expected.")
+                return false, GenerateError("'do' expected.")
             end
 
             --body
@@ -1284,7 +1319,7 @@ local function ParseLua(src)
 
             --end
             if not tok:ConsumeKeyword('end', tokenList) then
-                return false, GenerateError("`end` expected.")
+                return false, GenerateError("'end' expected.")
             end
 
             --return
@@ -1298,7 +1333,7 @@ local function ParseLua(src)
             local st, nodeBlock = ParseStatementList(scope)
             if not st then return false, nodeBlock end
             if not tok:ConsumeKeyword('end', tokenList) then
-                return false, GenerateError("`end` expected.")
+                return false, GenerateError("'end' expected.")
             end
 
             local nodeDoStat = {}
@@ -1321,7 +1356,7 @@ local function ParseLua(src)
                 local st, startEx = ParseExpr(scope)
                 if not st then return false, startEx end
                 if not tok:ConsumeSymbol(',', tokenList) then
-                    return false, GenerateError("`,` Expected")
+                    return false, GenerateError("',' Expected")
                 end
                 local st, endEx = ParseExpr(scope)
                 if not st then return false, endEx end
@@ -1331,13 +1366,13 @@ local function ParseLua(src)
                     if not st then return false, stepEx end
                 end
                 if not tok:ConsumeKeyword('do', tokenList) then
-                    return false, GenerateError("`do` expected")
+                    return false, GenerateError("'do' expected")
                 end
                 --
                 local st, body = ParseStatementList(forScope)
                 if not st then return false, body end
                 if not tok:ConsumeKeyword('end', tokenList) then
-                    return false, GenerateError("`end` expected")
+                    return false, GenerateError("'end' expected")
                 end
                 --
                 local nodeFor = {}
@@ -1362,7 +1397,7 @@ local function ParseLua(src)
                     varList[#varList+1] = forScope:CreateLocal(tok:Get(tokenList).Data)
                 end
                 if not tok:ConsumeKeyword('in', tokenList) then
-                    return false, GenerateError("`in` expected.")
+                    return false, GenerateError("'in' expected.")
                 end
                 local generators = {}
                 local st, firstGenerator = ParseExpr(scope)
@@ -1374,12 +1409,12 @@ local function ParseLua(src)
                     generators[#generators+1] = gen
                 end
                 if not tok:ConsumeKeyword('do', tokenList) then
-                    return false, GenerateError("`do` expected.")
+                    return false, GenerateError("'do' expected.")
                 end
                 local st, body = ParseStatementList(forScope)
                 if not st then return false, body end
                 if not tok:ConsumeKeyword('end', tokenList) then
-                    return false, GenerateError("`end` expected.")
+                    return false, GenerateError("'end' expected.")
                 end
                 --
                 local nodeFor = {}
@@ -1397,7 +1432,7 @@ local function ParseLua(src)
             if not st then return false, body end
             --
             if not tok:ConsumeKeyword('until', tokenList) then
-                return false, GenerateError("`until` expected.")
+                return false, GenerateError("'until' expected.")
             end
             -- FIX: Used to parse in parent scope
             -- Now parses in repeat scope
@@ -1483,7 +1518,7 @@ local function ParseLua(src)
             end
             local label = tok:Get(tokenList).Data
             if not tok:ConsumeSymbol('::', tokenList) then
-                return false, GenerateError("`::` expected")
+                return false, GenerateError("'::' expected")
             end
             local nodeLabel = {}
             nodeLabel.AstType = 'LabelStatement'
@@ -1551,7 +1586,7 @@ local function ParseLua(src)
 
                 --equals
                 if not tok:ConsumeSymbol('=', tokenList) then
-                    return false, GenerateError("`=` Expected.")
+                    return false, GenerateError("'=' Expected.")
                 end
 
                 --rhs

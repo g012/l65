@@ -29,6 +29,7 @@ section "waitForIntim" --alt short syntax when no other option: @@waitForIntim ?
     ldx #0b1101
     ldy #0xAB - 16 + 0b11011 & 3 | 6 ~ 0xf >> ~3 << 1 // 5
 
+    samepage
     lda #0xac
     lda #INTIM
     lda 0xbeef
@@ -38,6 +39,7 @@ section "waitForIntim" --alt short syntax when no other option: @@waitForIntim ?
     lda INTIM,y
     lda (INTIM,x)
     lda (INTIM),y
+    end
 
     asl
     asl INTIM

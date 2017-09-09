@@ -2,6 +2,7 @@ local M = {}
 
 local symbols={} M.symbols=symbols
 local locations={} M.locations=locations
+local stats={} M.stats=stats
 
 local byte_normalize = function(v)
     if v < -128 or v > 255 then error("value out of byte range: " .. v) end
@@ -20,13 +21,14 @@ local byte_emit = function(v, bin)
 end
 local word_emit = function(v, bin)
     assert(v >=0 and v <= 0xffff)
-    bin[#bin+1] = 0xff & (v % 0x100)
-    bin[#bin+1] = 0xff & (v // 0x100)
+    bin[#bin+1] = v & 0xff
+    bin[#bin+1] = (v>>8) & 0xff
 end
 
 M.link = function()
-    assert(not location.unused, "can't link twice")
+    assert(not stats.unused, "can't link twice")
 
+    stats.unused = 0
     for _,location in ipairs(locations) do
         local sections = location.sections
 
@@ -124,13 +126,14 @@ M.link = function()
         local unused = 0
         for _,chunk in ipairs(location.chunks) do unused = unused + chunk.size - chunk.start end
         location.unused = unused
+        stats.unused = stats.unused + unused
 
     end
 end
 
 M.genbin = function(filler)
     if not filler then filler = 0xff end
-    if not location.unused then M.link() end
+    if not stats.unused then M.link() end
     local bin = {}
     local ins = table.insert
     table.sort(locations, function(a,b) return a.start < b.start end)
@@ -204,6 +207,13 @@ M.section = function(t)
             -- TODO
         end
     end
+end
+
+M.samepage = function()
+end
+M.crosspage = function()
+end
+M.endpage = function()
 end
 
 M.byte = function(...)
