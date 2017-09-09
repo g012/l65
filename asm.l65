@@ -21,7 +21,8 @@ lda = 5 if lda < 6 then print('yep') end
 
 --section{ "toto", align = 256, offset = 16 }
 --section{ "toto", org = 0xf100 }
-section "waitForIntim" --alt short syntax when no other option: @@waitForIntim ?
+--section "waitForIntim"
+@@waitForIntim --alt short syntax when no other option
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
     --bne "waitForIntim"
@@ -30,15 +31,15 @@ section "waitForIntim" --alt short syntax when no other option: @@waitForIntim ?
     ldy #0xAB - 16 + 0b11011 & 3 | 6 ~ 0xf >> ~3 << 1 // 5
 
     samepage
-    lda #0xac
-    lda #INTIM
-    lda 0xbeef
-    lda INTIM
-    lda.w INTIM
-    lda INTIM,x
-    lda INTIM,y
-    lda (INTIM,x)
-    lda (INTIM),y
+        lda #0xac
+        lda #INTIM
+        lda 0xbeef
+        lda INTIM
+        lda.w INTIM
+        lda INTIM,x
+        lda INTIM,y
+        lda (INTIM,x)
+        lda (INTIM),y
     end
 
     asl

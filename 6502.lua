@@ -4,26 +4,7 @@ local symbols={} M.symbols=symbols
 local locations={} M.locations=locations
 local stats={} M.stats=stats
 
-local byte_normalize = function(v)
-    if v < -128 or v > 255 then error("value out of byte range: " .. v) end
-    if v < 0 then v = v + 0x100 end
-    return v & 0xff
-end
-local word_normalize = function(v)
-    if v < -32768 or v > 65535 then error("value out of word range: " .. v) end
-    if v < 0 then v = v + 0x10000 end
-    return v & 0xffff
-end
-
-local byte_emit = function(v, bin)
-    assert(v >=0 and v <= 0xff)
-    bin[#bin+1] = v
-end
-local word_emit = function(v, bin)
-    assert(v >=0 and v <= 0xffff)
-    bin[#bin+1] = v & 0xff
-    bin[#bin+1] = (v>>8) & 0xff
-end
+local section_current -- cache of last location's last section, for faster access
 
 M.link = function()
     assert(not stats.unused, "can't link twice")
@@ -199,39 +180,63 @@ M.section = function(t)
         if section.offset and not section.align then error("section " .. section.label .. " has offset, but no align") end
     end
     table.insert(location[#locations].sections, section)
+    section_current = section
     section.constraints = {}
     section.instructions = {}
     function section:compute_size()
-        self.size = 0
-        for _,instruction in ipairs(self.instructions) do
-            -- TODO
+        local instructinos = self.instructions
+        local size = 0
+        for _,instruction in ipairs(instructions) do
+            instruction.offset = size
+            size = size + #instruction.data
         end
-        -- TODO update start and finish fields of constraints to actual addresses
+        self.size = size
+        -- set start and finish fields of constraints
+        for _,constraint in ipairs(self.constraints) do
+            constraint.start = instructions[constraint.from].offset
+            constraint.finish =  instructions[constraint.to].offset
+        end
     end
 end
 
 M.samepage = function()
-    local section = sections[#sections]
-    table.insert(section.constraints, { type='samepage', start=#section.instructions })
+    local section = section_current
+    table.insert(section.constraints, { type='samepage', from=#section.instructions+1 })
 end
 M.crosspage = function()
-    local section = sections[#sections]
-    table.insert(section.constraints, { type='crosspage', start=#section.instructions })
+    local section = section_current
+    table.insert(section.constraints, { type='crosspage', from=#section.instructions+1 })
 end
 M.endpage = function()
-    local section = sections[#sections]
+    local section = section_current
     local constraint = section.constraints[#section.constraints]
     assert(constraint and not constraint.finish, "closing constraint, but no constraint is open")
-    constraint.finish = #section.instructions
+    constraint.to = #section.instructions
+end
+
+local byte_normalize = function(v)
+    if v < -128 or v > 255 then error("value out of byte range: " .. v) end
+    if v < 0 then v = v + 0x100 end
+    return v & 0xff
+end
+local word_normalize = function(v)
+    if v < -32768 or v > 65535 then error("value out of word range: " .. v) end
+    if v < 0 then v = v + 0x10000 end
+    return v & 0xffff
 end
 
 M.byte = function(...)
     local data = {...}
-    for _,v in ipairs(data) do byte_emit(byte_normalize(v)) end
+    for i=1,#data do data[i] = byte_normalize(data[i]) end
+    table.insert(section_current.instructions, { data=data })
 end
 M.word = function(...)
-    local data = {...}
-    for _,v in ipairs(data) do word_emit(word_normalize(v)) end
+    local src,data = {...}, {}
+    for i=1,#src do
+        local v = word_normalize(data[i])
+        table.insert(data, v & 0xff) table.insert(data, v >> 8)
+    end
+    table.insert(section_current.instructions, { data=data })
 end
 
 return M

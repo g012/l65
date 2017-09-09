@@ -538,7 +538,11 @@ local function LexLua(src)
                 toEmit = {Type = 'Symbol', Data = consume('/') and '//' or '/'}
 
             elseif syntax6502_on and consume('@') then
-                toEmit = {Type = 'Symbol', Data = '@'}
+                if consume('@') then
+                    toEmit = {Type = 'Symbol', Data = '@@'}
+                else
+                    toEmit = {Type = 'Symbol', Data = '@'}
+                end
 
             elseif Symbols[c] then
                 get()
@@ -1153,7 +1157,13 @@ local function ParseLua(src)
 
         -- label declarations
         if not stat then
-        if tok:ConsumeSymbol('@', tokenList) then
+        if tok:ConsumeSymbol('@@', tokenList) then
+            if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
+            local label_name = tok:Get(tokenList)
+            opcode_tok = tokenList[1]
+            label_name = as_string_expr(label_name, label_name.Data)
+            stat = emit_call('section', label_name)
+        elseif tok:ConsumeSymbol('@', tokenList) then
             local is_local
             if tok:ConsumeSymbol('.', tokenList) then is_local = true end
             if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
