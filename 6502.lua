@@ -1,8 +1,7 @@
 local M = {}
 
-local symbols = {}
-local sections = {}
-local locations = {}
+local symbols={} M.symbols=symbols
+local locations={} M.locations=locations
 
 local byte_normalize = function(v)
     if v < -128 or v > 255 then error("value out of byte range: " .. v) end
@@ -25,8 +24,11 @@ local word_emit = function(v, bin)
     bin[#bin+1] = 0xff & (v // 0x100)
 end
 
-local link = function()
+M.link = function()
+    assert(not location.unused, "can't link twice")
+
     for _,location in ipairs(locations) do
+        local sections = location.sections
 
         local chunk_reserve = function(chunk_ix, chunk, start, size)
             if start == chunk.start then
@@ -118,7 +120,65 @@ local link = function()
             ::chunk_located::
         end
 
+        -- unused space stats
+        local unused = 0
+        for _,chunk in ipairs(location.chunks) do unused = unused + chunk.size - chunk.start end
+        location.unused = unused
+
     end
+end
+
+M.genbin = function(filler)
+    if not filler then filler = 0xff end
+    if not location.unused then M.link() end
+    local bin = {}
+    local ins = table.insert
+    table.sort(locations, function(a,b) return a.start < b.start end)
+    local position = 0
+    for _,location in ipairs(locations) do
+        if location.start < position then
+            error(string.format("location [%04x,%04x] overlaps another",
+                location.start, math.type(location.size) == 'integer' and (location.size + location.start) or 0xffff))
+        end
+        for i=position,location.start do ins(bin, filler) end
+        position = location.start
+        local sections = location.sections
+        table.sort(sections, function(a,b) return a.start < b.start end)
+        for _,section in sections do
+            assert(section.org >= position)
+            for i=position,section.org do ins(bin, filler) end
+            for _,instruction in ipairs(section.instructions) do
+                -- TODO
+            end
+        end
+        if math.type(location.size) == 'integer' then
+            local endpos = location.size+location.start
+            for i=position,endpos do ins(bin, filler) end
+            position = endpos
+        end
+    end
+    return bin
+end
+
+M.writebin = function(filename, bin)
+    if not filename then filename = 'main.bin' end
+    if not bin then bin = M.genbin() end
+    local f = assert(io.open(filename, "wb"), "failed to open " .. filename .. " for writing")
+    local sconv,s=string.char,{} for i=1,#bin do s[i] = sconv(bin[i]) end
+    f:write(table.concat(s))
+    f:close()
+end
+
+M.writesym = function(filename)
+    if not filename then filename = 'main.sym' end
+    local f = assert(io.open(filename, "wb"), "failed to open " .. filename .. " for writing")
+    table.sort(symbols)
+    local ins,fmt,rep = table.insert,string.format,string.rep
+    local s ={'--- Symbol List'}
+    for k,v in pairs(symbols) do ins(s, fmt("%s%s %04x", k, rep(' ',24-#k), type(v)=='table' and v.org or v)) end
+    s[#s+1] = '--- End of Symbol List.'
+    f:write(table.concat(s, '\n'))
+    f:close()
 end
 
 M.location = function(start, finish)
@@ -135,6 +195,7 @@ M.section = function(t)
         section=t section.label=t[1] section[1]=nil
         if section.offset and not section.align then error("section " .. section.label .. " has offset, but no align") end
     end
+    table.insert(location[#locations].sections, section)
     section.constraints = {}
     section.instructions = {}
     function section:compute_size()
