@@ -4,6 +4,10 @@ local symbols={} M.symbols=symbols
 local locations={} M.locations=locations
 local stats={} M.stats=stats
 
+M.__index = M
+symbols.__index = symbols
+setmetatable(M, symbols)
+
 local section_current -- cache of last location's last section, for faster access
 
 M.link = function()
@@ -191,7 +195,6 @@ M.section = function(t)
             size = size + #instruction.data
         end
         self.size = size
-        -- set start and finish fields of constraints
         for _,constraint in ipairs(self.constraints) do
             constraint.start = instructions[constraint.from].offset
             constraint.finish =  instructions[constraint.to].offset

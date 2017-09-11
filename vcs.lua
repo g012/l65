@@ -1,6 +1,5 @@
 -- set cpu to 6502
 cpu = require "6502"
-cpu.__index = cpu
 setmetatable(_ENV, cpu)
 
 vcs = {
@@ -82,8 +81,5 @@ vcs = {
 }
 do
     local symbols = cpu.symbols
-    for k,v in pairs(vcs) do
-        _ENV[k] = v
-        symbols[k] = v
-    end
+    for k,v in pairs(vcs) do symbols[k] = v end
 end

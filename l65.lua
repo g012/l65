@@ -544,6 +544,9 @@ local function LexLua(src)
                     toEmit = {Type = 'Symbol', Data = '@'}
                 end
 
+            elseif syntax6502_on and consume('\\') then
+                toEmit = {Type = 'Symbol', Data = '\\'}
+
             elseif Symbols[c] then
                 get()
                 toEmit = {Type = 'Symbol', Data = c}
@@ -813,6 +816,7 @@ local function ParseLua(src)
             nodePrimExp.Tokens    = tokenList
             --
             return true, nodePrimExp
+
         else
             return false, GenerateError("primary expression expected")
         end
@@ -1036,6 +1040,45 @@ local function ParseLua(src)
             if not st then return false, func end
             --
             func.IsLocal = true
+            return true, func
+
+        elseif tok:ConsumeSymbol('\\', tokenList) then -- short lambdas \params(expr)
+            local funcScope = CreateScope(scope)
+
+            local argList = {}
+            if not tok:ConsumeSymbol('(', tokenList) then while true do
+                if not tok:Is('Ident') then return false, GenerateError("identifier expected") end
+                argList[#argList+1] = funcScope:CreateLocal(tok:Get(tokenList).Data)
+                if tok:ConsumeSymbol('(', tokenList) then break end
+                if not tok:ConsumeSymbol(',', tokenList) then return false, GenerateError("'(' expected") end
+            end end
+            --local st, body = ParseStatementList(funcScope)
+            local st, body = ParseExpr(funcScope)
+            if not st then return false, body end
+            if not tok:ConsumeSymbol(')', tokenList) then return false, GenerateError("')' expected after lambda body") end
+
+            local last_tok = body.Tokens[1]
+            local last_char,last_line = last_tok.Char,last_tok.Line
+            local space = { Char=last_char, Line=last_line, Data=' ', Type='Whitespace' }
+            local ret = { AstType='ReturnStatement', Arguments={body}, TrailingWhite=true, Tokens={
+                { Char=last_char, Line=last_line, Print=function() return '<Keyword  return >' end, LeadingWhite={space}, Type='Keyword', Data='return' }
+            }}
+            local statList = { AstType='Statlist', Scope=CreateScope(funcScope), Tokens={}, Body={ret} }
+            
+            local tok_first = tokenList[1]
+            tok_first.Type = 'Keyword'
+            tok_first.Data = 'function'
+            tok_first.Print=function() return '<Keyword  function >' end
+
+            local ntokl = {}
+            local paren_ix = 2 + math.max(0, #argList*2-1)
+            table.insert(ntokl, tokenList[1])
+            table.insert(ntokl, tokenList[paren_ix])
+            for i=2,paren_ix-1 do table.insert(ntokl, tokenList[i]) end
+            table.insert(ntokl, tokenList[#tokenList])
+            table.insert(ntokl, { Char=last_char, Line=last_line, Type='Keyword', Data='end', Print=function() return '<Keyword  end >' end, LeadingWhite={space} })
+
+            local func = { AstType='Function', Scope=funcScope, Arguments=argList, Body=statList, VarArg=false, Tokens=ntokl, isLocal=true }
             return true, func
 
         else
@@ -1984,6 +2027,7 @@ local function Format65(ast)
 
         elseif statement.AstType == 'ReturnStatement' then
             appendNextToken( "return" )
+            if statement.TrailingWhite then out:appendStr(' ') end
             for i = 1, #statement.Arguments do
                 formatExpr(statement.Arguments[i])
                 appendComma( i ~= #statement.Arguments )
