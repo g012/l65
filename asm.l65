@@ -57,15 +57,22 @@ ptr_table("ptrs", message, data, 0)
     ldx #0xf0
     ldx #0b1101
     ldy #0xAB - 16 + 0b11011 & 3 | 6 ~ 0xf >> ~3 << 1 // 5
-    --[[
+
     lda data
     lda data,5
-    lda data,function(final_address) return final_address & 3 end
-    lda data,\a(a&3)
+    lda data,5,x
+    lda data,5,y
+    lda data+3,12
+    lda data+3,12,x
+    lda data+3,12,y
+    local f = \c(data*c) v=5 lda f,v v=12 lda f,v
     lda (INTIM,5,x)
+    lda (INTIM,\a(a+2),x)
     lda (INTIM,5),y
-    -- parse value list, si #list > 1 && list[#list-1] == 'x' ...
-    ]]
+    lda (INTIM,\a(a+2)),y
+    jmp (INTIM)
+    jmp (INTIM,12)
+    jmp (INTIM,\a(a-4))
 
     samepage
         lda #0xac
