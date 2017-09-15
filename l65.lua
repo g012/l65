@@ -32,7 +32,7 @@ local Keywords = lookupify{
     'return', 'then', 'true', 'until', 'while',
 };
 
--- 6502 opcodes
+-- 6502
 local Keywords_control = {
     -- control keywords
     'samepage', 'crosspage',
@@ -1173,15 +1173,38 @@ local function ParseLua(src)
             local tok1 = tokenList[1]
             if not params.func_white then params.func_white = tok1.LeadingWhite end
             local c,l = tok1.Char, tok1.Line
+            local p = function(t,n) return function() return '<' .. t .. string.rep(' ', 7-#t) .. ' ' .. n .. ' >' end end
+            local t = function(t,s,w) return { Type=t, Data=s, Print=p(t,s), Char=c, Line=l, LeadingWhite=w or {} } end
+            local space = { Char=c, Line=l, Data=' ', Type='Whitespace' }
             local op_var = {
-                AstType='VarExpr', Name=name, Variable={ IsGlobal=true, Name=name, Scope=CreateScope(scope) }, Tokens = {
-                    { LeadingWhite = params.func_white, Type='Ident', Data=name, Char=c, Line=l, Print=function() return '<Ident   '..name..' >' end },
-                }
+                AstType='VarExpr', Name=name, Variable={ IsGlobal=true, Name=name, Scope=CreateScope(scope) }, Tokens = { t('Ident', name, params.func_white) }
             }
+            if #args > 0 then
+                local inner_call_scope = CreateScope(op_var.Variable.Scope)
+                local inner_add = {
+                    AstType='BinopExpr', Op='+', OperatorPrecedence=10, Tokens={ t('Symbol', '+') },
+                    Lhs = {
+                        AstType='VarExpr', Name='o', Variable={ IsGlobal=false, Name='o', Scope=inner_call_scope }, Tokens={ t('Ident', 'o', {space}) }
+                    },
+                    Rhs = {
+                        AstType='Parentheses', Inner=args[1], Tokens={ t('Symbol', '('), t('Symbol', ')') }
+                    }
+                }
+                local inner_call_body = {
+                    AstType='StatList', Scope=CreateScope(inner_call_scope), Tokens={}, Body={
+                        { AstType='ReturnStatement', Arguments={inner_add}, Tokens={ t('Keyword', 'return', {space}) } }
+                    }
+                }
+                local inner_call = {
+                    AstType='Function', VarArg=false, IsLocal=true, Scope=inner_call_scope, Body=inner_call_body,
+                    Arguments={ { IsGlobal=false, Name='o', Scope=inner_call_scope } },
+                    Tokens={ t('Keyword', 'function'), t('Symbol', '('), t('Ident', 'o'), t('Symbol', ')'), t('Keyword', 'end', {space}) }
+                }
+                args[1] = inner_call
+            end
             local exp_call = {
                 AstType = 'CallExpr', Base = op_var, Arguments = args, Tokens = {
-                    { LeadingWhite = params.paren_open_white or {}, Type='Symbol', Data='(', Char=c, Line=l, Print=function() return '<Symbol   ( >' end },
-                    { LeadingWhite = params.paren_close_white or {}, Type='Symbol', Data=')', Char=c, Line=l, Print=function() return '<Symbol   ) >' end },
+                    t('Symbol', '(', params.paren_open_white), t('Symbol', ')', params.paren_close_white)
                 }
             }
             do
@@ -1261,9 +1284,11 @@ local function ParseLua(src)
                     end
                     stat = emit_call{name=op .. "_relative" .. (is_local and '_local' or ''), args={expr}} break
                 end
-                if opcode_immediate[op] and tok:ConsumeSymbol('#') then
+                if opcode_immediate[op] and tok:ConsumeSymbol('#', tokenList) then
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
-                    stat = emit_call{name=op .. "_immediate", args={expr}} break
+                    local paren_open_whites = {}
+                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
+                    stat = emit_call{name=op .. "_immediate", args={expr}, paren_open_white=paren_open_whites} break
                 end
                 if (opcode_indirect[op] or opcode_indirect_x[op] or opcode_indirect_y[op]) and tok:ConsumeSymbol('(', tokenList) then
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
