@@ -23,7 +23,7 @@ local HexDigits = lookupify{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
                             'A', 'a', 'B', 'b', 'C', 'c', 'D', 'd', 'E', 'e', 'F', 'f'}
 local BinDigits = lookupify{'0', '1'}
 
-local Symbols = lookupify{'+', '-', '*', '/', '^', '%', ',', '{', '}', '[', ']', '(', ')', ';', '#', '&', '|'}
+local Symbols = lookupify{'+', '-', '*', '/', '^', '%', ',', '{', '}', '[', ']', '(', ')', ';', '#', '&', '|', '!'}
 
 local Keywords = lookupify{
     'and', 'break', 'do', 'else', 'elseif',
@@ -59,6 +59,12 @@ local function syntax6502(on)
     lookupify(Keywords_6502, Keywords, not on)
 end
 syntax6502(true)
+
+local opcode_arg_encapsulate_on
+local function opcode_arg_encapsulate(on)
+    opcode_arg_encapsulate_on = not opcode_arg_encapsulate_on
+end
+opcode_arg_encapsulate(true)
 
 local opcode_implied = lookupify{
     'asl', 'brk', 'clc', 'cld', 'cli', 'clv', 'dex', 'dey',
@@ -414,17 +420,22 @@ local function LexLua(src)
             --pragma
             if char == 1 and peek_n(7) == '#pragma' then
                 get_n(7)
-                local dat = get_word()
-                if dat == 'syntax6502' then
-                    local opt = get_word()
-                    if opt == 'on' then syntax6502(true)
-                    elseif opt == 'off' then syntax6502(false)
-                    else generateError("invalid option for pragma syntax6502, expected: [on,off]")
+                local dat,opt = get_word()
+                local onoff = function(f)
+                    opt = get_word()
+                    if opt == 'on' then f(true)
+                    elseif opt == 'off' then f(false)
+                    else generateError("invalid option for pragma " .. dat .. ", expected: [on,off]")
                     end
-                else
-                    generateError("unknown pragma: " .. dat)
                 end
-                toEmit = {Type = 'Symbol', Data = ';'}
+                if dat == 'syntax6502' then
+                    onoff(syntax6502)
+                    toEmit = {Type = 'Symbol', Data = ';'}
+                elseif dat == 'encapsulate' then
+                    onoff(function() end)
+                    toEmit = {Type = 'Keyword', Data = 'encapsulate_' .. opt}
+                else generateError("unknown pragma: " .. dat)
+                end
 
             --branch on type
             elseif c == '' then
@@ -1167,6 +1178,7 @@ local function ParseLua(src)
         local stat = nil
         local tokenList = {}
         local commaTokenList = {}
+        local inverse_encapsulate
 
         local function emit_call(params)
             local name,args = params.name,params.args or {}
@@ -1179,7 +1191,7 @@ local function ParseLua(src)
             local op_var = {
                 AstType='VarExpr', Name=name, Variable={ IsGlobal=true, Name=name, Scope=CreateScope(scope) }, Tokens = { t('Ident', name, params.func_white) }
             }
-            if #args > 0 then
+            if #args > 0 and ( (opcode_arg_encapsulate_on and not inverse_encapsulate) or (not opcode_arg_encapsulate_on and inverse_encapsulate) ) and args[1].AstType ~= 'Function' then
                 local inner_call_scope = CreateScope(op_var.Variable.Scope)
                 local inner_add = {
                     AstType='BinopExpr', Op='+', OperatorPrecedence=10, Tokens={ t('Symbol', '+') },
@@ -1228,6 +1240,11 @@ local function ParseLua(src)
             return { AstType = 'StringExpr', Value = v, Tokens = {v} }
         end
 
+        -- parser pragmas
+        if tok:ConsumeKeyword('encapsulate_on') then opcode_arg_encapsulate(true)
+        elseif tok:ConsumeKeyword('encapsulate_off') then opcode_arg_encapsulate(false)
+        end
+
         -- label declarations
         if not stat then
         if tok:ConsumeSymbol('@@', tokenList) then
@@ -1236,12 +1253,10 @@ local function ParseLua(src)
             label_name = as_string_expr(label_name, label_name.Data)
             stat = emit_call{name = 'section', args = {label_name}}
         elseif tok:ConsumeSymbol('@', tokenList) then
-            local is_local
-            if tok:ConsumeSymbol('.', tokenList) then is_local = true end
             if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
             local label_name = tok:Get(tokenList)
             label_name = as_string_expr(label_name, label_name.Data)
-            stat = emit_call{name = is_local and 'label_local' or 'label', args = {label_name}}
+            stat = emit_call{name = 'label', args = {label_name}}
         end end
 
         -- new statements
@@ -1277,22 +1292,25 @@ local function ParseLua(src)
         for _,op in pairs(Keywords_6502) do
             if tok:ConsumeKeyword(op, tokenList) then
                 if opcode_relative[op] then
-                    if tok:ConsumeSymbol('.', tokenList) then is_local = true end
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     if expr.AstType == 'VarExpr' and expr.Variable.IsGlobal then
                         expr = as_string_expr(expr, expr.Name)
                     end
-                    stat = emit_call{name=op .. "_relative" .. (is_local and '_local' or ''), args={expr}} break
+                    stat = emit_call{name=op .. "_relative", args={expr}} break
                 end
                 if opcode_immediate[op] and tok:ConsumeSymbol('#', tokenList) then
+                    if tok:ConsumeSymbol('!', tokenList) then inverse_encapsulate = true end
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     local paren_open_whites = {}
+                    if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
                     for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
                     stat = emit_call{name=op .. "_immediate", args={expr}, paren_open_white=paren_open_whites} break
                 end
                 if (opcode_indirect[op] or opcode_indirect_x[op] or opcode_indirect_y[op]) and tok:ConsumeSymbol('(', tokenList) then
+                    if tok:ConsumeSymbol('!', tokenList) then inverse_encapsulate = true end
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     local paren_open_whites,paren_close_whites,mod_st,mod_expr = {},{}
+                    if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
                     for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
                     if tok:IsSymbol(',') and tok:Peek(1).Data ~= 'x' then
                         tok:Get(tokenList)
@@ -1326,8 +1344,15 @@ local function ParseLua(src)
                     local suffix = ''
                     tok:Save()
                     if tok:ConsumeSymbol('.', tokenList) then
-                        if tok:Get(tokenList).Data == 'w' then suffix = '_nozp'
+                        local t = tok:Get(tokenList).Data
+                        if t == 'w' then suffix = '_nozp'
+                        elseif t == 'b' then suffix = '_zp'
                         else tok:Restore() tok:Save() end
+                    end
+                    local paren_open_whites = {}
+                    if tok:ConsumeSymbol('!', tokenList) then
+                        inverse_encapsulate = true
+                        for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
                     end
                     local st, expr = ParseExpr(scope)
                     if not st then tok:Restore()
@@ -1340,18 +1365,18 @@ local function ParseLua(src)
                         if tok:Peek().Data == 'x' then
                             if not opcode_absolute_x[op] then return false, expr end
                             tok:Get(tokenList)
-                            local paren_whites = {}
-                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_whites, v) end
-                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_whites, v) end
-                            stat = emit_call{name=op .. "_absolute_x" .. suffix, args={expr}, paren_close_white=paren_whites} break
+                            local paren_close_whites = {}
+                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            stat = emit_call{name=op .. "_absolute_x" .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
                             if not opcode_absolute_y[op] then return false, expr end
                             tok:Get(tokenList)
-                            local paren_whites = {}
-                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_whites, v) end
-                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_whites, v) end
-                            stat = emit_call{name=op .. "_absolute_y" .. suffix, args={expr}, paren_close_white=paren_whites} break
+                            local paren_close_whites = {}
+                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            stat = emit_call{name=op .. "_absolute_y" .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         commaTokenList[1] = tokenList[#tokenList]
                         local mod_st, mod_expr = ParseExpr(scope)
@@ -1363,18 +1388,18 @@ local function ParseLua(src)
                         if tok:Peek().Data == 'x' then
                             if not opcode_absolute_x[op] then return false, expr end
                             tok:Get(tokenList)
-                            local paren_whites = {}
-                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_whites, v) end
-                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_whites, v) end
-                            stat = emit_call{name=op .. "_absolute_x" .. suffix, args={expr, mod_expr}, paren_close_white=paren_whites} break
+                            local paren_close_whites = {}
+                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            stat = emit_call{name=op .. "_absolute_x" .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
                             if not opcode_absolute_y[op] then return false, expr end
                             tok:Get(tokenList)
-                            local paren_whites = {}
-                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_whites, v) end
-                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_whites, v) end
-                            stat = emit_call{name=op .. "_absolute_y" .. suffix, args={expr, mod_expr}, paren_close_white=paren_whites} break
+                            local paren_close_whites = {}
+                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            stat = emit_call{name=op .. "_absolute_y" .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
 
                         return false, expr
