@@ -1,6 +1,3 @@
-local g = function(a) return a*3 end
-local f = function(a) return a*3 end
-
 dofile "vcs.lua"
 
 TIM_OVERSCAN    = 50 -- TIM64T,  3200 cycles = ~ 42 scanlines
@@ -32,7 +29,7 @@ end
 
 --@@message byte(4) "test" byte(0)
 
-section("data")
+section(function(o) return o+("data") end)
     do crosspage()
         byte(1, 2) byte(3, 4) endpage()
     end
@@ -50,45 +47,61 @@ ptr_table("ptrs", message, data, 0)
 --section{ "toto", align = 256, offset = 16 }
 --section{ "toto", org = 0xf100 }
 --section "waitForIntim"
-section("waitForIntim") --alt short syntax when no other option
+section(function(o) return o+("waitForIntim") end) --alt short syntax when no other option
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
     --bne "waitForIntim"
-    ldx_immediate(0xf0)
-    ldx_immediate(13)
-    ldy_immediate(0xAB - 16 + 27 & 3 | 6 ~ 0xf >> ~3 << 1 // 5)
-    --[[
-    lda data
-    lda data,5
-    lda data,function(final_address) return final_address & 3 end
-    lda data,\a(a&3)
-    lda (INTIM,5,x)
-    lda (INTIM,5),y
-    -- parse value list, si #list > 1 && list[#list-1] == 'x' ...
-    ]]
+    ldx_immediate (function(o) return o+(0xf0) end)
+    ldx_immediate (function(o) return o+(13) end)
+    ldy_immediate (function(o) return o+(0xAB - 16 + 27 & 3 | 6 ~ 0xf >> ~3 << 1 // 5) end)
+
+    lda_absolute(function(o) return o+( data) end)
+    lda_absolute(function(o) return o+( data) end,5)
+    lda_absolute_x(function(o) return o+( data) end,5)
+    lda_absolute_y(function(o) return o+( data) end,5)
+    lda_absolute(function(o) return o+( data+3) end,12)
+    lda_absolute_x(function(o) return o+( data+3) end,12)
+    lda_absolute_y(function(o) return o+( data+3) end,12)
+    lda_indirect_x (function(o) return o+(INTIM) end,5)
+    lda_indirect_x (function(o) return o+(INTIM) end,function(a) return a+2 end)
+    lda_indirect_y (function(o) return o+(INTIM) end,5)
+    lda_indirect_y (function(o) return o+(INTIM) end,function(a) return a+2 end)
+    jmp_indirect (function(o) return o+(INTIM) end)
+    jmp_indirect (function(o) return o+(INTIM) end,12)
+    jmp_indirect (function(o) return o+(INTIM) end,function(a) return a-4 end)
+
+    lda_absolute( function(c) return data * c end, v)
+    lda_absolute( function(c) return data*c end, v)
+    local f = function(c) return data*c end v=5 lda_absolute(f,v) v=12 lda_absolute(f,v)
+    local g = function() return function(c) return data * c end end
+
+    lda_absolute(g(),v)
+    lda_absolute( f,v)
+    lda_absolute_x (function(o) return o+(_toto+15) end,16)
+    lda_immediate (15)
 
     do samepage()
-        lda_immediate(0xac)
-        lda_immediate(INTIM)
-        lda_absolute( 0xbeef)
-        lda_absolute( INTIM)
-        lda_absolute_nozp( INTIM)
-        lda_absolute_x( INTIM)
-        lda_absolute_x( INTIM)
-        lda_indirect_x(INTIM)
-        lda_indirect_y(INTIM) endpage()
+        lda_immediate (function(o) return o+(0xac) end)
+        lda_immediate (function(o) return o+(INTIM) end)
+        lda_absolute(function(o) return o+( 0xbeef) end)
+        lda_absolute(function(o) return o+( INTIM) end)
+        lda_absolute_nozp(function(o) return o+( INTIM) end)
+        lda_absolute_x(function(o) return o+( INTIM) end)
+        lda_absolute_y(function(o) return o+( INTIM) end)
+        lda_indirect_x (function(o) return o+(INTIM) end)
+        lda_indirect_y (function(o) return o+(INTIM) end) endpage()
     end
 
     asl_implied()
-    asl_absolute( INTIM)
+    asl_absolute(function(o) return o+( INTIM) end)
     asl_implied()
-label_local("toto")
-    bne_relative( "test")
-    bne_relative( "waitForIntim")
-    bne_relative( f())
-    bne_relative_local("toto")
+label(function(o) return o+("_toto") end)
+    bne_relative(function(o) return o+( "test") end)
+    bne_relative(function(o) return o+( "waitForIntim") end)
+    bne_relative(function(o) return o+( f()) end)
+    bne_relative(function(o) return o+( "_toto") end)
 
-    jam_implied() asl_implied() lsr_implied() ldx_immediate(16) ldy_absolute( 0xf0f0)
+    jam_implied() asl_implied() lsr_implied() ldx_immediate (function(o) return o+(16) end) ldy_absolute(function(o) return o+( 0xf0f0) end)
 
     rts_implied()
 
