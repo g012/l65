@@ -35,8 +35,6 @@ M.link = function()
         local position_independent_sections = {}
         local symbols_to_remove = {}
         for ix,section in ipairs(sections) do
-            if symbols[section.label] then error("duplicate symbol: " .. section.label) end
-            symbols[section.label] = section
             section:compute_size()
             if section.size == 0 then
                 sections[ix]=nil
@@ -195,7 +193,10 @@ M.section = function(t)
         if section.offset and not section.align then error("section " .. section.label .. " has offset, but no align") end
     end
     table.insert(location_current.sections, section)
+    if symbols[section.label] then error("duplicate symbol: " .. section.label) end
+    symbols[section.label] = section
     section_current = section
+    section.type = 'section'
     section.constraints = {}
     section.instructions = {}
     function section:compute_size()
@@ -212,6 +213,14 @@ M.section = function(t)
         end
     end
     return section
+end
+
+M.label = function(name)
+    local label = { type='label', label=name }
+    table.insert(section_current.instructions, label)
+    if symbols[name] then error("duplicate symbol: " .. name) end
+    symbols[name] = label
+    return label
 end
 
 M.samepage = function()
@@ -260,22 +269,12 @@ M.charset = function(s, f)
     return t
 end
 
--- byte(...)
--- Declare bytes to go into the binary stream.
--- Each argument can be either:
---  * a number resolving to a valid byte range
---  * a string, converted to bytes using the charset previously defined,
---    or Lua's charset if none was defined
---  * a table, with each entry resolving to a valid byte range
---  * a function, resolving to exactly one valid byte range, evaluated
---    after symbols have been resolved
-M.byte = function(...)
-    local args = {...}
+M.byte_impl = function(args, nrm)
     local data,cs = {},M.cs
     for k,v in ipairs(args) do
         local t = type(v)
         if t == 'number' or t == 'function' then data[#data+1] = v
-        elseif t == 'table' then for _,b in ipairs(t) do data[#data+1] = b end
+        elseif t == 'table' then table.move(v,1,#v,#data+1,data)
         elseif t == 'string' then
             if cs then
                 for _,c in v:gmatch'.' do
@@ -290,22 +289,69 @@ M.byte = function(...)
         else error("unsupported type for byte() argument: " .. t .. ", value: " .. v)
         end
     end
-    local asbin = function(bin)
-        for k,v in ipairs(data) do
+    local asbin = function(b)
+        for _,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
-            data[k] = byte_normalize(v)
+            b[#b+1] = nrm(v)
         end
     end
     table.insert(section_current.instructions, { data=data, size=#data, asbin=asbin })
 end
-
-M.word = function(...)
-    local src,data = {...}, {}
-    for i=1,#src do
-        local v = word_normalize(data[i])
-        table.insert(data, v & 0xff) table.insert(data, v >> 8)
+-- byte(...)
+-- Declare bytes to go into the binary stream.
+-- Each argument can be either:
+--  * a number resolving to a valid range byte
+--  * a string, converted to bytes using the charset previously defined,
+--    or Lua's charset if none was defined
+--  * a table, with each entry resolving to a valid range byte
+--  * a function, resolving to exactly one valid range byte, evaluated
+--    after symbols have been resolved
+M.byte = function(...)
+    return M.byte_impl({...}, byte_normalize)
+end
+local byte_encapsulate = function(args)
+    for k,v in ipairs(args) do
+        if type(v) == 'table' and v.type == 'section' or v.type == 'label' then
+            args[k] = function() return symbols[v.label] end
+        end
     end
-    table.insert(section_current.instructions, { data=data })
+end
+M.byte_hi = function(...)
+    return M.byte_impl(byte_encapsulate{...}, function(v) return (v>>8)&0xff end)
+end
+M.byte_lo = function(...)
+    return M.byte_impl(byte_encapsulate{...}, function(v) return v&0xff end)
+end
+
+-- word(...)
+-- Declare words to go into the binary stream.
+-- Each argument can be either:
+--  * a section or a label
+--  * a number resolving to a valid range word
+--  * a table, with each entry resolving to a valid range word
+--  * a function, resolving to exactly one valid range word, evaluated
+--    after symbols have been resolved
+M.word = function(...)
+    local args = {...}
+    local data = {}
+    for k,v in ipairs(args) do
+        local t = type(v)
+        if t == 'number' or t == 'function' then data[#data+1] = v
+        elseif t == 'table' then
+            if v.type == 'section' or v.type == 'label' then data[#data+1] = function() return symbols[v.label] end
+            else table.move(v,1,#v,#data+1,data) end
+        else error("unsupported type for word() argument: " .. t .. ", value: " .. v)
+        end
+    end
+    local asbin = function(b)
+        for _,v in ipairs(data) do
+            if type(v) == 'function' then v = v() end
+            v = word_normalize(v)
+            b[#b+1] = v&0xff
+            b[#b+1] = v>>8
+        end
+    end
+    table.insert(section_current.instructions, { data=data, size=#data*2, asbin=asbin })
 end
 
 return M

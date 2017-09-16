@@ -17,13 +17,11 @@ x:f()
 lda = 5 if lda < 6 then print('yep') end
 #pragma syntax6502 on
 
---[[
 local function ptr_table(label, ...)
     local vals = {...}
     section(label .. "_lo") byte_lo(vals)
     section(label .. "_hi") byte_hi(vals)
 end
-]]
 
 charset(" abcdefghijklmnopqrstuvwxyz-")
 @@message2 byte(4, "test", 0)
@@ -36,15 +34,12 @@ charset()
     end
     word(0xf080) byte(16, 3, 4, 5, 6,
         24, 32)
-        --[[
-    word(message)
+    word(message2)
     byte_lo(message) byte_hi(message)
-    --]]
     byte(\(message&0xff), \(message>>8))
-    --[[
 
 ptr_table("ptrs", message, data, 0)
---]]
+
 --section{ "toto", align = 256, offset = 16 }
 --section{ "toto", org = 0xf100 }
 --section "waitForIntim"
