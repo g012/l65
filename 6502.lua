@@ -354,22 +354,37 @@ M.word = function(...)
     table.insert(section_current.instructions, { data=data, size=#data*2, asbin=asbin })
 end
 
+local op = function(code, cycles, extra_on_crosspage)
+    return { opc=code, cycles=cycles or 2, xcross=extra_on_crosspage or 0 }
+end
+local opimp = {
+    asl=op(0x0a), brk=op(0x00,7), clc=op(0x18), cld=op(0xd8), cli=op(0x58), clv=op(0xb8), dex=op(0xca), dey=op(0x88),
+    inx=op(0xe8), iny=op(0xc8), lsr=op(0x4a), nop=op(0xea), pha=op(0x48,3), php=op(0x08,3), pla=op(0x68,4), plp=op(0x28,4),
+    rol=op(0x2a), ror=op(0x6a), rti=op(0x40,6), rts=op(0x60,6), sec=op(0x38), sei=op(0x78), tax=op(0xaa), tay=op(0xa8),
+    tsx=op(0xba), txa=op(0x8a), txs=op(0x9a), tya=op(0x98),
+    jam=op(0x02),
+} M.opimm = opimm
+for k,v in pairs(opimp) do
+    M[k .. 'imp'] = function()
+        local asbin = function(b) b[#b+1] = v.opc end
+        table.insert(section_current.instructions, { size=1, cycles=v.cycles, asbin=asbin })
+    end
+end
+local opimm = {
+    lda=op(0xa9), ldx=op(0xa2), ldy=op(0xa0), cmp=op(0xc9), cpx=op(0xe0), cpy=op(0xc0), ora=op(0x09), ['and']=op(0x29),
+    eor=op(0x49), adc=op(0x69), sbc=op(0xe9),
+    anc=op(0x0b), ane=op(0x8b), arr=op(0x6b), asr=op(0x4b), jam=op(0x12), lax=op(0xab), nop=op(0x80), sbx=op(0xcb),
+} M.opimm = opimm
+for k,v in pairs(opimm) do
+    M[k .. 'imm'] = function(late, early)
+        local asbin = function(b)
+            local x = early or 0
+            x = byte_normalize(type(late) == 'function' and late(x) or x+late)
+            b[#b+1] = v.opc
+            b[#b+1] = x
+        end
+        table.insert(section_current.instructions, { size=2, cycles=2, asbin=asbin })
+    end
+end
+
 return M
-
---[===[
-
-
-adressing = {
-    imm=0x09, zp=0x05, zpx=0x15, ab=0x0d, abx=0x1d, aby=0x19, inx=0x01, iny=0x11,
-    acc=0x09,
-}
-encode = {
-    adc=0x60,
-    ['and']=0x20,
-    asl=0x01,
-    lda=0xa0,
-    sta=0x80,
-    --lda = { imm=0xa9, zp=0xa5, zpx=0xb5, ab=0xad, abx=0xbd, aby=0xb9, inx=0xa1, iny=0xb1 },
-}
-
-]===]

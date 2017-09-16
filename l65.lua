@@ -1289,6 +1289,7 @@ local function ParseLua(src)
 
         -- 6502 opcodes
         if not stat then
+            local mod_st, mod_expr
         for _,op in pairs(Keywords_6502) do
             if tok:ConsumeKeyword(op, tokenList) then
                 if opcode_relative[op] then
@@ -1296,7 +1297,7 @@ local function ParseLua(src)
                     if expr.AstType == 'VarExpr' and expr.Variable.IsGlobal then
                         expr = as_string_expr(expr, expr.Name)
                     end
-                    stat = emit_call{name=op .. "_relative", args={expr}} break
+                    stat = emit_call{name=op .. "rel", args={expr}} break
                 end
                 if opcode_immediate[op] and tok:ConsumeSymbol('#', tokenList) then
                     if tok:ConsumeSymbol('!', tokenList) then inverse_encapsulate = true end
@@ -1304,7 +1305,12 @@ local function ParseLua(src)
                     local paren_open_whites = {}
                     if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
                     for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
-                    stat = emit_call{name=op .. "_immediate", args={expr}, paren_open_white=paren_open_whites} break
+                    if tok:ConsumeSymbol(',', tokenList) then
+                        commaTokenList[1] = tokenList[#tokenList]
+                        mod_st, mod_expr = ParseExpr(scope)
+                        if not mod_st then return false, mod_expr end
+                    end
+                    stat = emit_call{name=op .. "imm", args={expr, mod_expr}, paren_open_white=paren_open_whites} break
                 end
                 if (opcode_indirect[op] or opcode_indirect_x[op] or opcode_indirect_y[op]) and tok:ConsumeSymbol('(', tokenList) then
                     if tok:ConsumeSymbol('!', tokenList) then inverse_encapsulate = true end
@@ -1325,7 +1331,7 @@ local function ParseLua(src)
                         then return false, expr end
                         for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                         for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                        stat = emit_call{name=op .. "_indirect_x", args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                        stat = emit_call{name=op .. "inx", args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                     elseif not tok:ConsumeSymbol(')', tokenList) then return false, expr
                     else 
                         if tok:ConsumeSymbol(',', tokenList) then
@@ -1333,10 +1339,10 @@ local function ParseLua(src)
                             then return false, expr end
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            stat = emit_call{name=op .. "_indirect_y", args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            stat = emit_call{name=op .. "iny", args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         else
                             if not opcode_indirect[op] then return false, expr end
-                            stat = emit_call{name=op .. "_indirect", args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            stat = emit_call{name=op .. "ind", args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                     end
                 end
@@ -1345,8 +1351,8 @@ local function ParseLua(src)
                     tok:Save()
                     if tok:ConsumeSymbol('.', tokenList) then
                         local t = tok:Get(tokenList).Data
-                        if t == 'w' then suffix = '_nozp'
-                        elseif t == 'b' then suffix = '_zp'
+                        if t == 'w' then suffix = 'w'
+                        elseif t == 'b' then suffix = 'b'
                         else tok:Restore() tok:Save() end
                     end
                     local paren_open_whites = {}
@@ -1360,7 +1366,7 @@ local function ParseLua(src)
                         tok:Commit()
                         if not tok:ConsumeSymbol(',', tokenList) then
                             if not opcode_absolute[op] then return false, expr end
-                            stat = emit_call{name=op .. "_absolute" .. suffix, args={expr}} break
+                            stat = emit_call{name=op .. "abs" .. suffix, args={expr}} break
                         end
                         if tok:Peek().Data == 'x' then
                             if not opcode_absolute_x[op] then return false, expr end
@@ -1368,7 +1374,7 @@ local function ParseLua(src)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            stat = emit_call{name=op .. "_absolute_x" .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            stat = emit_call{name=op .. "abx" .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
                             if not opcode_absolute_y[op] then return false, expr end
@@ -1376,14 +1382,14 @@ local function ParseLua(src)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            stat = emit_call{name=op .. "_absolute_y" .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            stat = emit_call{name=op .. "aby" .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         commaTokenList[1] = tokenList[#tokenList]
                         local mod_st, mod_expr = ParseExpr(scope)
                         if not mod_st then return false, mod_expr end
                         if not tok:ConsumeSymbol(',', tokenList) then
                             if not opcode_absolute[op] then return false, expr end
-                            stat = emit_call{name=op .. "_absolute" .. suffix, args={expr, mod_expr}} break
+                            stat = emit_call{name=op .. "abs" .. suffix, args={expr, mod_expr}} break
                         end
                         if tok:Peek().Data == 'x' then
                             if not opcode_absolute_x[op] then return false, expr end
@@ -1391,7 +1397,7 @@ local function ParseLua(src)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            stat = emit_call{name=op .. "_absolute_x" .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            stat = emit_call{name=op .. "abx" .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
                             if not opcode_absolute_y[op] then return false, expr end
@@ -1399,13 +1405,13 @@ local function ParseLua(src)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            stat = emit_call{name=op .. "_absolute_y" .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            stat = emit_call{name=op .. "aby" .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
 
                         return false, expr
                     end
                 end
-                if opcode_implied[op] then stat = emit_call{name=op .. "_implied"} break end
+                if opcode_implied[op] then stat = emit_call{name=op .. "imp"} break end
             end
         end end
 

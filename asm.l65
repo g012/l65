@@ -50,6 +50,10 @@ ptr_table("ptrs", message, data, 0)
     ldx #0xf0
     ldx #0b1101
     ldy #0xAB - 16 + 0b11011 & 3 | 6 ~ 0xf >> ~3 << 1 // 5
+    ldx #15,3
+
+    local kernel_cycles,kernel_size
+   -- hook(\(kernel_cycles=cycles, kernel_size=size))
 
     lda data
     lda data,5
@@ -59,12 +63,15 @@ ptr_table("ptrs", message, data, 0)
     lda data+3,12,x
     lda data+3,12,y
     lda (INTIM,5,x)
-    lda (INTIM,\a(a+2),x)
+    lda (\a(a+2),INTIM,x)
     lda (INTIM,5),y
-    lda (INTIM,\a(a+2)),y
+    lda (\a(a&3),INTIM),y
     jmp (INTIM)
     jmp (INTIM,12)
-    jmp (INTIM,\a(a-4))
+    jmp (INTIM-4)
+
+    -- cycles are counted without taking any branch
+    --hook(\(print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size)))
 
     lda function(c) return data * c end, v
     lda \c(data*c), v

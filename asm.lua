@@ -17,17 +17,16 @@ x:f()
 lda = 5 if lda < 6 then print('yep') end
 ;
 
---[[
 local function ptr_table(label, ...)
     local vals = {...}
-    section(label .. "_lo")
-    for _,v in ipairs(vals) do byte_lo(v) end
-    section(label .. "_hi")
-    for _,v in ipairs(vals) do byte_hi(v) end
+    section(label .. "_lo") byte_lo(vals)
+    section(label .. "_hi") byte_hi(vals)
 end
-]]
 
---@@message byte(4) "test" byte(0)
+charset(" abcdefghijklmnopqrstuvwxyz-")
+section(function(o) return o+("message2") end) byte(4, "test", 0)
+charset()
+section(function(o) return o+("message") end) byte(4, "test", 0)
 
 section(function(o) return o+("data") end)
     do crosspage()
@@ -35,15 +34,12 @@ section(function(o) return o+("data") end)
     end
     word(0xf080) byte(16, 3, 4, 5, 6,
         24, 32)
-        --[[
-    word(message)
+    word(message2)
     byte_lo(message) byte_hi(message)
-    --]]
     byte(function() return message&0xff end, function() return message>>8 end)
-    --[[
 
 ptr_table("ptrs", message, data, 0)
---]]
+
 --section{ "toto", align = 256, offset = 16 }
 --section{ "toto", org = 0xf100 }
 --section "waitForIntim"
@@ -51,59 +47,66 @@ section(function(o) return o+("waitForIntim") end) --alt short syntax when no ot
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
     --bne "waitForIntim"
-    ldx_immediate (function(o) return o+(0xf0) end)
-    ldx_immediate (function(o) return o+(13) end)
-    ldy_immediate (function(o) return o+(0xAB - 16 + 27 & 3 | 6 ~ 0xf >> ~3 << 1 // 5) end)
+    ldximm (function(o) return o+(0xf0) end)
+    ldximm (function(o) return o+(13) end)
+    ldyimm (function(o) return o+(0xAB - 16 + 27 & 3 | 6 ~ 0xf >> ~3 << 1 // 5) end)
+    ldximm (function(o) return o+(15) end,3)
 
-    lda_absolute(function(o) return o+( data) end)
-    lda_absolute(function(o) return o+( data) end,5)
-    lda_absolute_x(function(o) return o+( data) end,5)
-    lda_absolute_y(function(o) return o+( data) end,5)
-    lda_absolute(function(o) return o+( data+3) end,12)
-    lda_absolute_x(function(o) return o+( data+3) end,12)
-    lda_absolute_y(function(o) return o+( data+3) end,12)
-    lda_indirect_x (function(o) return o+(INTIM) end,5)
-    lda_indirect_x (function(o) return o+(INTIM) end,function(a) return a+2 end)
-    lda_indirect_y (function(o) return o+(INTIM) end,5)
-    lda_indirect_y (function(o) return o+(INTIM) end,function(a) return a+2 end)
-    jmp_indirect (function(o) return o+(INTIM) end)
-    jmp_indirect (function(o) return o+(INTIM) end,12)
-    jmp_indirect (function(o) return o+(INTIM) end,function(a) return a-4 end)
+    local kernel_cycles,kernel_size
+   -- hook(\(kernel_cycles=cycles, kernel_size=size))
 
-    lda_absolute( function(c) return data * c end, v)
-    lda_absolute( function(c) return data*c end, v)
-    local f = function(c) return data*c end v=5 lda_absolute(f,v) v=12 lda_absolute(f,v)
+    ldaabs(function(o) return o+( data) end)
+    ldaabs(function(o) return o+( data) end,5)
+    ldaabx(function(o) return o+( data) end,5)
+    ldaaby(function(o) return o+( data) end,5)
+    ldaabs(function(o) return o+( data+3) end,12)
+    ldaabx(function(o) return o+( data+3) end,12)
+    ldaaby(function(o) return o+( data+3) end,12)
+    ldainx (function(o) return o+(INTIM) end,5)
+    ldainx (function(a) return a+2 end,INTIM)
+    ldainy (function(o) return o+(INTIM) end,5)
+    ldainy (function(a) return a&3 end,INTIM)
+    jmpind (function(o) return o+(INTIM) end)
+    jmpind (function(o) return o+(INTIM) end,12)
+    jmpind (function(o) return o+(INTIM-4) end)
+
+    -- cycles are counted without taking any branch
+    --hook(\(print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size)))
+
+    ldaabs( function(c) return data * c end, v)
+    ldaabs( function(c) return data*c end, v)
+    local f = function(c) return data*c end v=5 ldaabs(f,v) v=12 ldaabs(f,v)
     local g = function() return function(c) return data * c end end
 
-    lda_absolute(g(),v)
-    lda_absolute( f,v)
-    lda_absolute_x (function(o) return o+(_toto+15) end,16)
-    lda_immediate (15)
+    ldaabs(g(),v)
+    ldaabs( f,v)
+    ldaabx (function(o) return o+(_toto+15) end,16)
+    ldaimm (15)
 
     do samepage()
-        lda_immediate (function(o) return o+(0xac) end)
-        lda_immediate (function(o) return o+(INTIM) end)
-        lda_absolute(function(o) return o+( 0xbeef) end)
-        lda_absolute(function(o) return o+( INTIM) end)
-        lda_absolute_nozp(function(o) return o+( INTIM) end)
-        lda_absolute_x(function(o) return o+( INTIM) end)
-        lda_absolute_y(function(o) return o+( INTIM) end)
-        lda_indirect_x (function(o) return o+(INTIM) end)
-        lda_indirect_y (function(o) return o+(INTIM) end) endpage()
+        ldaimm (function(o) return o+(0xac) end)
+        ldaimm (function(o) return o+(INTIM) end)
+        ldaabs(function(o) return o+( 0xbeef) end)
+        ldaabs(function(o) return o+( INTIM) end)
+        ldaabsw(function(o) return o+( INTIM) end)
+        ldaabx(function(o) return o+( INTIM) end)
+        ldaaby(function(o) return o+( INTIM) end)
+        ldainx (function(o) return o+(INTIM) end)
+        ldainy (function(o) return o+(INTIM) end) endpage()
     end
 
-    asl_implied()
-    asl_absolute(function(o) return o+( INTIM) end)
-    asl_implied()
+    aslimp()
+    aslabs(function(o) return o+( INTIM) end)
+    aslimp()
 label(function(o) return o+("_toto") end)
-    bne_relative(function(o) return o+( "test") end)
-    bne_relative(function(o) return o+( "waitForIntim") end)
-    bne_relative(function(o) return o+( f()) end)
-    bne_relative(function(o) return o+( "_toto") end)
+    bnerel(function(o) return o+( "test") end)
+    bnerel(function(o) return o+( "waitForIntim") end)
+    bnerel(function(o) return o+( f()) end)
+    bnerel(function(o) return o+( "_toto") end)
 
-    jam_implied() asl_implied() lsr_implied() ldx_immediate (function(o) return o+(16) end) ldy_absolute(function(o) return o+( 0xf0f0) end)
+    jamimp() aslimp() lsrimp() ldximm (function(o) return o+(16) end) ldyabs(function(o) return o+( 0xf0f0) end)
 
-    rts_implied()
+    rtsimp()
 
 --[[
 section "doOverscan"
