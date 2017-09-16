@@ -99,6 +99,7 @@ M.link = function()
                 if position then
                     chunk_reserve(chunk_ix, chunk, position, section.size)
                     section.org = position
+                    symbols[section.label] = position
                     goto chunk_located
                 end
             end
@@ -121,27 +122,27 @@ M.genbin = function(filler)
     local bin = {}
     local ins = table.insert
     table.sort(locations, function(a,b) return a.start < b.start end)
-    local position = 0
     for _,location in ipairs(locations) do
-        if location.start < position then
+        if location.start < #bin then
             error(string.format("location [%04x,%04x] overlaps another",
                 location.start, math.type(location.size) == 'integer' and (location.size + location.start) or 0xffff))
         end
-        for i=position,location.start do ins(bin, filler) end
-        position = location.start
+        for i=#bin,location.start do ins(bin, filler) end
+        M.size=0 M.cycles=0
         local sections = location.sections
         table.sort(sections, function(a,b) return a.start < b.start end)
         for _,section in sections do
-            assert(section.org >= position)
-            for i=position,section.org do ins(bin, filler) end
+            assert(section.org >= #bin)
+            for i=#bin,section.org do ins(bin, filler) end
             for _,instruction in ipairs(section.instructions) do
-                -- TODO
+                if instruction.bin then for _,b in ipairs(instruction.bin) do ins(bin, b) end
+                else instruction.asbin(bin) end
+                M.size=#bin M.cycles=M.cycles+instruction.cycles
             end
         end
         if math.type(location.size) == 'integer' then
             local endpos = location.size+location.start
-            for i=position,endpos do ins(bin, filler) end
-            position = endpos
+            for i=#bin,endpos do ins(bin, filler) end
         end
     end
     return bin
@@ -200,11 +201,17 @@ M.section = function(t)
     section.constraints = {}
     section.instructions = {}
     function section:compute_size()
-        local instructinos = self.instructions
+        local instructions = self.instructions
         local size = 0
         for _,instruction in ipairs(instructions) do
             instruction.offset = size
-            size = size + #instruction.data
+            if not instruction.size then
+                -- evaluation is needed to get the size (distinguish zpg/abs)
+                -- labels and sections are not resolved at this point, so
+                -- evaluation will fail if the size is not explicitly stated (.b/.w)
+                instruction.bin={} instruction.asbin(instruction.bin)
+            end
+            size = size + instruction.size
         end
         self.size = size
         for _,constraint in ipairs(self.constraints) do

@@ -53,7 +53,7 @@ section(function(o) return o+("waitForIntim") end) --alt short syntax when no ot
     ldximm (function(o) return o+(15) end,3)
 
     local kernel_cycles,kernel_size
-   -- hook(\(kernel_cycles=cycles, kernel_size=size))
+    hook(function() kernel_cycles=cycles kernel_size=size end)
 
     ldaabs(function(o) return o+( data) end)
     ldaabs(function(o) return o+( data) end,5)
@@ -71,7 +71,7 @@ section(function(o) return o+("waitForIntim") end) --alt short syntax when no ot
     jmpind (function(o) return o+(INTIM-4) end)
 
     -- cycles are counted without taking any branch
-    --hook(\(print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size)))
+    hook(function() return print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end)
 
     ldaabs( function(c) return data * c end, v)
     ldaabs( function(c) return data*c end, v)
