@@ -8,6 +8,7 @@ M.__index = M
 symbols.__index = symbols
 setmetatable(M, symbols)
 
+local location_current -- cache of last location, for faster access
 local section_current -- cache of last location's last section, for faster access
 
 M.link = function()
@@ -170,8 +171,18 @@ M.writesym = function(filename)
 end
 
 M.location = function(start, finish)
+    if type(start) == 'table' then
+        for _,v in ipairs(locations) do if v == start then
+            location_current = start
+            return start
+        end end
+        error("unable to find reference to location [" .. (start.start or '?') .. ", " .. (start.finish or '?') .. "]")
+    end
     local size = (finish or math.huge) - start
-    locations[#locations+1] = { start=start, finish=finish, chunks={ { start=start, size=size } } }
+    local location = { start=start, finish=finish, chunks={ { start=start, size=size } } }
+    locations[#locations+1] = location
+    location_current = location
+    return location
 end
 
 M.section = function(t)
@@ -183,7 +194,7 @@ M.section = function(t)
         section=t section.label=t[1] section[1]=nil
         if section.offset and not section.align then error("section " .. section.label .. " has offset, but no align") end
     end
-    table.insert(location[#locations].sections, section)
+    table.insert(location_current.sections, section)
     section_current = section
     section.constraints = {}
     section.instructions = {}
@@ -200,6 +211,7 @@ M.section = function(t)
             constraint.finish =  instructions[constraint.to].offset
         end
     end
+    return section
 end
 
 M.samepage = function()
@@ -222,17 +234,71 @@ local byte_normalize = function(v)
     if v < 0 then v = v + 0x100 end
     return v & 0xff
 end
+M.byte_normalize = byte_normalize
+
 local word_normalize = function(v)
     if v < -32768 or v > 65535 then error("value out of word range: " .. v) end
     if v < 0 then v = v + 0x10000 end
     return v & 0xffff
 end
+M.word_normalize = word_normalize
 
-M.byte = function(...)
-    local data = {...}
-    for i=1,#data do data[i] = byte_normalize(data[i]) end
-    table.insert(section_current.instructions, { data=data })
+-- charset([s] [, f])
+-- Set a new charset to be used for next string data in byte().
+-- Without argument, revert to Lua charset.
+-- s: string of all letters of charset
+-- f: letter index offset or function to transform the letter index
+M.charset = function(s, f)
+    local st = type(s)
+    if st == 'nil' then M.cs = nil return s end
+    if st == 'table' then M.cs = s return s end
+    if not f then f = function(v) return v end
+    elseif type(f) == 'number' then f = function(v) return v + f end end
+    local t={}
+    for c in s:gmatch'.' do t[c]=f(#t) end
+    M.cs=t
+    return t
 end
+
+-- byte(...)
+-- Declare bytes to go into the binary stream.
+-- Each argument can be either:
+--  * a number resolving to a valid byte range
+--  * a string, converted to bytes using the charset previously defined,
+--    or Lua's charset if none was defined
+--  * a table, with each entry resolving to a valid byte range
+--  * a function, resolving to exactly one valid byte range, evaluated
+--    after symbols have been resolved
+M.byte = function(...)
+    local args = {...}
+    local data,cs = {},M.cs
+    for k,v in ipairs(args) do
+        local t = type(v)
+        if t == 'number' or t == 'function' then data[#data+1] = v
+        elseif t == 'table' then for _,b in ipairs(t) do data[#data+1] = b end
+        elseif t == 'string' then
+            if cs then
+                for _,c in v:gmatch'.' do
+                    local i=cs[c]
+                    if not i then error("character " .. c .. " is not part of current charset") end
+                    data[#data+1]=i
+                end
+            else
+                local s = {v:byte(1,#v)}
+                table.move(s, 1, #s, #data+1, data)
+            end
+        else error("unsupported type for byte() argument: " .. t .. ", value: " .. v)
+        end
+    end
+    local asbin = function(bin)
+        for k,v in ipairs(data) do
+            if type(v) == 'function' then v = v() end
+            data[k] = byte_normalize(v)
+        end
+    end
+    table.insert(section_current.instructions, { data=data, size=#data, asbin=asbin })
+end
+
 M.word = function(...)
     local src,data = {...}, {}
     for i=1,#src do

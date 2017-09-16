@@ -20,14 +20,15 @@ lda = 5 if lda < 6 then print('yep') end
 --[[
 local function ptr_table(label, ...)
     local vals = {...}
-    section(label .. "_lo")
-    for _,v in ipairs(vals) do byte_lo(v) end
-    section(label .. "_hi")
-    for _,v in ipairs(vals) do byte_hi(v) end
+    section(label .. "_lo") byte_lo(vals)
+    section(label .. "_hi") byte_hi(vals)
 end
 ]]
 
---@@message byte(4) "test" byte(0)
+charset(" abcdefghijklmnopqrstuvwxyz-")
+@@message2 byte(4, "test", 0)
+charset()
+@@message byte(4, "test", 0)
 
 @@data
     crosspage

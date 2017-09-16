@@ -229,6 +229,7 @@ synt match  luaSemiCol ";"
 
 syn match l65Keyword /\<location\>/
 syn match l65Keyword /\<section\>/
+syn match l65Keyword /\<charset\>/
 syn match l65Keyword /\<byte\>/
 syn match l65Keyword /\<byte_hi\>/
 syn match l65Keyword /\<byte_lo\>/
