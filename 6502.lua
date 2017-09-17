@@ -208,7 +208,8 @@ M.section = function(t)
             if not instruction.size then
                 -- evaluation is needed to get the size (distinguish zpg/abs)
                 -- labels and sections are not resolved at this point, so
-                -- evaluation will fail if the size is not explicitly stated (.b/.w)
+                -- evaluation will fail if the size is not explicitly stated (.b/.w);
+                -- in that case, assume max size
                 instruction.bin={} instruction.asbin(instruction.bin)
             end
             size = size + instruction.size
@@ -361,36 +362,102 @@ M.word = function(...)
     table.insert(section_current.instructions, { data=data, size=#data*2, asbin=asbin })
 end
 
-local op = function(code, cycles, extra_on_crosspage)
-    return { opc=code, cycles=cycles or 2, xcross=extra_on_crosspage or 0 }
+local op,cycles_def = function(code, cycles, extra_on_crosspage)
+    return { opc=code, cycles=cycles or cycles_def, xcross=extra_on_crosspage or 0 }
 end
-local opimp = {
+cycles_def=2 local opimp={
     asl=op(0x0a), brk=op(0x00,7), clc=op(0x18), cld=op(0xd8), cli=op(0x58), clv=op(0xb8), dex=op(0xca), dey=op(0x88),
     inx=op(0xe8), iny=op(0xc8), lsr=op(0x4a), nop=op(0xea), pha=op(0x48,3), php=op(0x08,3), pla=op(0x68,4), plp=op(0x28,4),
     rol=op(0x2a), ror=op(0x6a), rti=op(0x40,6), rts=op(0x60,6), sec=op(0x38), sei=op(0x78), tax=op(0xaa), tay=op(0xa8),
     tsx=op(0xba), txa=op(0x8a), txs=op(0x9a), tya=op(0x98),
-    jam=op(0x02),
-} M.opimm = opimm
+    jam=op(0x02,0),
+} M.opimp = opimp
 for k,v in pairs(opimp) do
     M[k .. 'imp'] = function()
         local asbin = function(b) b[#b+1] = v.opc end
         table.insert(section_current.instructions, { size=1, cycles=v.cycles, asbin=asbin })
     end
 end
-local opimm = {
-    lda=op(0xa9), ldx=op(0xa2), ldy=op(0xa0), cmp=op(0xc9), cpx=op(0xe0), cpy=op(0xc0), ora=op(0x09), ['and']=op(0x29),
-    eor=op(0x49), adc=op(0x69), sbc=op(0xe9),
-    anc=op(0x0b), ane=op(0x8b), arr=op(0x6b), asr=op(0x4b), jam=op(0x12), lax=op(0xab), nop=op(0x80), sbx=op(0xcb),
+cycles_def=2 local opimm={
+    adc=op(0x69), ['and']=op(0x29), cmp=op(0xc9), cpx=op(0xe0), cpy=op(0xc0), eor=op(0x49), lda=op(0xa9), ldx=op(0xa2),
+    ldy=op(0xa0), ora=op(0x09), sbc=op(0xe9),
+    anc=op(0x0b), ane=op(0x8b), arr=op(0x6b), asr=op(0x4b), jam=op(0x12,0), lax=op(0xab), nop=op(0x80), sbx=op(0xcb),
 } M.opimm = opimm
 for k,v in pairs(opimm) do
     M[k .. 'imm'] = function(late, early)
         local asbin = function(b)
             local x = early or 0
             x = byte_normalize(type(late) == 'function' and late(x) or x+late)
-            b[#b+1] = v.opc
-            b[#b+1] = x
+            b[#b+1]=v.opc b[#b+1]=x
         end
         table.insert(section_current.instructions, { size=2, cycles=2, asbin=asbin })
+    end
+end
+cycles_def=3 local opzpg={
+    adc=op(0x65), ['and']=op(0x25), asl=op(0x06,5), bit=op(0x24), cmp=op(0xc5), cpx=op(0xe4), cpy=op(0xc4), dec=op(0xc6,5),
+    eor=op(0x45), inc=op(0xe6,5), lda=op(0xa5), ldx=op(0xa6), ldy=op(0xa4), lsr=op(0x46,5), ora=op(0x05), rol=op(0x26,5),
+    ror=op(0x66,5), sbc=op(0xe5), sta=op(0x85), stx=op(0x86), sty=op(0x84), 
+    dcp=op(0xc7,5), isb=op(0xe7,5), jam=op(0x22,0), lax=op(0xa7), nop=op(0x04), rla=op(0x27,5), rra=op(0x67,5), sax=op(0x87),
+    slo=op(0x07,5), sre=op(0x47,5),
+} M.opzpg = opzpg
+for k,v in pairs(opzpg) do
+    M[k .. 'zpg'] = function(late, early)
+        local asbin = function(b)
+            local x = early or 0
+            x = byte_normalize(type(late) == 'function' and late(x) or x+late)
+            b[#b+1]=v.opc b[#b+1]=x
+        end
+        table.insert(section_current.instructions, { size=2, cycles=v.cycles, asbin=asbin })
+    end
+end
+cycles_def=4 local opabs={
+    adc=op(0x6d), ['and']=op(0x2d), asl=op(0x0e,6), bit=op(0x2c), cmp=op(0xcd), cpx=op(0xec), cpy=op(0xcc), dec=op(0xce,6),
+    eor=op(0x4d), inc=op(0xee,6), jmp=op(0x4c,3), jsr=op(0x20,6), lda=op(0xad), ldx=op(0xae), ldy=op(0xac), lsr=op(0x4e,6),
+    ora=op(0x0d), rol=op(0x2e,6), ror=op(0x6e,6), sbc=op(0xed), sta=op(0x8d), stx=op(0x8e), sty=op(0x8c),
+    dcp=op(0xcf,6), isb=op(0xef,6), jam=op(0x72,0), lax=op(0xaf), nop=op(0x0c), rla=op(0x2f,6), rra=op(0x6f,6), sax=op(0x8f),
+    slo=op(0x0f,6), sre=op(0x4f,6),
+} M.opabs = opabs
+for k,v in pairs(opabs) do
+    M[k .. 'abs'] = function(late, early)
+        local asbin = function(b)
+            local x = early or 0
+            x = word_normalize(type(late) == 'function' and late(x) or x+late)
+            b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
+        end
+        table.insert(section_current.instructions, { size=3, cycles=v.cycles, asbin=asbin })
+    end
+    M[k .. 'zab'] = function(late, early)
+        if type(late) ~= 'function' then
+            local x = (early or 0) + late
+            if x >= -128 and x <= 0xff then return M[k .. 'zpg'](late, early) end
+            if x >= -32768 and x <= 0xffff then return M[k .. 'abs'](late, early) end
+            error("value out of word range: " .. x)
+        end
+        local eval, asbin
+        local ins = { size=eval, cycles=v.cycles, asbin=asbin }
+        eval = function()
+            local r,x = pcall(late(early or 0))
+            if not r then return 3 end
+            x = word_normalize(x)
+            local op = opzpg[k]
+            if x <= 0xff and op then
+                ins.size = 2
+                ins.cycles = op.cycles
+                ins.asbin = function(b) b[#b+1]=op.opc b[#b+1]=x end
+                return 2
+            end
+            ins.size = 3
+            ins.asbin = function(b) b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8 end
+            return 3
+        end
+        asbin = function(b)
+            -- TODO force absolute ?
+            local x = word_normalize(late(early or 0))
+            local op = opzpg[k]
+            if x <= 0xff and op then b[#b+1]=op.opc b[#b+1]=x
+            else b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8 end
+        end
+        table.insert(section_current.instructions, ins)
     end
 end
 
