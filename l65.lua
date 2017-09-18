@@ -80,6 +80,25 @@ local opcode_immediate = lookupify{
     -- illegal opcodes
     'anc', 'ane', 'arr', 'asr', 'jam', 'lax', 'nop', 'sbx',
 }
+local opcode_zeropage = lookupify{
+    'adc', 'and', 'asl', 'bit', 'cmp', 'cpy', 'cpx', 'dec',
+    'eor', 'inc', 'lda', 'ldx', 'ldy', 'lsr', 'nop', 'ora',
+    'rol', 'ror', 'sbc', 'sta', 'stx', 'sty',
+    -- illegal opcodes
+    'dcp', 'isb', 'jam', 'lax', 'rla', 'rra', 'sax', 'slo',
+    'sre',
+}
+local opcode_zeropage_x = lookupify{
+    'adc', 'and', 'asl', 'cmp', 'dec', 'eor', 'inc', 'lda',
+    'ldy', 'lsr', 'ora', 'rol', 'ror', 'sbc', 'sta', 'sty',
+    -- illegal opcodes
+    'dcp', 'isb', 'jam', 'nop', 'rla', 'rra', 'slo', 'sre',
+}
+local opcode_zeropage_y = lookupify{
+    'ldx', 'stx',
+    -- illegal opcodes
+    'lax', 'sax',
+}
 local opcode_absolute = lookupify{
     'adc', 'and', 'asl', 'bit', 'cmp', 'cpy', 'cpx', 'dec',
     'eor', 'inc', 'jmp', 'jsr', 'lda', 'ldx', 'ldy', 'lsr',
@@ -1348,7 +1367,9 @@ local function ParseLua(src)
                         end
                     end
                 end
-                if opcode_absolute[op] or opcode_absolute_x[op] or opcode_absolute_y[op] then
+                if opcode_absolute[op] or opcode_absolute_x[op] or opcode_absolute_y[op]
+                or opcode_zeropage[op] or opcode_zeropage_x[op] or opcode_zeropage_y[op]
+                then
                     local suffix = ''
                     tok:Save()
                     if tok:ConsumeSymbol('.', tokenList) then
@@ -1367,17 +1388,27 @@ local function ParseLua(src)
                     else
                         tok:Commit()
                         if not tok:ConsumeSymbol(',', tokenList) then
-                            if not opcode_absolute[op] then return false, expr end
                             suffix = suffix=='b' and "zpg" or suffix=='w' and "abs" or "zab"
+                            if suffix == 'zab' then
+                                if not opcode_zeropage[op] then suffix='abs'
+                                elseif not opcode_absolute[op] then suffix='zpg' end
+                            end
+                            if suffix == 'zpg' and not opcode_zeropage[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage addressing mode") end
+                            if suffix == 'abs' and not opcode_absolute[op] then return false, GenerateError("opcode " .. op " doesn't support absolute addressing mode") end
                             stat = emit_call{name=op .. suffix, args={expr}} break
                         end
                         if tok:Peek().Data == 'x' then
-                            if not opcode_absolute_x[op] then return false, expr end
                             tok:Get(tokenList)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
                             suffix = suffix=='b' and "zpx" or suffix=='w' and "abx" or "zax"
+                            if suffix == 'zax' then
+                                if not opcode_zeropage_x[op] then suffix='abx'
+                                elseif not opcode_absolute_x[op] then suffix='zpx' end
+                            end
+                            if suffix == 'zpx' and not opcode_zeropage_x[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage,x addressing mode") end
+                            if suffix == 'abx' and not opcode_absolute_x[op] then return false, GenerateError("opcode " .. op " doesn't support absolute,x addressing mode") end
                             stat = emit_call{name=op .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
@@ -1387,23 +1418,39 @@ local function ParseLua(src)
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
                             suffix = suffix=='b' and "zpy" or suffix=='w' and "aby" or "zay"
+                            if suffix == 'zay' then
+                                if not opcode_zeropage_y[op] then suffix='aby'
+                                elseif not opcode_absolute_y[op] then suffix='zpy' end
+                            end
+                            if suffix == 'zpy' and not opcode_zeropage_y[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage,y addressing mode") end
+                            if suffix == 'aby' and not opcode_absolute_y[op] then return false, GenerateError("opcode " .. op " doesn't support absolute,y addressing mode") end
                             stat = emit_call{name=op .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         commaTokenList[1] = tokenList[#tokenList]
                         local mod_st, mod_expr = ParseExpr(scope)
                         if not mod_st then return false, mod_expr end
                         if not tok:ConsumeSymbol(',', tokenList) then
-                            if not opcode_absolute[op] then return false, expr end
                             suffix = suffix=='b' and "zpg" or suffix=='w' and "abs" or "zab"
+                            if suffix == 'zab' then
+                                if not opcode_zeropage[op] then suffix='abs'
+                                elseif not opcode_absolute[op] then suffix='zpg' end
+                            end
+                            if suffix == 'zpg' and not opcode_zeropage[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage addressing mode") end
+                            if suffix == 'abs' and not opcode_absolute[op] then return false, GenerateError("opcode " .. op " doesn't support absolute addressing mode") end
                             stat = emit_call{name=op .. suffix, args={expr, mod_expr}} break
                         end
                         if tok:Peek().Data == 'x' then
-                            if not opcode_absolute_x[op] then return false, expr end
                             tok:Get(tokenList)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
                             suffix = suffix=='b' and "zpx" or suffix=='w' and "abx" or "zax"
+                            if suffix == 'zax' then
+                                if not opcode_zeropage_x[op] then suffix='abx'
+                                elseif not opcode_absolute_x[op] then suffix='zpx' end
+                            end
+                            if suffix == 'zpx' and not opcode_zeropage_x[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage,x addressing mode") end
+                            if suffix == 'abx' and not opcode_absolute_x[op] then return false, GenerateError("opcode " .. op " doesn't support absolute,x addressing mode") end
                             stat = emit_call{name=op .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
@@ -1413,6 +1460,12 @@ local function ParseLua(src)
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
                             suffix = suffix=='b' and "zpy" or suffix=='w' and "aby" or "zay"
+                            if suffix == 'zay' then
+                                if not opcode_zeropage_y[op] then suffix='aby'
+                                elseif not opcode_absolute_y[op] then suffix='zpy' end
+                            end
+                            if suffix == 'zpy' and not opcode_zeropage_y[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage,y addressing mode") end
+                            if suffix == 'aby' and not opcode_absolute_y[op] then return false, GenerateError("opcode " .. op " doesn't support absolute,y addressing mode") end
                             stat = emit_call{name=op .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
 
@@ -1420,6 +1473,7 @@ local function ParseLua(src)
                     end
                 end
                 if opcode_implied[op] then stat = emit_call{name=op .. "imp"} break end
+                error("internal error: unable to find addressing of valid opcode " .. op) -- should not happen
             end
         end end
 
