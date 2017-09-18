@@ -8,13 +8,11 @@ M.__index = M
 symbols.__index = symbols
 setmetatable(M, symbols)
 
-local location_current -- cache of last location, for faster access
-local section_current -- cache of last location's last section, for faster access
-
 M.link = function()
-    assert(not stats.unused, "can't link twice")
+    if stats.unused then return end
 
     stats.unused = 0
+    stats.cycles = 0
     for _,location in ipairs(locations) do
         local sections = location.sections
 
@@ -34,14 +32,17 @@ M.link = function()
         -- filter sections list
         local position_independent_sections = {}
         local symbols_to_remove = {}
+        location.cycles=0
         for ix,section in ipairs(sections) do
             section:compute_size()
+            location.cycles = location.cycles + section.cycles
             if section.size == 0 then
                 sections[ix]=nil
                 if not section.org then table.insert(symbols_to_remove, section.label) end
             elseif not section.org then table.insert(position_independent_sections, section) end
         end
         for _,v in ipairs(symbols_to_remove) do symbols[v] = nil end
+        stats.cycles = stats.cycles + location.cycles
 
         -- fixed position sections
         for section_ix,section in ipairs(sections) do if section.org then
@@ -116,9 +117,23 @@ M.link = function()
     end
 end
 
+M.resolve = function()
+    if stats.resolved_count then return end
+    M.link()
+
+    stats.resolved_count = 0
+    local count = 0
+    for k,v in pairs(symbols) do
+        local t = type(v)
+        if v == 'function' then symbols[k] = v() count=count+1
+        elseif v == 'table' and type(v.resolve) == 'function' then symbols[k] = v.resolve() count=count+1 end
+    end
+    stats.resolved_count = count
+end
+
 M.genbin = function(filler)
     if not filler then filler = 0xff end
-    if not stats.unused then M.link() end
+    M.resolve()
     local bin = {}
     local ins = table.insert
     table.sort(locations, function(a,b) return a.start < b.start end)
@@ -136,8 +151,8 @@ M.genbin = function(filler)
             for i=#bin,section.org do ins(bin, filler) end
             for _,instruction in ipairs(section.instructions) do
                 if instruction.bin then for _,b in ipairs(instruction.bin) do ins(bin, b) end
-                else instruction.asbin(bin) end
-                M.size=#bin M.cycles=M.cycles+instruction.cycles
+                elseif instruction.asbin then instruction.asbin(bin) end
+                M.size=#bin M.cycles=M.cycles+(instruction.cycles or 0)
             end
         end
         if math.type(location.size) == 'integer' then
@@ -172,7 +187,7 @@ end
 M.location = function(start, finish)
     if type(start) == 'table' then
         for _,v in ipairs(locations) do if v == start then
-            location_current = start
+            M.location_current = start
             return start
         end end
         error("unable to find reference to location [" .. (start.start or '?') .. ", " .. (start.finish or '?') .. "]")
@@ -180,7 +195,7 @@ M.location = function(start, finish)
     local size = (finish or math.huge) - start
     local location = { start=start, finish=finish, chunks={ { start=start, size=size } } }
     locations[#locations+1] = location
-    location_current = location
+    M.location_current = location
     return location
 end
 
@@ -193,28 +208,30 @@ M.section = function(t)
         section=t section.label=t[1] section[1]=nil
         if section.offset and not section.align then error("section " .. section.label .. " has offset, but no align") end
     end
-    table.insert(location_current.sections, section)
+    table.insert(M.location_current.sections, section)
     if symbols[section.label] then error("duplicate symbol: " .. section.label) end
     symbols[section.label] = section
-    section_current = section
+    M.label_current = section.label
+    M.section_current = section
     section.type = 'section'
     section.constraints = {}
     section.instructions = {}
     function section:compute_size()
         local instructions = self.instructions
-        local size = 0
+        self.size=0 self.cycles=0
         for _,instruction in ipairs(instructions) do
             instruction.offset = size
-            if not instruction.size then
+            local ins_sz = instruction.size or 0
+            if type(ins_sz) == 'function' then
                 -- evaluation is needed to get the size (distinguish zpg/abs)
                 -- labels and sections are not resolved at this point, so
                 -- evaluation will fail if the size is not explicitly stated (.b/.w);
                 -- in that case, assume max size
-                instruction.bin={} instruction.asbin(instruction.bin)
+                ins_sz = ins_sz()
             end
-            size = size + instruction.size
+            self.size = self.size + ins_sz
+            self.cycles = self.cycles + (instruction.cycles or 0)
         end
-        self.size = size
         for _,constraint in ipairs(self.constraints) do
             constraint.start = instructions[constraint.from].offset
             constraint.finish =  instructions[constraint.to].offset
@@ -224,23 +241,35 @@ M.section = function(t)
 end
 
 M.label = function(name)
-    local label = { type='label', label=name }
-    table.insert(section_current.instructions, label)
+    local eval,resolve,label,offset
+    label = { type='label', size=eval, resolve=resolve }
+    if name:sub(1,1) == '_' then -- local label
+        name = M.label_current .. name
+    else
+        M.label_current = name
+    end
     if symbols[name] then error("duplicate symbol: " .. name) end
     symbols[name] = label
+    eval = function()
+        offset = M.section_current.size
+        label.size = 0
+        return 0
+    end
+    resolve = function() return M.section_current.org + offset end
+    table.insert(M.section_current.instructions, label)
     return label
 end
 
 M.samepage = function()
-    local section = section_current
+    local section = M.section_current
     table.insert(section.constraints, { type='samepage', from=#section.instructions+1 })
 end
 M.crosspage = function()
-    local section = section_current
+    local section = M.section_current
     table.insert(section.constraints, { type='crosspage', from=#section.instructions+1 })
 end
 M.endpage = function()
-    local section = section_current
+    local section = M.section_current
     local constraint = section.constraints[#section.constraints]
     assert(constraint and not constraint.finish, "closing constraint, but no constraint is open")
     constraint.to = #section.instructions
@@ -303,7 +332,7 @@ M.byte_impl = function(args, nrm)
             b[#b+1] = nrm(v)
         end
     end
-    table.insert(section_current.instructions, { data=data, size=#data, asbin=asbin })
+    table.insert(M.section_current.instructions, { data=data, size=#data, asbin=asbin })
 end
 -- byte(...)
 -- Declare bytes to go into the binary stream.
@@ -319,7 +348,7 @@ M.byte = function(...)
 end
 local byte_encapsulate = function(args)
     for k,v in ipairs(args) do
-        if type(v) == 'table' and v.type == 'section' or v.type == 'label' then
+        if type(v) == 'table' and (v.type == 'section' or v.type == 'label') then
             args[k] = function() return symbols[v.label] end
         end
     end
@@ -359,7 +388,7 @@ M.word = function(...)
             b[#b+1] = v>>8
         end
     end
-    table.insert(section_current.instructions, { data=data, size=#data*2, asbin=asbin })
+    table.insert(M.section_current.instructions, { data=data, size=#data*2, asbin=asbin })
 end
 
 local op,cycles_def = function(code, cycles, extra_on_crosspage)
@@ -375,7 +404,7 @@ cycles_def=2 local opimp={
 for k,v in pairs(opimp) do
     M[k .. 'imp'] = function()
         local asbin = function(b) b[#b+1] = v.opc end
-        table.insert(section_current.instructions, { size=1, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, asbin=asbin })
     end
 end
 cycles_def=2 local opimm={
@@ -390,7 +419,7 @@ for k,v in pairs(opimm) do
             x = byte_normalize(type(late) == 'function' and late(x) or x+late)
             b[#b+1]=v.opc b[#b+1]=x
         end
-        table.insert(section_current.instructions, { size=2, cycles=2, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=2, cycles=2, asbin=asbin })
     end
 end
 cycles_def=3 local opzpg={
@@ -407,7 +436,7 @@ for k,v in pairs(opzpg) do
             x = byte_normalize(type(late) == 'function' and late(x) or x+late)
             b[#b+1]=v.opc b[#b+1]=x
         end
-        table.insert(section_current.instructions, { size=2, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, asbin=asbin })
     end
 end
 cycles_def=4 local opabs={
@@ -424,7 +453,7 @@ for k,v in pairs(opabs) do
             x = word_normalize(type(late) == 'function' and late(x) or x+late)
             b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
         end
-        table.insert(section_current.instructions, { size=3, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=3, cycles=v.cycles, asbin=asbin })
     end
     M[k .. 'zab'] = function(late, early)
         if type(late) ~= 'function' then
@@ -451,13 +480,12 @@ for k,v in pairs(opabs) do
             return 3
         end
         asbin = function(b)
-            -- TODO force absolute ?
             local x = word_normalize(late(early or 0))
-            local op = opzpg[k]
-            if x <= 0xff and op then b[#b+1]=op.opc b[#b+1]=x
-            else b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8 end
+            -- since we assumed absolute on link phase, we must generate absolute in binary
+            if x <= 0xff and opzpg[k] then print("warning: forcing abs on zpg operand for opcode " .. k) end
+            b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
         end
-        table.insert(section_current.instructions, ins)
+        table.insert(M.section_current.instructions, ins)
     end
 end
 
