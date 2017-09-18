@@ -391,7 +391,8 @@ M.word = function(...)
     table.insert(M.section_current.instructions, { data=data, size=#data*2, asbin=asbin })
 end
 
-local op,cycles_def = function(code, cycles, extra_on_crosspage)
+local op,cycles_def
+op = function(code, cycles, extra_on_crosspage)
     return { opc=code, cycles=cycles or cycles_def, xcross=extra_on_crosspage or 0 }
 end
 cycles_def=2 local opimp={
@@ -486,6 +487,26 @@ for k,v in pairs(opabs) do
             b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
         end
         table.insert(M.section_current.instructions, ins)
+    end
+end
+cycles_def=2 local oprel={
+    bcc=op(0x90), bcs=op(0xb0), beq=op(0xf0), bmi=op(0x30), bne=op(0xd0), bpl=op(0x10), bvc=op(0x50), bvs=op(0x70),
+} M.oprel = oprel
+for k,v in pairs(oprel) do
+    M[k .. 'rel'] = function(label)
+        local parent = M.label_current
+        local asbin = function(b)
+            local x = label
+            if type(x) == 'function' then x=x() end
+            if type(x) == 'string' then
+                if x:sub(1,1) == '_' then x = parent .. x end
+                x = symbols[x]
+            end
+            if type(x) ~= 'number' then error("unresolved branch target: " .. x) end
+            if x < -128 or x > 127 then error("branch target out of range: " .. x) end
+            b[#b+1]=v.opc b[#b+1]=x&0xff
+        end
+        table.insert(M.section_current.instructions, { size=2, cycles=2, asbin=asbin })
     end
 end
 

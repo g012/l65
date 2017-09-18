@@ -19,16 +19,16 @@ lda = 5 if lda < 6 then print('yep') end
 
 local function ptr_table(label, ...)
     local vals = {...}
-    section(label .. "_lo") byte_lo(vals)
-    section(label .. "_hi") byte_hi(vals)
+    section{label .. "_lo", align=16} byte_lo(vals)
+    section{label .. "_hi", align=16} byte_hi(vals)
 end
 
 charset(" abcdefghijklmnopqrstuvwxyz-")
-section(function(o) return o+("message2") end) byte(4, "test", 0)
+section("message2") byte(4, "test", 0)
 charset()
-section(function(o) return o+("message") end) byte(4, "test", 0)
+section("message") byte(4, "test", 0)
 
-section(function(o) return o+("data") end)
+section("data")
     do crosspage()
         byte(1, 2) byte(3, 4) endpage()
     end
@@ -43,7 +43,7 @@ ptr_table("ptrs", message, data, 0)
 --section{ "toto", align = 256, offset = 16 }
 --section{ "toto", org = 0xf100 }
 --section "waitForIntim"
-section(function(o) return o+("waitForIntim") end) --alt short syntax when no other option
+section("waitForIntim") --alt short syntax when no other option
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
     --bne "waitForIntim"
@@ -53,15 +53,15 @@ section(function(o) return o+("waitForIntim") end) --alt short syntax when no ot
     ldximm (function(o) return o+(15) end,3)
 
     local kernel_cycles,kernel_size
-    hook(function() kernel_cycles=cycles kernel_size=size end)
+    table.insert(section_current.instructions, { asbin=function() kernel_cycles=cycles kernel_size=size end })
 
-    ldaabs(function(o) return o+( data) end)
-    ldaabs(function(o) return o+( data) end,5)
-    ldaabx(function(o) return o+( data) end,5)
-    ldaaby(function(o) return o+( data) end,5)
-    ldaabs(function(o) return o+( data+3) end,12)
-    ldaabx(function(o) return o+( data+3) end,12)
-    ldaaby(function(o) return o+( data+3) end,12)
+    ldazab(function(o) return o+( data) end)
+    ldazab(function(o) return o+( data) end,5)
+    ldazax(function(o) return o+( data) end,5)
+    ldazay(function(o) return o+( data) end,5)
+    ldazab(function(o) return o+( data+3) end,12)
+    ldazax(function(o) return o+( data+3) end,12)
+    ldazay(function(o) return o+( data+3) end,12)
     ldainx (function(o) return o+(INTIM) end,5)
     ldainx (function(a) return a+2 end,INTIM)
     ldainy (function(o) return o+(INTIM) end,5)
@@ -71,40 +71,40 @@ section(function(o) return o+("waitForIntim") end) --alt short syntax when no ot
     jmpind (function(o) return o+(INTIM-4) end)
 
     -- cycles are counted without taking any branch
-    hook(function() return print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end)
+    table.insert(section_current.instructions, { asbin=function() print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end })
 
-    ldaabs( function(c) return data * c end, v)
-    ldaabs( function(c) return data*c end, v)
-    local f = function(c) return data*c end v=5 ldaabs(f,v) v=12 ldaabs(f,v)
+    ldazab( function(c) return data * c end, v)
+    ldazab( function(c) return data*c end, v)
+    local f = function(c) return data*c end v=5 ldazab(f,v) v=12 ldazab(f,v)
     local g = function() return function(c) return data * c end end
 
-    ldaabs(g(),v)
-    ldaabs( f,v)
-    ldaabx (function(o) return o+(_toto+15) end,16)
+    ldazab(g(),v)
+    ldazab( f,v)
+    ldazax (function(o) return o+(_toto+15) end,16)
     ldaimm (15)
 
     do samepage()
         ldaimm (function(o) return o+(0xac) end)
         ldaimm (function(o) return o+(INTIM) end)
-        ldaabs(function(o) return o+( 0xbeef) end)
+        ldazab(function(o) return o+( 0xbeef) end)
+        ldazab(function(o) return o+( INTIM) end)
         ldaabs(function(o) return o+( INTIM) end)
-        ldaabsw(function(o) return o+( INTIM) end)
-        ldaabx(function(o) return o+( INTIM) end)
-        ldaaby(function(o) return o+( INTIM) end)
+        ldazax(function(o) return o+( INTIM) end)
+        ldazay(function(o) return o+( INTIM) end)
         ldainx (function(o) return o+(INTIM) end)
         ldainy (function(o) return o+(INTIM) end) endpage()
     end
 
     aslimp()
-    aslabs(function(o) return o+( INTIM) end)
+    aslzab(function(o) return o+( INTIM) end)
     aslimp()
-label(function(o) return o+("_toto") end)
-    bnerel(function(o) return o+( "test") end)
-    bnerel(function(o) return o+( "waitForIntim") end)
-    bnerel(function(o) return o+( f()) end)
-    bnerel(function(o) return o+( "_toto") end)
+label("_toto")
+    bnerel( "test")
+    bnerel( "waitForIntim")
+    bnerel( f())
+    bnerel( "_toto")
 
-    jamimp() aslimp() lsrimp() ldximm (function(o) return o+(16) end) ldyabs(function(o) return o+( 0xf0f0) end)
+    jamimp() aslimp() lsrimp() ldximm (function(o) return o+(16) end) ldyzab(function(o) return o+( 0xf0f0) end)
 
     rtsimp()
 

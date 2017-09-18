@@ -1191,7 +1191,9 @@ local function ParseLua(src)
             local op_var = {
                 AstType='VarExpr', Name=name, Variable={ IsGlobal=true, Name=name, Scope=CreateScope(scope) }, Tokens = { t('Ident', name, params.func_white) }
             }
-            if #args > 0 and ( (opcode_arg_encapsulate_on and not inverse_encapsulate) or (not opcode_arg_encapsulate_on and inverse_encapsulate) ) and args[1].AstType ~= 'Function' then
+            local encapsulate = params.encapsulate
+            if encapsulate == nil then encapsulate = opcode_arg_encapsulate_on end
+            if #args > 0 and ( (encapsulate and not inverse_encapsulate) or (not encapsulate and inverse_encapsulate) ) and args[1].AstType ~= 'Function' then
                 local inner_call_scope = CreateScope(op_var.Variable.Scope)
                 local inner_add = {
                     AstType='BinopExpr', Op='+', OperatorPrecedence=10, Tokens={ t('Symbol', '+') },
@@ -1251,12 +1253,12 @@ local function ParseLua(src)
             if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
             local label_name = tok:Get(tokenList)
             label_name = as_string_expr(label_name, label_name.Data)
-            stat = emit_call{name = 'section', args = {label_name}}
+            stat = emit_call{name = 'section', args = {label_name}, encapsulate=false}
         elseif tok:ConsumeSymbol('@', tokenList) then
             if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
             local label_name = tok:Get(tokenList)
             label_name = as_string_expr(label_name, label_name.Data)
-            stat = emit_call{name = 'label', args = {label_name}}
+            stat = emit_call{name = 'label', args = {label_name}, encapsulate=false}
         end end
 
         -- new statements
@@ -1297,7 +1299,7 @@ local function ParseLua(src)
                     if expr.AstType == 'VarExpr' and expr.Variable.IsGlobal then
                         expr = as_string_expr(expr, expr.Name)
                     end
-                    stat = emit_call{name=op .. "rel", args={expr}} break
+                    stat = emit_call{name=op .. "rel", args={expr}, encapsulate=false} break
                 end
                 if opcode_immediate[op] and tok:ConsumeSymbol('#', tokenList) then
                     if tok:ConsumeSymbol('!', tokenList) then inverse_encapsulate = true end
