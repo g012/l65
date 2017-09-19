@@ -125,31 +125,30 @@ M.resolve = function()
 
     stats.resolved_count = 0
     local count = 0
-    for k,v in pairs(symbols) do
+    for k,v in pairs(symbols) do if k ~= '__index' then
         local t = type(v)
-        if v == 'function' then symbols[k] = v() count=count+1
-        elseif v == 'table' and type(v.resolve) == 'function' then symbols[k] = v.resolve() count=count+1 end
-    end
+        if t == 'function' then v=v() t=type(v) symbols[k]=v count=count+1 end
+        if t == 'table' and type(v.resolve) == 'function' then symbols[k]=v.resolve() count=count+1
+        elseif t == 'string' then symbols[k]=symbols[v] count=count+1 end
+    end end
     stats.resolved_count = count
 end
 
 M.genbin = function(filler)
-    if not filler then filler = 0xff end
+    if not filler then filler = 0 end -- brk opcode
     M.resolve()
     local bin = {}
     local ins = table.insert
     table.sort(locations, function(a,b) return a.start < b.start end)
     for _,location in ipairs(locations) do
         if location.start < #bin then
-            error(string.format("location [%04x,%04x] overlaps another",
-                location.start, math.type(location.size) == 'integer' and (location.size + location.start) or 0xffff))
+            error(string.format("location [%04x,%04x] overlaps another", location.start, location.finish))
         end
         for i=#bin,location.start-1 do ins(bin, filler) end
         M.size=0 M.cycles=0
         local sections = location.sections
         table.sort(sections, function(a,b) return a.org < b.org end)
         for _,section in ipairs(sections) do
-print(section.org, #bin)
             assert(section.org >= #bin)
             for i=#bin,section.org-1 do ins(bin, filler) end
             for _,instruction in ipairs(section.instructions) do
@@ -158,9 +157,8 @@ print(section.org, #bin)
                 M.size=#bin M.cycles=M.cycles+(instruction.cycles or 0)
             end
         end
-        if math.type(location.size) == 'integer' then
-            local endpos = location.size+location.start-1
-            for i=#bin,endpos do ins(bin, filler) end
+        if location.finish then
+            for i=#bin,location.finish do ins(bin, filler) end
         end
     end
     return bin
@@ -170,7 +168,7 @@ M.writebin = function(filename, bin)
     if not filename then filename = 'main.bin' end
     if not bin then bin = M.genbin() end
     local f = assert(io.open(filename, "wb"), "failed to open " .. filename .. " for writing")
-    f:write(string.char(bin:unpack()))
+    f:write(string.char(table.unpack(bin)))
     f:close()
 end
 
@@ -180,7 +178,10 @@ M.writesym = function(filename)
     table.sort(symbols)
     local ins,fmt,rep = table.insert,string.format,string.rep
     local s ={'--- Symbol List'}
-    for k,v in pairs(symbols) do ins(s, fmt("%s%s %04x", k, rep(' ',24-#k), type(v)=='table' and v.org or v)) end
+    local sym_rev = {}
+    for k,v in pairs(symbols) do if type(v) == 'number' then ins(sym_rev,k) end end
+    table.sort(sym_rev, function(a,b) local x,y=symbols[a],symbols[b] return x==y and a<b or x<y end)
+    for _,v in ipairs(sym_rev) do local k=symbols[v] ins(s, fmt("%s%s %04x", v, rep(' ',24-#v), k)) end
     s[#s+1] = '--- End of Symbol List.'
     f:write(table.concat(s, '\n'))
     f:close()
@@ -243,8 +244,9 @@ M.section = function(t)
 end
 
 M.label = function(name)
-    local eval,resolve,label,offset
-    label = { type='label', size=eval, resolve=resolve }
+    local label,offset
+    local section = M.section_current
+    label = { type='label' }
     if name:sub(1,1) == '_' then -- local label
         name = M.label_current .. name
     else
@@ -252,13 +254,13 @@ M.label = function(name)
     end
     if symbols[name] then error("duplicate symbol: " .. name) end
     symbols[name] = label
-    eval = function()
-        offset = M.section_current.size
+    label.size = function()
+        offset = section.size
         label.size = 0
         return 0
     end
-    resolve = function() return M.section_current.org + offset end
-    table.insert(M.section_current.instructions, label)
+    label.resolve = function() return section.org + offset end
+    table.insert(section.instructions, label)
     return label
 end
 
@@ -638,7 +640,7 @@ for k,v in pairs(oprel) do
                 if x:sub(1,1) == '_' then x = parent .. x end
                 x = symbols[x]
             end
-            if type(x) ~= 'number' then error("unresolved branch target: " .. x) end
+            if type(x) ~= 'number' then error("unresolved branch target: " .. tostring(x)) end
             if x < -128 or x > 127 then error("branch target out of range: " .. x) end
             b[#b+1]=v.opc b[#b+1]=x&0xff
         end

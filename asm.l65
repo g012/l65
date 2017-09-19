@@ -64,13 +64,13 @@ ptr_table("ptrs", \(message), data, 0)
     lda data+3,12
     lda data+3,12,x
     lda data+3,12,y
-    lda (INTIM,5,x)
-    lda (\a(a+2),INTIM,x)
-    lda (INTIM,5),y
-    lda (\a(a&3),INTIM),y
-    jmp (INTIM)
-    jmp (INTIM,12)
-    jmp (INTIM-4)
+    lda (VBLANK,5,x)
+    lda (\a(a+2),VBLANK,x)
+    lda (VBLANK,5),y
+    lda (\a(a&3),VBLANK),y
+    jmp (VBLANK)
+    jmp (VBLANK,12)
+    jmp (VBLANK-4)
 
     -- cycles are counted without taking any branch
     table.insert(section_current.instructions, { asbin=function() print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end })
@@ -89,30 +89,30 @@ ptr_table("ptrs", \(message), data, 0)
 
     samepage
         lda #0xac
-        lda #INTIM
+        lda #VBLANK
         lda 0xbeef
-        lda INTIM
-        lda.w INTIM
-        lda INTIM,x
-        lda INTIM,y
-        lda (INTIM,x)
-        lda (INTIM),y
+        lda VBLANK
+        lda.w VBLANK
+        lda VBLANK,x
+        lda VBLANK,y
+        lda (VBLANK,x)
+        lda (VBLANK),y
     end
 
     asl
-    asl INTIM
+    asl VBLANK
     asl
 @_toto
-    bne "test"
+    bne "_toto"
     bne waitForIntim
-    f=\("test") bne f()
+    f=\("_toto") bne f()
     bne _toto
 
     jam asl lsr ldx #16 ldy 0xf0f0
-
     rts
 
 writebin()
+writesym()
 
 --[[
 section "doOverscan"

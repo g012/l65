@@ -64,13 +64,13 @@ section("waitForIntim") --alt short syntax when no other option
     ldazab(function(o) return o+( data+3) end,12)
     ldazax(function(o) return o+( data+3) end,12)
     ldaaby(function(o) return o+( data+3) end,12)
-    ldainx (function(o) return o+(INTIM) end,5)
-    ldainx (function(a) return a+2 end,INTIM)
-    ldainy (function(o) return o+(INTIM) end,5)
-    ldainy (function(a) return a&3 end,INTIM)
-    jmpind (function(o) return o+(INTIM) end)
-    jmpind (function(o) return o+(INTIM) end,12)
-    jmpind (function(o) return o+(INTIM-4) end)
+    ldainx (function(o) return o+(VBLANK) end,5)
+    ldainx (function(a) return a+2 end,VBLANK)
+    ldainy (function(o) return o+(VBLANK) end,5)
+    ldainy (function(a) return a&3 end,VBLANK)
+    jmpind (function(o) return o+(VBLANK) end)
+    jmpind (function(o) return o+(VBLANK) end,12)
+    jmpind (function(o) return o+(VBLANK-4) end)
 
     -- cycles are counted without taking any branch
     table.insert(section_current.instructions, { asbin=function() print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end })
@@ -87,30 +87,30 @@ section("waitForIntim") --alt short syntax when no other option
 
     do samepage()
         ldaimm (function(o) return o+(0xac) end)
-        ldaimm (function(o) return o+(INTIM) end)
+        ldaimm (function(o) return o+(VBLANK) end)
         ldazab(function(o) return o+( 0xbeef) end)
-        ldazab(function(o) return o+( INTIM) end)
-        ldaabs(function(o) return o+( INTIM) end)
-        ldazax(function(o) return o+( INTIM) end)
-        ldaaby(function(o) return o+( INTIM) end)
-        ldainx (function(o) return o+(INTIM) end)
-        ldainy (function(o) return o+(INTIM) end) endpage()
+        ldazab(function(o) return o+( VBLANK) end)
+        ldaabs(function(o) return o+( VBLANK) end)
+        ldazax(function(o) return o+( VBLANK) end)
+        ldaaby(function(o) return o+( VBLANK) end)
+        ldainx (function(o) return o+(VBLANK) end)
+        ldainy (function(o) return o+(VBLANK) end) endpage()
     end
 
     aslimp()
-    aslzab(function(o) return o+( INTIM) end)
+    aslzab(function(o) return o+( VBLANK) end)
     aslimp()
 label("_toto")
-    bnerel( "test")
+    bnerel( "_toto")
     bnerel( "waitForIntim")
-    f=function() return "test" end bnerel( f())
+    f=function() return "_toto" end bnerel( f())
     bnerel( "_toto")
 
     jamimp() aslimp() lsrimp() ldximm (function(o) return o+(16) end) ldyzab(function(o) return o+( 0xf0f0) end)
-
     rtsimp()
 
 writebin()
+writesym()
 
 --[[
 section "doOverscan"
