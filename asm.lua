@@ -4,7 +4,18 @@ TIM_OVERSCAN    = 50 -- TIM64T,  3200 cycles = ~ 42 scanlines
 TIM_VBLANK      = 61 -- TIM64T,  3904 cycles = ~ 51 scanlines
 TIM_KERNEL      = 17 -- T1024T, 17408 cycles = ~229 scanlines
 
-location(0xf000, 0xffff)
+function switchbank(i) bitzab(function(_o) return _o+( 0x1ff4+i) end) end
+-- create bank stubs
+for bi=0,7,1 do
+    local o=(bi<<12)
+    _ENV['bank' .. bi] = location(0x8000+o, 0x8fff+o)
+    section{"entry"..bi, org=0x8fee+o} switchbank(0) jmpabs(function(_o) return _o+( main) end)
+    section{"switchtab"..bi, org=0x8ff4+o} byte(0,0,0,0,0,0,0,0)
+    section{"vectors"..bi, org=0x8ffc+o} word(0xffee,0xffee)
+end
+
+location(bank0)
+--location(0xf000, 0xffff)
 
 if toto ~= 15 then end
 
@@ -42,6 +53,9 @@ section("data")
 
 ptr_table("ptrs", message, data, 0)
 
+section("main")
+    ldaimm (function(_o) return _o+(0) end)
+
 --section{ "toto", align = 256, offset = 16 }
 --section{ "toto", org = 0xf100 }
 --section "waitForIntim"
@@ -49,56 +63,59 @@ section("waitForIntim") --alt short syntax when no other option
     -- n_{ a=INTIM } ?
     --lda(INTIM) -- or a=INTIM
     --bne "waitForIntim"
-    ldximm (function(o) return o+(0xf0) end)
-    ldximm (function(o) return o+(13) end)
-    ldyimm (function(o) return o+(0xAB - 16 + 27 & 3 | 6 ~ 0xf >> ~3 << 1 // 5) end)
-    ldximm (function(o) return o+(15) end,3)
+    ldximm (function(_o) return _o+(0xf0) end)
+    ldximm (function(_o) return _o+(13) end)
+    ldyimm (function(_o) return _o+(0xAB - 16 + 27 & 3 | 6 ~ 0xf >> ~3 << 1 // 5) end)
+    ldximm (function(_o) return _o+(15) end,3)
 
     local kernel_cycles,kernel_size
     table.insert(section_current.instructions, { asbin=function() kernel_cycles=cycles kernel_size=size end })
 
-    ldazab(function(o) return o+( data) end)
-    ldazab(function(o) return o+( data) end,5)
-    ldazax(function(o) return o+( data) end,5)
-    ldaaby(function(o) return o+( data) end,5)
-    ldazab(function(o) return o+( data+3) end,12)
-    ldazax(function(o) return o+( data+3) end,12)
-    ldaaby(function(o) return o+( data+3) end,12)
-    ldainx (function(o) return o+(VBLANK) end,5)
+    ldazab(function(_o) return _o+( data) end)
+    ldazab(function(_o) return _o+( data) end,5)
+    ldazax(function(_o) return _o+( data) end,5)
+    ldaaby(function(_o) return _o+( data) end,5)
+    ldazab(function(_o) return _o+( data+3) end,12)
+    ldazax(function(_o) return _o+( data+3) end,12)
+    ldaaby(function(_o) return _o+( data+3) end,12)
+    ldainx (function(_o) return _o+(VBLANK) end,5)
     ldainx (function(a) return a+2 end,VBLANK)
-    ldainy (function(o) return o+(VBLANK) end,5)
+    ldainy (function(_o) return _o+(VBLANK) end,5)
     ldainy (function(a) return a&3 end,VBLANK)
-    jmpind (function(o) return o+(VBLANK) end)
-    jmpind (function(o) return o+(VBLANK) end,12)
-    jmpind (function(o) return o+(VBLANK-4) end)
+    jmpind (function(_o) return _o+(VBLANK) end)
+    jmpind (function(_o) return _o+(VBLANK) end,12)
+    jmpind (function(_o) return _o+(VBLANK-4) end)
 
     -- cycles are counted without taking any branch
     table.insert(section_current.instructions, { asbin=function() print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end })
-
-    ldazab( function(c) return data * c end, v)
-    ldazab( function(c) return data*c end, v)
-    local f = function(c) return data*c end v=5 ldazab(f,v) v=12 ldazab(f,v)
+--[[
+    lda function(c) return data * c end, v
+    lda \c(data*c), v
+    local f = \c(data*c) v=5 lda !f,v v=12 lda !f,v
     local g = function() return function(c) return data * c end end
 
-    ldazab(g(),v)
-    ldazab( f,v)
-    ldazax (function(o) return o+(_toto+15) end,16)
-    ldaimm (15)
+    lda !g(),v
+#pragma encapsulate off
+    lda f,v
+    lda !_toto+15,16,x
+    lda #15
+#pragma encapsulate on
+]]
 
     do samepage()
-        ldaimm (function(o) return o+(0xac) end)
-        ldaimm (function(o) return o+(VBLANK) end)
-        ldazab(function(o) return o+( 0xbeef) end)
-        ldazab(function(o) return o+( VBLANK) end)
-        ldaabs(function(o) return o+( VBLANK) end)
-        ldazax(function(o) return o+( VBLANK) end)
-        ldaaby(function(o) return o+( VBLANK) end)
-        ldainx (function(o) return o+(VBLANK) end)
-        ldainy (function(o) return o+(VBLANK) end) endpage()
+        ldaimm (function(_o) return _o+(0xac) end)
+        ldaimm (function(_o) return _o+(VBLANK) end)
+        ldazab(function(_o) return _o+( 0xbeef) end)
+        ldazab(function(_o) return _o+( VBLANK) end)
+        ldaabs(function(_o) return _o+( VBLANK) end)
+        ldazax(function(_o) return _o+( VBLANK) end)
+        ldaaby(function(_o) return _o+( VBLANK) end)
+        ldainx (function(_o) return _o+(VBLANK) end)
+        ldainy (function(_o) return _o+(VBLANK) end) endpage()
     end
 
     aslimp()
-    aslzab(function(o) return o+( VBLANK) end)
+    aslzab(function(_o) return _o+( VBLANK) end)
     aslimp()
 label("_toto")
     bnerel( "_toto")
@@ -106,7 +123,7 @@ label("_toto")
     f=function() return "_toto" end bnerel( f())
     bnerel( "_toto")
 
-    jamimp() aslimp() lsrimp() ldximm (function(o) return o+(16) end) ldyzab(function(o) return o+( 0xf0f0) end)
+    jamimp() aslimp() lsrimp() ldximm (function(_o) return _o+(16) end) ldyzab(function(_o) return _o+( 0xf0f0) end)
     rtsimp()
 
 writebin()

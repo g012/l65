@@ -53,6 +53,7 @@ M.link = function()
             for chunk_ix,chunk in ipairs(location.chunks) do
                 if chunk.start <= section.org and chunk.size - (section.org - chunk.start) >= section.size then
                     chunk_reserve(chunk_ix, chunk, section.org, section.size)
+                    symbols[section.label] = section.org
                     goto chunk_located
                 end
             end
@@ -476,11 +477,10 @@ for k,_ in pairs(opzab) do
             if x >= -32768 and x <= 0xffff then return M[k .. 'abs'](late, early) end
             error("value out of word range: " .. x)
         end
-        local eval, asbin
         local abs = opabs[k]
-        local ins = { size=eval, cycles=abs.cycles, asbin=asbin }
-        eval = function()
-            local r,x = pcall(late(early or 0))
+        local ins = { cycles=abs.cycles }
+        ins.size = function()
+            local r,x = pcall(late, early or 0)
             if not r then return 3 end
             x = word_normalize(x)
             local zpg = opzpg[k]
@@ -494,7 +494,7 @@ for k,_ in pairs(opzab) do
             ins.asbin = function(b) b[#b+1]=abs.opc b[#b+1]=x&0xff b[#b+1]=x>>8 end
             return 3
         end
-        asbin = function(b)
+        ins.asbin = function(b)
             local x = word_normalize(late(early or 0))
             -- since we assumed absolute on link phase, we must generate absolute in binary
             if x <= 0xff and opzpg[k] then print("warning: forcing abs on zpg operand for opcode " .. k) end
@@ -539,11 +539,10 @@ for k,_ in pairs(opzax) do
             if x >= -32768 and x <= 0xffff then return M[k .. 'abx'](late, early) end
             error("value out of word range: " .. x)
         end
-        local eval, asbin
         local abx = opabx[k]
-        local ins = { size=eval, cycles=abx.cycles, asbin=asbin }
-        eval = function()
-            local r,x = pcall(late(early or 0))
+        local ins = { cycles=abx.cycles }
+        ins.size = function()
+            local r,x = pcall(late, early or 0)
             if not r then return 3 end
             x = word_normalize(x)
             local zpx = opzpx[k]
@@ -557,7 +556,7 @@ for k,_ in pairs(opzax) do
             ins.asbin = function(b) b[#b+1]=abx.opc b[#b+1]=x&0xff b[#b+1]=x>>8 end
             return 3
         end
-        asbin = function(b)
+        ins.asbin = function(b)
             local x = word_normalize(late(early or 0))
             -- since we assumed absolute on link phase, we must generate absolute in binary
             if x <= 0xff and opzpx[k] then print("warning: forcing abx on zpx operand for opcode " .. k) end
@@ -601,11 +600,10 @@ for k,_ in pairs(opzay) do
             if x >= -32768 and x <= 0xffff then return M[k .. 'aby'](late, early) end
             error("value out of word range: " .. x)
         end
-        local eval, asbin
         local aby = opaby[k]
-        local ins = { size=eval, cycles=aby.cycles, asbin=asbin }
-        eval = function()
-            local r,x = pcall(late(early or 0))
+        local ins = { cycles=aby.cycles }
+        ins.size = function()
+            local r,x = pcall(late, early or 0)
             if not r then return 3 end
             x = word_normalize(x)
             local zpy = opzpy[k]
@@ -619,7 +617,7 @@ for k,_ in pairs(opzay) do
             ins.asbin = function(b) b[#b+1]=aby.opc b[#b+1]=x&0xff b[#b+1]=x>>8 end
             return 3
         end
-        asbin = function(b)
+        ins.asbin = function(b)
             local x = word_normalize(late(early or 0))
             -- since we assumed absolute on link phase, we must generate absolute in binary
             if x <= 0xff and opzpy[k] then print("warning: forcing aby on zpy operand for opcode " .. k) end

@@ -1217,7 +1217,7 @@ local function ParseLua(src)
                 local inner_add = {
                     AstType='BinopExpr', Op='+', OperatorPrecedence=10, Tokens={ t('Symbol', '+') },
                     Lhs = {
-                        AstType='VarExpr', Name='o', Variable={ IsGlobal=false, Name='o', Scope=inner_call_scope }, Tokens={ t('Ident', 'o', {space}) }
+                        AstType='VarExpr', Name='_o', Variable={ IsGlobal=false, Name='_o', Scope=inner_call_scope }, Tokens={ t('Ident', '_o', {space}) }
                     },
                     Rhs = {
                         AstType='Parentheses', Inner=args[1], Tokens={ t('Symbol', '('), t('Symbol', ')') }
@@ -1230,8 +1230,8 @@ local function ParseLua(src)
                 }
                 local inner_call = {
                     AstType='Function', VarArg=false, IsLocal=true, Scope=inner_call_scope, Body=inner_call_body,
-                    Arguments={ { IsGlobal=false, Name='o', Scope=inner_call_scope } },
-                    Tokens={ t('Keyword', 'function'), t('Symbol', '('), t('Ident', 'o'), t('Symbol', ')'), t('Keyword', 'end', {space}) }
+                    Arguments={ { IsGlobal=false, Name='_o', Scope=inner_call_scope } },
+                    Tokens={ t('Keyword', 'function'), t('Symbol', '('), t('Ident', '_o'), t('Symbol', ')'), t('Keyword', 'end', {space}) }
                 }
                 args[1] = inner_call
             end

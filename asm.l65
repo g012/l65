@@ -4,7 +4,18 @@ TIM_OVERSCAN    = 50 -- TIM64T,  3200 cycles = ~ 42 scanlines
 TIM_VBLANK      = 61 -- TIM64T,  3904 cycles = ~ 51 scanlines
 TIM_KERNEL      = 17 -- T1024T, 17408 cycles = ~229 scanlines
 
-location(0xf000, 0xffff)
+function switchbank(i) bit 0x1ff4+i end
+-- create bank stubs
+for bi=0,7,1 do
+    local o=(bi<<12)
+    _ENV['bank' .. bi] = location(0x8000+o, 0x8fff+o)
+    section{"entry"..bi, org=0x8fee+o} switchbank(0) jmp main
+    section{"switchtab"..bi, org=0x8ff4+o} byte(0,0,0,0,0,0,0,0)
+    section{"vectors"..bi, org=0x8ffc+o} word(0xffee,0xffee)
+end
+
+location(bank0)
+--location(0xf000, 0xffff)
 
 if toto ~= 15 then end
 
@@ -42,6 +53,9 @@ charset()
 
 ptr_table("ptrs", message, data, 0)
 
+@@main
+    lda #0
+
 --section{ "toto", align = 256, offset = 16 }
 --section{ "toto", org = 0xf100 }
 --section "waitForIntim"
@@ -74,7 +88,7 @@ ptr_table("ptrs", message, data, 0)
 
     -- cycles are counted without taking any branch
     table.insert(section_current.instructions, { asbin=function() print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end })
-
+--[[
     lda function(c) return data * c end, v
     lda \c(data*c), v
     local f = \c(data*c) v=5 lda !f,v v=12 lda !f,v
@@ -86,6 +100,7 @@ ptr_table("ptrs", message, data, 0)
     lda !_toto+15,16,x
     lda #15
 #pragma encapsulate on
+]]
 
     samepage
         lda #0xac
