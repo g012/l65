@@ -23,8 +23,8 @@ M.link = function()
             else
                 if chunk.size - (start - chunk.start) == size then chunk.size = chunk.size - size
                 else
+                    table.insert(location.chunks, chunk_ix+1, { start=start+size, size=chunk.size-(start+size) })
                     chunk.size = start - chunk.start
-                    table.insert(location.chunks, chunk_ix+1, { start=start+size, size=chunk.start+chunk.size-(start+size) })
                 end
             end
         end
@@ -61,14 +61,14 @@ M.link = function()
 
         -- position independent sections
         table.sort(position_independent_sections, function(a,b) return a.size < b.size end)
-        while #position_independent_sections > 0 do
-            local section = position_independent_sections[1]
+        for _,section in ipairs(position_independent_sections) do
             local chunks = {}
             for _,chunk in ipairs(location.chunks) do
                 if chunk.size >= section.size then chunks[#chunks+1] = chunk end
             end
             table.sort(chunks, function(a,b) return a.size < b.size end)
             for chunk_ix,chunk in ipairs(chunks) do
+print(chunk.size, section.size, section.label)
                 local waste,position = math.maxinteger
                 local usage_lowest = function(start, finish)
                     local inc=1
@@ -79,8 +79,8 @@ M.link = function()
                     end
                     for address=start,finish,inc do
                         for _,constraint in ipairs(section.constraints) do
-                            local start, finish = address+contraint.start, address+constraint.finish
-                            if start // 0x100 == finish // 0x100 then
+                            local from, to = address+constraint.from, address+constraint.to
+                            if from // 0x100 == to // 0x100 then
                                 if constraint.type == 'crosspage' then goto constraints_not_met end
                             else
                                 if constraint.type == 'samepage' then goto constraints_not_met end
@@ -99,8 +99,10 @@ M.link = function()
                 end
                 if position then
                     chunk_reserve(chunk_ix, chunk, position, section.size)
+for k,v in ipairs(location.chunks) do print(k, v.size) end
                     section.org = position
                     symbols[section.label] = position
+print('yay')
                     goto chunk_located
                 end
             end
@@ -142,13 +144,14 @@ M.genbin = function(filler)
             error(string.format("location [%04x,%04x] overlaps another",
                 location.start, math.type(location.size) == 'integer' and (location.size + location.start) or 0xffff))
         end
-        for i=#bin,location.start do ins(bin, filler) end
+        for i=#bin,location.start-1 do ins(bin, filler) end
         M.size=0 M.cycles=0
         local sections = location.sections
-        table.sort(sections, function(a,b) return a.start < b.start end)
-        for _,section in sections do
+        table.sort(sections, function(a,b) return a.org < b.org end)
+        for _,section in ipairs(sections) do
+print(section.org, #bin)
             assert(section.org >= #bin)
-            for i=#bin,section.org do ins(bin, filler) end
+            for i=#bin,section.org-1 do ins(bin, filler) end
             for _,instruction in ipairs(section.instructions) do
                 if instruction.bin then for _,b in ipairs(instruction.bin) do ins(bin, b) end
                 elseif instruction.asbin then instruction.asbin(bin) end
@@ -156,7 +159,7 @@ M.genbin = function(filler)
             end
         end
         if math.type(location.size) == 'integer' then
-            local endpos = location.size+location.start
+            local endpos = location.size+location.start-1
             for i=#bin,endpos do ins(bin, filler) end
         end
     end
@@ -167,8 +170,7 @@ M.writebin = function(filename, bin)
     if not filename then filename = 'main.bin' end
     if not bin then bin = M.genbin() end
     local f = assert(io.open(filename, "wb"), "failed to open " .. filename .. " for writing")
-    local sconv,s=string.char,{} for i=1,#bin do s[i] = sconv(bin[i]) end
-    f:write(table.concat(s))
+    f:write(string.char(bin:unpack()))
     f:close()
 end
 
@@ -192,8 +194,8 @@ M.location = function(start, finish)
         end end
         error("unable to find reference to location [" .. (start.start or '?') .. ", " .. (start.finish or '?') .. "]")
     end
-    local size = (finish or math.huge) - start
-    local location = { start=start, finish=finish, chunks={ { start=start, size=size } } }
+    local size = (finish or math.huge) - start + 1
+    local location = { start=start, finish=finish, sections={}, chunks={ { start=start, size=size } } }
     locations[#locations+1] = location
     M.location_current = location
     return location
@@ -271,7 +273,7 @@ end
 M.endpage = function()
     local section = M.section_current
     local constraint = section.constraints[#section.constraints]
-    assert(constraint and not constraint.finish, "closing constraint, but no constraint is open")
+    assert(constraint and not constraint.to, "closing constraint, but no constraint is open")
     constraint.to = #section.instructions
 end
 
@@ -314,7 +316,7 @@ M.byte_impl = function(args, nrm)
         elseif t == 'table' then table.move(v,1,#v,#data+1,data)
         elseif t == 'string' then
             if cs then
-                for _,c in v:gmatch'.' do
+                for c in v:gmatch'.' do
                     local i=cs[c]
                     if not i then error("character " .. c .. " is not part of current charset") end
                     data[#data+1]=i
@@ -329,6 +331,9 @@ M.byte_impl = function(args, nrm)
     local asbin = function(b)
         for _,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
+            local vt = type(v)
+            if vt == 'table' and v.label then v = symbols[v.label]
+            elseif vt == 'string' then v = symbols[v] end
             b[#b+1] = nrm(v)
         end
     end
@@ -352,6 +357,7 @@ local byte_encapsulate = function(args)
             args[k] = function() return symbols[v.label] end
         end
     end
+    return args
 end
 M.byte_hi = function(...)
     return M.byte_impl(byte_encapsulate{...}, function(v) return (v>>8)&0xff end)
@@ -383,6 +389,9 @@ M.word = function(...)
     local asbin = function(b)
         for _,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
+            local vt = type(v)
+            if vt == 'table' and v.label then v = symbols[v.label]
+            elseif vt == 'string' then v = symbols[v] end
             v = word_normalize(v)
             b[#b+1] = v&0xff
             b[#b+1] = v>>8

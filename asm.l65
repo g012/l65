@@ -3,18 +3,20 @@ dofile "vcs.lua"
 TIM_OVERSCAN    = 50 -- TIM64T,  3200 cycles = ~ 42 scanlines
 TIM_VBLANK      = 61 -- TIM64T,  3904 cycles = ~ 51 scanlines
 TIM_KERNEL      = 17 -- T1024T, 17408 cycles = ~229 scanlines
-location(0xf000, 0xffff)
+
+location(0x000, 0xfff)
 
 if toto ~= 15 then end
 
 abc = 13 ~ 0x7
 xyz = 1 << 2
 
+x={ f=function() end }
 x:f()
 ::lualabel::
 
 #pragma syntax6502 off
-lda = 5 if lda < 6 then print('yep') end
+lda = 5 if lda < 6 then sta=7 end
 #pragma syntax6502 on
 
 local function ptr_table(label, ...)
@@ -38,7 +40,7 @@ charset()
     byte_lo(message) byte_hi(message)
     byte(\(message&0xff), \(message>>8))
 
-ptr_table("ptrs", message, data, 0)
+ptr_table("ptrs", \(message), data, 0)
 
 --section{ "toto", align = 256, offset = 16 }
 --section{ "toto", org = 0xf100 }
@@ -103,12 +105,14 @@ ptr_table("ptrs", message, data, 0)
 @_toto
     bne "test"
     bne waitForIntim
-    bne f()
+    f=\("test") bne f()
     bne _toto
 
     jam asl lsr ldx #16 ldy 0xf0f0
 
     rts
+
+writebin()
 
 --[[
 section "doOverscan"
