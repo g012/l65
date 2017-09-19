@@ -4,7 +4,7 @@ TIM_OVERSCAN    = 50 -- TIM64T,  3200 cycles = ~ 42 scanlines
 TIM_VBLANK      = 61 -- TIM64T,  3904 cycles = ~ 51 scanlines
 TIM_KERNEL      = 17 -- T1024T, 17408 cycles = ~229 scanlines
 
-location(0x000, 0xfff)
+location(0xf000, 0xffff)
 
 if toto ~= 15 then end
 
@@ -40,7 +40,7 @@ section("data")
     byte_lo(message) byte_hi(message)
     byte(function() return message&0xff end, function() return message>>8 end)
 
-ptr_table("ptrs", function() return message end, data, 0)
+ptr_table("ptrs", message, data, 0)
 
 --section{ "toto", align = 256, offset = 16 }
 --section{ "toto", org = 0xf100 }

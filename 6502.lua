@@ -23,8 +23,9 @@ M.link = function()
             else
                 if chunk.size - (start - chunk.start) == size then chunk.size = chunk.size - size
                 else
-                    table.insert(location.chunks, chunk_ix+1, { start=start+size, size=chunk.size-(start+size) })
-                    chunk.size = start - chunk.start
+                    local sz = start - chunk.start
+                    table.insert(location.chunks, chunk_ix+1, { start=start+size, size=chunk.size-(sz+size) })
+                    chunk.size = sz
                 end
             end
         end
@@ -68,7 +69,6 @@ M.link = function()
             end
             table.sort(chunks, function(a,b) return a.size < b.size end)
             for chunk_ix,chunk in ipairs(chunks) do
-print(chunk.size, section.size, section.label)
                 local waste,position = math.maxinteger
                 local usage_lowest = function(start, finish)
                     local inc=1
@@ -99,10 +99,8 @@ print(chunk.size, section.size, section.label)
                 end
                 if position then
                     chunk_reserve(chunk_ix, chunk, position, section.size)
-for k,v in ipairs(location.chunks) do print(k, v.size) end
                     section.org = position
                     symbols[section.label] = position
-print('yay')
                     goto chunk_located
                 end
             end
@@ -135,30 +133,33 @@ M.resolve = function()
 end
 
 M.genbin = function(filler)
+    if #locations == 0 then return end
     if not filler then filler = 0 end -- brk opcode
     M.resolve()
     local bin = {}
-    local ins = table.insert
+    local ins,mov = table.insert,table.move
     table.sort(locations, function(a,b) return a.start < b.start end)
+    local of0 = locations[1].start
     for _,location in ipairs(locations) do
         if location.start < #bin then
             error(string.format("location [%04x,%04x] overlaps another", location.start, location.finish))
         end
-        for i=#bin,location.start-1 do ins(bin, filler) end
+        for i=#bin+of0,location.start-1 do ins(bin, filler) end
         M.size=0 M.cycles=0
         local sections = location.sections
         table.sort(sections, function(a,b) return a.org < b.org end)
         for _,section in ipairs(sections) do
-            assert(section.org >= #bin)
-            for i=#bin,section.org-1 do ins(bin, filler) end
+            assert(section.org >= #bin+of0)
+            for i=#bin+of0,section.org-1 do ins(bin, filler) end
             for _,instruction in ipairs(section.instructions) do
-                if instruction.bin then for _,b in ipairs(instruction.bin) do ins(bin, b) end
-                elseif instruction.asbin then instruction.asbin(bin) end
+                local b,f = instruction.bin,instruction.asbin
+                if b then mov(b,1,#b,#bin+1,bin)
+                elseif f then f(bin) end
                 M.size=#bin M.cycles=M.cycles+(instruction.cycles or 0)
             end
         end
         if location.finish then
-            for i=#bin,location.finish do ins(bin, filler) end
+            for i=#bin+of0,location.finish do ins(bin, filler) end
         end
     end
     return bin
@@ -632,19 +633,27 @@ cycles_def=2 xcross_def=0 local oprel={
 } M.oprel = oprel
 for k,v in pairs(oprel) do
     M[k .. 'rel'] = function(label)
-        local parent = M.label_current
-        local asbin = function(b)
-            local x = label
+        local parent,offset = M.label_current
+        local section = M.section_current
+        local op = { cycles=2 }
+        op.size = function()
+            offset = section.size
+            op.size=2
+            return 2
+        end
+        op.asbin = function(b)
+            local x,l = label,label
             if type(x) == 'function' then x=x() end
             if type(x) == 'string' then
-                if x:sub(1,1) == '_' then x = parent .. x end
+                if x:sub(1,1) == '_' then x=parent..x l=x end
                 x = symbols[x]
             end
             if type(x) ~= 'number' then error("unresolved branch target: " .. tostring(x)) end
-            if x < -128 or x > 127 then error("branch target out of range: " .. x) end
+            x = x - offset - section.org
+            if x < -128 or x > 127 then error("branch target out of range for " .. l .. ": " .. x) end
             b[#b+1]=v.opc b[#b+1]=x&0xff
         end
-        table.insert(M.section_current.instructions, { size=2, cycles=2, asbin=asbin })
+        table.insert(M.section_current.instructions, op)
     end
 end
 cycles_def=5 xcross_def=0 local opind={
