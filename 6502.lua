@@ -62,7 +62,7 @@ M.link = function()
         end end
 
         -- position independent sections
-        table.sort(position_independent_sections, function(a,b) return a.size < b.size end)
+        table.sort(position_independent_sections, function(a,b) return a.size==b.size and a.label>b.label or a.size>b.size end)
         for _,section in ipairs(position_independent_sections) do
             local chunks = {}
             for _,chunk in ipairs(location.chunks) do
@@ -87,8 +87,13 @@ M.link = function()
                                 if constraint.type == 'samepage' then goto constraints_not_met end
                             end
                         end
-                        local w = math.min(address - chunk.start, chunk.size - (address - chunk.start))
-                        if w < waste then waste=w position=address end
+                        local w = math.min(address - chunk.start, chunk.size - (address+section.size - chunk.start))
+                        if w < waste then waste=w position=address
+                        elseif w==waste then
+                            -- if waste is the same, keep the one that leaves most aligned addresses for other sections
+                            -- TODO
+                            if position and address>position then waste=w position=address end
+                        end
                         ::constraints_not_met::
                     end
                 end
@@ -195,6 +200,10 @@ M.writesym = function(filename)
     s[#s+1] = '--- End of Symbol List.'
     f:write(table.concat(s, '\n'))
     f:close()
+end
+
+M.getstats = function()
+    return 'TODO' -- TODO
 end
 
 M.location = function(start, finish)
