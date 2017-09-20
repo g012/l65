@@ -1780,6 +1780,9 @@ local function ParseLua(src)
             nodeGoto.Tokens  = tokenList
             stat = nodeGoto
 
+        elseif tok:IsSymbol(';') then
+            stat = { AstType='SemicolonStatement', Tokens={} }
+
         else
 
             --statementParseExpr
@@ -2269,6 +2272,8 @@ local function Format65(ast)
 
         elseif statement.AstType == 'Eof' then
             appendWhite()
+
+        elseif statement.AstType == 'SemicolonStatement' then
 
         else
             print("Unknown AST Type: ", statement.AstType)
