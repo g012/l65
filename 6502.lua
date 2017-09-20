@@ -70,7 +70,7 @@ M.link = function()
             end
             table.sort(chunks, function(a,b) return a.size < b.size end)
             for chunk_ix,chunk in ipairs(chunks) do
-                local waste,position = math.maxinteger
+                local waste,position,position_end = math.maxinteger
                 local usage_lowest = function(start, finish)
                     local inc=1
                     if section.align then
@@ -80,20 +80,35 @@ M.link = function()
                     end
                     for address=start,finish,inc do
                         for _,constraint in ipairs(section.constraints) do
-                            local from, to = address+constraint.from, address+constraint.to
-                            if from // 0x100 == to // 0x100 then
+                            local cstart, cfinish = address+constraint.start, address+constraint.finish
+                            if cstart // 0x100 == cfinish // 0x100 then
                                 if constraint.type == 'crosspage' then goto constraints_not_met end
                             else
                                 if constraint.type == 'samepage' then goto constraints_not_met end
                             end
                         end
-                        local w = math.min(address - chunk.start, chunk.size - (address+section.size - chunk.start))
-                        if w < waste then waste=w position=address
-                        elseif w==waste then
-                            -- if waste is the same, keep the one that leaves most aligned addresses for other sections
-                            -- TODO
-                            if position and address>position then waste=w position=address end
+                        local address_end = address+section.size
+                        local w = math.min(address - chunk.start, chunk.size - (address_end - chunk.start))
+                        if w > waste then goto constraints_not_met end
+                        if w==waste then
+                            -- if waste is the same, keep the one that uses the least amount of aligned addresses
+                            local align=0x100
+                            repeat
+                                local cross_count_cur = (position_end+align-1)//align - (position+align-1)//align
+                                if position&(align-1) == 0 then cross_count_cur=cross_count_cur+1 end
+                                local cross_count_new = (address_end+align-1)//align - (address+align-1)//align
+                                if address&(align-1) == 0 then cross_count_new=cross_count_new+1 end
+                                if cross_count_new < cross_count_cur then goto select_pos end
+                                align = align>>1
+                            until align==1
+                            -- if cross count is same, take the one with the most LSB count
+                            local lsb_cur,lsb_new=0,0
+                            for i=0,15 do if position&(1<<i) == 0 then lsb_cur=lsb_cur+1 else break end end
+                            for i=0,15 do if address&(1<<i) == 0 then lsb_new=lsb_new+1 else break end end
+                            if lsb_cur >= lsb_new then goto constraints_not_met end
                         end
+                        ::select_pos::
+                        waste=w position=address position_end=address_end
                         ::constraints_not_met::
                     end
                 end
@@ -107,6 +122,8 @@ M.link = function()
                     chunk_reserve(chunk_ix, chunk, position, section.size)
                     section.org = position
                     symbols[section.label] = position
+                    --print(section.label, string.format("%04X\t%d", position, section.size))
+                    --for k,v in ipairs(location.chunks) do print(string.format("  %04X  %04X  %d", v.start, v.size+v.start-1, v.size)) end
                     goto chunk_located
                 end
             end
@@ -242,7 +259,7 @@ M.section = function(t)
         local instructions = self.instructions
         self.size=0 self.cycles=0
         for _,instruction in ipairs(instructions) do
-            instruction.offset = size
+            instruction.offset = self.size
             local ins_sz = instruction.size or 0
             if type(ins_sz) == 'function' then
                 -- evaluation is needed to get the size (distinguish zpg/abs)
