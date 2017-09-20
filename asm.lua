@@ -88,19 +88,17 @@ section("waitForIntim") --alt short syntax when no other option
 
     -- cycles are counted without taking any branch
     table.insert(section_current.instructions, { asbin=function() print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end })
---[[
-    lda function(c) return data * c end, v
-    lda \c(data*c), v
-    local f = \c(data*c) v=5 lda !f,v v=12 lda !f,v
-    local g = function() return function(c) return data * c end end
 
-    lda !g(),v
-#pragma encapsulate off
-    lda f,v
-    lda !_toto+15,16,x
-    lda #15
-#pragma encapsulate on
-]]
+    v=7
+    ldazab( function(c) return 0xffff&(data * c) end, v)
+    ldazab( function(c) return (data*c)&0xffff end, v)
+    local f = function(c) return (data*c)&0xffff end v=5 ldazab(f,v) v=3 ldazab(f,v)
+    local g = function() return function(c) return (data * c)&0xffff end end
+
+    ldazab(g(),v)
+    ldazab( f,v)
+    ldazax (function(_o) return _o+(_toto+15) end,16)
+    ldaimm (15)
 
     do samepage()
         ldaimm (function(_o) return _o+(0xac) end)
@@ -114,6 +112,7 @@ section("waitForIntim") --alt short syntax when no other option
         ldainy (function(_o) return _o+(VBLANK) end) endpage()
     end
 
+    beqrel( "_toto")
     aslimp()
     aslzab(function(_o) return _o+( VBLANK) end)
     aslimp()

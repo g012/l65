@@ -88,11 +88,12 @@ ptr_table("ptrs", message, data, 0)
 
     -- cycles are counted without taking any branch
     table.insert(section_current.instructions, { asbin=function() print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end })
---[[
-    lda function(c) return data * c end, v
-    lda \c(data*c), v
-    local f = \c(data*c) v=5 lda !f,v v=12 lda !f,v
-    local g = function() return function(c) return data * c end end
+
+    v=7
+    lda function(c) return 0xffff&(data * c) end, v
+    lda \c((data*c)&0xffff), v
+    local f = \c((data*c)&0xffff) v=5 lda !f,v v=3 lda !f,v
+    local g = function() return function(c) return (data * c)&0xffff end end
 
     lda !g(),v
 #pragma encapsulate off
@@ -100,7 +101,6 @@ ptr_table("ptrs", message, data, 0)
     lda !_toto+15,16,x
     lda #15
 #pragma encapsulate on
-]]
 
     samepage
         lda #0xac
@@ -114,6 +114,7 @@ ptr_table("ptrs", message, data, 0)
         lda (VBLANK),y
     end
 
+    beq _toto
     asl
     asl VBLANK
     asl

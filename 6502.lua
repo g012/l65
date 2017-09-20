@@ -131,6 +131,13 @@ M.resolve = function()
         elseif t == 'string' then symbols[k]=symbols[v] count=count+1 end
     end end
     stats.resolved_count = count
+
+    -- set local label references resolver
+    local llresolver = { __index = function(tab,key)
+        if type(key) ~= 'string' or key:sub(1,1) ~= '_' then return nil end
+        return symbols[M.label_current .. key]
+    end }
+    setmetatable(symbols, llresolver)
 end
 
 M.genbin = function(filler)
@@ -152,6 +159,7 @@ M.genbin = function(filler)
         for _,section in ipairs(sections) do
             assert(section.org >= #bin+of0)
             for i=#bin+of0,section.org-1 do ins(bin, filler) end
+            M.label_current = section.label
             for _,instruction in ipairs(section.instructions) do
                 local b,f = instruction.bin,instruction.asbin
                 if b then mov(b,1,#b,#bin+1,bin)
@@ -253,6 +261,7 @@ M.label = function(name)
         name = M.label_current .. name
     else
         M.label_current = name
+        label.asbin = function() M.label_current = name end
     end
     if symbols[name] then error("duplicate symbol: " .. name) end
     symbols[name] = label
