@@ -127,8 +127,9 @@ ptr_table("ptrs", message, data, 0)
     jam asl lsr ldx #16 ldy 0xf0f0
     rts
 
-writebin()
-writesym()
+local filename=string.match(arg[0], ".-([^\\/]-)%.?[^%.\\/]*$")
+writebin(filename..'.bin')
+writesym(filename..'.sym')
 print(getstats())
 
 --[[

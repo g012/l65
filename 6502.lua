@@ -209,18 +209,21 @@ M.writesym = function(filename)
     local f = assert(io.open(filename, "wb"), "failed to open " .. filename .. " for writing")
     table.sort(symbols)
     local ins,fmt,rep = table.insert,string.format,string.rep
-    local s ={'--- Symbol List'}
-    local sym_rev = {}
+    local s,sym_rev = {},{}
     for k,v in pairs(symbols) do if type(v) == 'number' then ins(sym_rev,k) end end
     table.sort(sym_rev, function(a,b) local x,y=symbols[a],symbols[b] return x==y and a<b or x<y end)
-    for _,v in ipairs(sym_rev) do local k=symbols[v] ins(s, fmt("%s%s %04x", v, rep(' ',24-#v), k)) end
-    s[#s+1] = '--- End of Symbol List.'
+    for _,v in ipairs(sym_rev) do
+        local k=symbols[v]
+        local u=v:find'_' if u then -- change _ to . in local labels
+            local parent=v:sub(1,u-1) if symbols[parent] then v = v:sub(1,u-1)..'.'..v:sub(u+1) end
+        end
+        ins(s, fmt("%s%s %04x", v, rep(' ',24-#v), k))
+    end
     f:write(table.concat(s, '\n'))
     f:close()
 end
 
 M.getstats = function()
-    return 'TODO' -- TODO
 end
 
 M.location = function(start, finish)

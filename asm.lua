@@ -125,8 +125,9 @@ label("_toto")
     jamimp() aslimp() lsrimp() ldximm (function(_o) return _o+(16) end) ldyzab(function(_o) return _o+( 0xf0f0) end)
     rtsimp()
 
-writebin()
-writesym()
+local filename=string.match(arg[0], ".-([^\\/]-)%.?[^%.\\/]*$")
+writebin(filename..'.bin')
+writesym(filename..'.sym')
 print(getstats())
 
 --[[
