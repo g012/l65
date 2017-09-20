@@ -8,10 +8,10 @@ function switchbank(i) bitzab(function(_o) return _o+( 0x1ff4+i) end) end
 -- create bank stubs
 for bi=0,7,1 do
     local o=(bi<<12)
-    _ENV['bank' .. bi] = location(0x8000+o, 0x8fff+o)
-    section{"entry"..bi, org=0x8fee+o} switchbank(0) jmpabs(function(_o) return _o+( main) end)
+    _ENV['bank' .. bi] = location{0x8000+o, 0x8fff+o, rorg=0xf000}
+    local start=section{"entry"..bi, org=0x8fee+o} switchbank(0) if bi==0 then jmpabs(function(_o) return _o+( main) end) end
     section{"switchtab"..bi, org=0x8ff4+o} byte(0,0,0,0,0,0,0,0)
-    section{"vectors"..bi, org=0x8ffc+o} word(0xffee,0xffee)
+    section{"vectors"..bi, org=0x8ffc+o} word(start,start)
 end
 
 location(bank0)
@@ -127,6 +127,7 @@ label("_toto")
 
 writebin()
 writesym()
+print(getstats())
 
 --[[
 section "doOverscan"

@@ -14,7 +14,7 @@ M.link = function()
     stats.unused = 0
     stats.cycles = 0
     for _,location in ipairs(locations) do
-        local sections = location.sections
+        local sections,rorg = location.sections,location.rorg
 
         local chunk_reserve = function(chunk_ix, chunk, start, size)
             if start == chunk.start then
@@ -53,7 +53,7 @@ M.link = function()
             for chunk_ix,chunk in ipairs(location.chunks) do
                 if chunk.start <= section.org and chunk.size - (section.org - chunk.start) >= section.size then
                     chunk_reserve(chunk_ix, chunk, section.org, section.size)
-                    symbols[section.label] = section.org
+                    symbols[section.label] = rorg(section.org)
                     goto chunk_located
                 end
             end
@@ -121,7 +121,7 @@ M.link = function()
                 if position then
                     chunk_reserve(chunk_ix, chunk, position, section.size)
                     section.org = position
-                    symbols[section.label] = position
+                    symbols[section.label] = rorg(position)
                     --print(section.label, string.format("%04X\t%d", position, section.size))
                     --for k,v in ipairs(location.chunks) do print(string.format("  %04X  %04X  %d", v.start, v.size+v.start-1, v.size)) end
                     goto chunk_located
@@ -145,14 +145,14 @@ M.resolve = function()
     M.link()
 
     stats.resolved_count = 0
-    local count = 0
+    repeat local count = 0
     for k,v in pairs(symbols) do if k ~= '__index' then
         local t = type(v)
         if t == 'function' then v=v() t=type(v) symbols[k]=v count=count+1 end
-        if t == 'table' and type(v.resolve) == 'function' then symbols[k]=v.resolve() count=count+1
-        elseif t == 'string' then symbols[k]=symbols[v] count=count+1 end
-    end end
-    stats.resolved_count = count
+        if t == 'table' and type(v.resolve) == 'function' then symbols[k]=v.resolve() count=count+1 end
+        if t == 'string' and symbols[v] then symbols[k]=symbols[v] count=count+1 end
+        stats.resolved_count = stats.resolved_count + count
+    end end until count == 0
 
     -- set local label references resolver
     local llresolver = { __index = function(tab,key)
@@ -224,15 +224,26 @@ M.getstats = function()
 end
 
 M.location = function(start, finish)
+    local location = { type='location', start=start, finish=finish, sections={} }
     if type(start) == 'table' then
-        for _,v in ipairs(locations) do if v == start then
-            M.location_current = start
-            return start
-        end end
-        error("unable to find reference to location [" .. (start.start or '?') .. ", " .. (start.finish or '?') .. "]")
+        if start.type == 'location' then
+            for _,v in ipairs(locations) do if v == start then
+                M.location_current = start
+                return start
+            end end
+            error("unable to find reference to location [" .. (start.start or '?') .. ", " .. (start.finish or '?') .. "]")
+        end
+        location.start = start[1]
+        location.finish = start[2]
+        location.rorg = start.rorg
+        if type(location.rorg) == 'number' then
+            local offset = location.rorg - location.start
+            location.rorg = function(x) return x+offset end
+        end
     end
-    local size = (finish or math.huge) - start + 1
-    local location = { start=start, finish=finish, sections={}, chunks={ { start=start, size=size } } }
+    if not location.rorg then location.rorg = function(x) return x end end
+    local size = (location.finish or math.huge) - location.start + 1
+    location.chunks={ { start=location.start, size=size } }
     locations[#locations+1] = location
     M.location_current = location
     return location
@@ -281,7 +292,7 @@ end
 
 M.label = function(name)
     local label,offset
-    local section = M.section_current
+    local section,rorg = M.section_current,M.location_current.rorg
     label = { type='label' }
     if name:sub(1,1) == '_' then -- local label
         name = M.label_current .. name
@@ -296,7 +307,7 @@ M.label = function(name)
         label.size = 0
         return 0
     end
-    label.resolve = function() return section.org + offset end
+    label.resolve = function() return rorg(section.org + offset) end
     table.insert(section.instructions, label)
     return label
 end
@@ -667,7 +678,7 @@ cycles_def=2 xcross_def=0 local oprel={
 for k,v in pairs(oprel) do
     M[k .. 'rel'] = function(label)
         local parent,offset = M.label_current
-        local section = M.section_current
+        local section,rorg = M.section_current,M.location_current.rorg
         local op = { cycles=2 }
         op.size = function()
             offset = section.size
@@ -682,7 +693,7 @@ for k,v in pairs(oprel) do
                 x = symbols[x]
             end
             if type(x) ~= 'number' then error("unresolved branch target: " .. tostring(x)) end
-            x = x - offset - section.org
+            x = x - offset - rorg(section.org)
             if x < -128 or x > 127 then error("branch target out of range for " .. l .. ": " .. x) end
             b[#b+1]=v.opc b[#b+1]=x&0xff
         end
