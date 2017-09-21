@@ -11,6 +11,7 @@ setmetatable(M, symbols)
 M.link = function()
     if stats.unused then return end
 
+    stats.used = 0
     stats.unused = 0
     stats.cycles = 0
     for _,location in ipairs(locations) do
@@ -33,10 +34,11 @@ M.link = function()
         -- filter sections list
         local position_independent_sections = {}
         local symbols_to_remove = {}
-        location.cycles=0
+        location.cycles=0 location.used=0
         for ix,section in ipairs(sections) do
             section:compute_size()
             location.cycles = location.cycles + section.cycles
+            location.used = location.used + section.size
             if section.size == 0 then
                 sections[ix]=nil
                 if not section.org then table.insert(symbols_to_remove, section.label) end
@@ -44,6 +46,7 @@ M.link = function()
         end
         for _,v in ipairs(symbols_to_remove) do symbols[v] = nil end
         stats.cycles = stats.cycles + location.cycles
+        stats.used = stats.used + location.used
 
         -- fixed position sections
         for section_ix,section in ipairs(sections) do if section.org then
@@ -137,7 +140,13 @@ M.link = function()
 
         -- unused space stats
         local unused = 0
-        for _,chunk in ipairs(location.chunks) do unused = unused + chunk.size end
+        for _,chunk in ipairs(location.chunks) do
+            if chunk.size ~= math.huge then
+                unused = unused + chunk.size
+            else
+                location.stops_at = chunk.start-1
+            end
+        end
         location.unused = unused
         stats.unused = stats.unused + unused
 
@@ -197,6 +206,7 @@ M.genbin = function(filler)
             for i=#bin+of0,location.finish do ins(bin, filler) end
         end
     end
+    stats.bin_size = #bin
     return bin
 end
 
@@ -231,20 +241,21 @@ end
 
 stats.__tostring = function()
     local s,ins={},table.insert
-    ins(s, "                  Free  Used   Area")
+    ins(s, "                Free  Used  Size     Area")
     for _,location in ipairs(locations) do
+        local name = (location.name or ''):sub(1,14)
+        name = string.rep(' ', 14-#name) .. name
+        local fmt = "%s  %5d %5d %5d [%04X-%04X]"
         if location.finish then
             local size = location.finish-location.start+1
-            local name = (location.name or ''):sub(1,16)
-            name = string.rep(' ', 16-#name) .. name
-            ins(s, string.format("%s  %5d %5d %6d [%04X-%04X]", name,
+            ins(s, string.format(fmt, name,
                 location.unused, size-location.unused, size, location.start, location.finish))
         else
-        ins(s, string.format("  %04X     --      --    %06X      --",
-            location.start, 0)) -- TODO test infinite locations
+            ins(s, string.format(fmt, name,
+                location.unused, location.used, location.stops_at-location.start+1, location.start, location.stops_at))
         end
     end
-    ins(s, string.format("FREE ROM: %04X (%d)", stats.unused, stats.unused))
+    ins(s, string.format(" --- Total ---  %5d %5d %5d", stats.unused, stats.used, stats.bin_size))
     return table.concat(s, '\n')
 end
 
