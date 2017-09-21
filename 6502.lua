@@ -407,7 +407,7 @@ M.byte_impl = function(args, nrm)
     local data,cs = {},M.cs
     for k,v in ipairs(args) do
         local t = type(v)
-        if t == 'number' or t == 'function' or t == 'string' then data[#data+1] = v
+        if t == 'number' or t == 'function' then data[#data+1] = v
         elseif t == 'table' then table.move(v,1,#v,#data+1,data)
         elseif t == 'string' then
             if cs then
