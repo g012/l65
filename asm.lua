@@ -14,6 +14,13 @@ for bi=0,7,1 do
     section{"vectors"..bi, org=0x8ffc+o} word(start,start)
 end
 
+--[[
+location(0x15000)
+@test3
+lda #15
+]]
+
+bank0.name = 'core'
 location(bank0)
 --location(0xf000, 0xffff)
 
@@ -128,7 +135,7 @@ label("_toto")
 local filename=string.match(arg[0], ".-([^\\/]-)%.?[^%.\\/]*$")
 writebin(filename..'.bin')
 writesym(filename..'.sym')
-print(getstats())
+print(stats)
 
 --[[
 section "doOverscan"

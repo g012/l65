@@ -2,7 +2,7 @@ local M = {}
 
 local symbols={} M.symbols=symbols
 local locations={} M.locations=locations
-local stats={} M.stats=stats
+local stats={} M.stats=stats setmetatable(stats, stats)
 
 M.__index = M
 symbols.__index = symbols
@@ -105,11 +105,11 @@ M.link = function()
                                 if cross_count_new < cross_count_cur then goto select_pos end
                                 align = align>>1
                             until align==1
-                            -- if cross count is same, take the one with the most LSB count
+                            -- if cross count is same, take the one with the most set LSB count (eg. select 11 over 10)
                             local lsb_cur,lsb_new=0,0
                             for i=0,15 do if rposition&(1<<i) == 0 then lsb_cur=lsb_cur+1 else break end end
                             for i=0,15 do if raddress&(1<<i) == 0 then lsb_new=lsb_new+1 else break end end
-                            if lsb_cur >= lsb_new then goto constraints_not_met end
+                            if lsb_cur <= lsb_new then goto constraints_not_met end
                         end
                         ::select_pos::
                         waste=w position=address position_end=address_end
@@ -229,21 +229,22 @@ M.writesym = function(filename)
     f:close()
 end
 
-M.getstats = function()
+stats.__tostring = function()
     local s,ins={},table.insert
-    -- TODO allow set name for location
-    ins(s, "  START   END     SIZE    USED    FREE")
+    ins(s, "                  Free  Used   Area")
     for _,location in ipairs(locations) do
         if location.finish then
             local size = location.finish-location.start+1
-            ins(s, string.format("  %04X    %04X    %04X    %04X    %04X (%d)",
-                location.start, location.finish, size, size-location.unused, location.unused, location.unused))
+            local name = (location.name or ''):sub(1,16)
+            name = string.rep(' ', 16-#name) .. name
+            ins(s, string.format("%s  %5d %5d %6d [%04X-%04X]", name,
+                location.unused, size-location.unused, size, location.start, location.finish))
         else
         ins(s, string.format("  %04X     --      --    %06X      --",
             location.start, 0)) -- TODO test infinite locations
         end
     end
-    ins(s, string.format("FREE ROM: %08X (%d)", stats.unused, stats.unused))
+    ins(s, string.format("FREE ROM: %04X (%d)", stats.unused, stats.unused))
     return table.concat(s, '\n')
 end
 
