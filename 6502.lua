@@ -34,6 +34,7 @@ M.link = function()
         -- filter sections list
         local position_independent_sections = {}
         local symbols_to_remove = {}
+        local section_count = #sections
         location.cycles=0 location.used=0
         for ix,section in ipairs(sections) do
             section:compute_size()
@@ -44,6 +45,9 @@ M.link = function()
                 if not section.org then table.insert(symbols_to_remove, section.label) end
             elseif not section.org then table.insert(position_independent_sections, section) end
         end
+        do local j=0 for i=1,section_count do
+            if sections[i] ~= nil then j=j+1 sections[j],sections[i] = sections[i],sections[j] end
+        end end
         for _,v in ipairs(symbols_to_remove) do symbols[v] = nil end
         stats.cycles = stats.cycles + location.cycles
         stats.used = stats.used + location.used
@@ -255,7 +259,9 @@ stats.__tostring = function()
                 location.unused, location.used, location.stops_at-location.start+1, location.start, location.stops_at))
         end
     end
-    ins(s, string.format(" --- Total ---  %5d %5d %5d", stats.unused, stats.used, stats.bin_size))
+    if #locations > 1 then
+        ins(s, string.format(" --- Total ---  %5d %5d %5d", stats.unused, stats.used, stats.bin_size))
+    end
     return table.concat(s, '\n')
 end
 
@@ -326,10 +332,12 @@ M.section = function(t)
     return section
 end
 
+M.label_gen_ix = 0
 M.label = function(name)
     local label,offset
     local section,rorg = M.section_current,M.location_current.rorg
     label = { type='label' }
+    if not name then name='_L'..M.label_gen_ix M.label_gen_ix=M.label_gen_ix+1 end
     if name:sub(1,1) == '_' then -- local label
         name = M.label_current .. name
     else
@@ -345,7 +353,7 @@ M.label = function(name)
     end
     label.resolve = function() return rorg(section.org + offset) end
     table.insert(section.instructions, label)
-    return label
+    return name,label
 end
 
 M.samepage = function()
@@ -395,10 +403,11 @@ M.charset = function(s, f)
 end
 
 M.byte_impl = function(args, nrm)
+    if #args == 0 then error("byte*() need at least 1 argument") end
     local data,cs = {},M.cs
     for k,v in ipairs(args) do
         local t = type(v)
-        if t == 'number' or t == 'function' then data[#data+1] = v
+        if t == 'number' or t == 'function' or t == 'string' then data[#data+1] = v
         elseif t == 'table' then table.move(v,1,#v,#data+1,data)
         elseif t == 'string' then
             if cs then
@@ -462,10 +471,11 @@ end
 --    after symbols have been resolved
 M.word = function(...)
     local args = {...}
+    if #args == 0 then error("word needs() at least 1 argument") end
     local data = {}
     for k,v in ipairs(args) do
         local t = type(v)
-        if t == 'number' or t == 'function' then data[#data+1] = v
+        if t == 'number' or t == 'function' or t == 'string' then data[#data+1] = v
         elseif t == 'table' then
             if v.type == 'section' or v.type == 'label' then data[#data+1] = function() return symbols[v.label] end
             else table.move(v,1,#v,#data+1,data) end
@@ -729,7 +739,7 @@ for k,v in pairs(oprel) do
                 x = symbols[x]
             end
             if type(x) ~= 'number' then error("unresolved branch target: " .. tostring(x)) end
-            x = x - offset - rorg(section.org)
+            x = x-2 - offset - rorg(section.org)
             if x < -128 or x > 127 then error("branch target out of range for " .. l .. ": " .. x) end
             b[#b+1]=v.opc b[#b+1]=x&0xff
         end

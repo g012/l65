@@ -71,6 +71,7 @@ ptr_table("ptrs", message, data, 0)
     ldx #0b1101
     ldy #0xAB - 16 + 0b11011 & 3 | 6 ~ 0xf >> ~3 << 1 // 5
     ldx #15,3
+    ldx#0
 
     local kernel_cycles,kernel_size
     table.insert(section_current.instructions, { asbin=function() kernel_cycles=cycles kernel_size=size end })

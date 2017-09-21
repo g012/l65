@@ -71,6 +71,7 @@ section("waitForIntim") --alt short syntax when no other option
     ldximm (function(_o) return _o+(13) end)
     ldyimm (function(_o) return _o+(0xAB - 16 + 27 & 3 | 6 ~ 0xf >> ~3 << 1 // 5) end)
     ldximm (function(_o) return _o+(15) end,3)
+    ldximm(function(_o) return _o+(0) end)
 
     local kernel_cycles,kernel_size
     table.insert(section_current.instructions, { asbin=function() kernel_cycles=cycles kernel_size=size end })

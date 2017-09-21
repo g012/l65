@@ -1,0 +1,33 @@
+dofile "vcs.lua"
+
+TIM_OVERSCAN    = 50 -- TIM64T,  3200 cycles = ~ 42 scanlines
+TIM_VBLANK      = 61 -- TIM64T,  3904 cycles = ~ 51 scanlines
+TIM_KERNEL      = 17 -- T1024T, 17408 cycles = ~229 scanlines
+
+location(0xf000, 0xffff)
+
+local kernel = function()
+    ldx#0xd0 @_loop sta WSYNC stx COLUBK dex bne _loop
+end
+
+local wait = function() local l=label() lda INTIM bne l end
+
+@@start
+    -- clear zeropage
+    cld ldx#0 txa @_clear dex tsx pha bne _clear
+@main
+    -- overscan
+    sta WSYNC lda#2 sta VBLANK lda#TIM_OVERSCAN sta TIM64T wait()
+    -- vblank
+    lda#0b1110 @_vsync sta WSYNC sta VSYNC lsr bne _vsync
+    lda#2 sta VBLANK lda#TIM_VBLANK sta TIM64T wait() sta WSYNC sta VBLANK
+    -- kernel
+    lda#TIM_KERNEL sta T1024T kernel() wait()
+    jmp main
+
+section{'vectors', org=0xfffc} word(start,start)
+
+local filename=string.match(arg[0], ".-([^\\/]-)%.?[^%.\\/]*$")
+writebin(filename..'.bin')
+writesym(filename..'.sym')
+print(stats)
