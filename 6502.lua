@@ -74,14 +74,16 @@ M.link = function()
                 local usage_lowest = function(start, finish)
                     local inc=1
                     if section.align then
-                        start = (start + section.align - 1) // section.align * section.align
-                        if section.offset then start = start + section.offset end
+                        local rstart = rorg(start)
+                        local arstart = (rstart + section.align - 1) // section.align * section.align
+                        if section.offset then arstart = arstart + section.offset end
+                        start = start + arstart-rstart
                         inc = section.align
                     end
                     for address=start,finish,inc do
                         for _,constraint in ipairs(section.constraints) do
                             local cstart, cfinish = address+constraint.start, address+constraint.finish
-                            if cstart // 0x100 == cfinish // 0x100 then
+                            if rorg(cstart) // 0x100 == rorg(cfinish) // 0x100 then
                                 if constraint.type == 'crosspage' then goto constraints_not_met end
                             else
                                 if constraint.type == 'samepage' then goto constraints_not_met end
@@ -91,20 +93,22 @@ M.link = function()
                         local w = math.min(address - chunk.start, chunk.size - (address_end - chunk.start))
                         if w > waste then goto constraints_not_met end
                         if w==waste then
+                            local rposition,rposition_end = rorg(position),rorg(position_end)
+                            local raddress,raddress_end = rorg(address),rorg(address_end)
                             -- if waste is the same, keep the one that uses the least amount of aligned addresses
                             local align=0x100
                             repeat
-                                local cross_count_cur = (position_end+align-1)//align - (position+align-1)//align
-                                if position&(align-1) == 0 then cross_count_cur=cross_count_cur+1 end
-                                local cross_count_new = (address_end+align-1)//align - (address+align-1)//align
-                                if address&(align-1) == 0 then cross_count_new=cross_count_new+1 end
+                                local cross_count_cur = (rposition_end+align-1)//align - (rposition+align-1)//align
+                                if rposition&(align-1) == 0 then cross_count_cur=cross_count_cur+1 end
+                                local cross_count_new = (raddress_end+align-1)//align - (raddress+align-1)//align
+                                if raddress&(align-1) == 0 then cross_count_new=cross_count_new+1 end
                                 if cross_count_new < cross_count_cur then goto select_pos end
                                 align = align>>1
                             until align==1
                             -- if cross count is same, take the one with the most LSB count
                             local lsb_cur,lsb_new=0,0
-                            for i=0,15 do if position&(1<<i) == 0 then lsb_cur=lsb_cur+1 else break end end
-                            for i=0,15 do if address&(1<<i) == 0 then lsb_new=lsb_new+1 else break end end
+                            for i=0,15 do if rposition&(1<<i) == 0 then lsb_cur=lsb_cur+1 else break end end
+                            for i=0,15 do if raddress&(1<<i) == 0 then lsb_new=lsb_new+1 else break end end
                             if lsb_cur >= lsb_new then goto constraints_not_met end
                         end
                         ::select_pos::
@@ -133,7 +137,7 @@ M.link = function()
 
         -- unused space stats
         local unused = 0
-        for _,chunk in ipairs(location.chunks) do unused = unused + chunk.size - chunk.start end
+        for _,chunk in ipairs(location.chunks) do unused = unused + chunk.size end
         location.unused = unused
         stats.unused = stats.unused + unused
 
@@ -204,26 +208,43 @@ M.writebin = function(filename, bin)
     f:close()
 end
 
+-- write a DASM symbol file for debuggers
 M.writesym = function(filename)
     if not filename then filename = 'main.sym' end
     local f = assert(io.open(filename, "wb"), "failed to open " .. filename .. " for writing")
     table.sort(symbols)
     local ins,fmt,rep = table.insert,string.format,string.rep
-    local s,sym_rev = {},{}
+    local s,sym_rev = {'--- Symbol List'},{}
     for k,v in pairs(symbols) do if type(v) == 'number' then ins(sym_rev,k) end end
     table.sort(sym_rev, function(a,b) local x,y=symbols[a],symbols[b] return x==y and a<b or x<y end)
     for _,v in ipairs(sym_rev) do
         local k=symbols[v]
-        local u=v:find'_' if u then -- change _ to . in local labels
-            local parent=v:sub(1,u-1) if symbols[parent] then v = v:sub(1,u-1)..'.'..v:sub(u+1) end
+        local u=v:match'.*()_' if u then -- change _ to . in local labels
+            local parent=v:sub(1,u-1) if symbols[parent] then v = parent..'.'..v:sub(u+1) end
         end
         ins(s, fmt("%s%s %04x", v, rep(' ',24-#v), k))
     end
+    s[#s+1] = '--- End of Symbol List.'
     f:write(table.concat(s, '\n'))
     f:close()
 end
 
 M.getstats = function()
+    local s,ins={},table.insert
+    -- TODO allow set name for location
+    ins(s, "  START   END     SIZE    USED    FREE")
+    for _,location in ipairs(locations) do
+        if location.finish then
+            local size = location.finish-location.start+1
+            ins(s, string.format("  %04X    %04X    %04X    %04X    %04X (%d)",
+                location.start, location.finish, size, size-location.unused, location.unused, location.unused))
+        else
+        ins(s, string.format("  %04X     --      --    %06X      --",
+            location.start, 0)) -- TODO test infinite locations
+        end
+    end
+    ins(s, string.format("FREE ROM: %08X (%d)", stats.unused, stats.unused))
+    return table.concat(s, '\n')
 end
 
 M.location = function(start, finish)
