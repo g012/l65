@@ -54,6 +54,7 @@ local Keywords_6502 = {
     'lax', 'rla', 'rra', 'sax', 'sbx', 'sha', 'shs', 'shx',
     'shy', 'slo', 'sre',
 }
+local Registers_6502 = { a=8, x=8, y=8 }
 
 local syntax6502_on
 local function syntax6502(on)
@@ -63,6 +64,11 @@ local function syntax6502(on)
     lookupify(Keywords_6502, Keywords, not on)
 end
 syntax6502(true)
+
+local syntax6502k_on
+local function syntax6502k(on)
+    syntax6502k_on = on
+end
 
 local opcode_arg_encapsulate_on
 local function opcode_arg_encapsulate(on)
@@ -256,6 +262,15 @@ local function LexLua(src)
             local start = p
             repeat get() c = peek() until not (UpperChars[c] or LowerChars[c] or Digits[c] or c == '_')
             return src:sub(start, p-1)
+        end
+        local function peek_ident(i, spaces)
+            if not spaces then spaces = Spaces end
+            local c
+            while true do c=peek(i) if not spaces[c] then break end i=i+1 end
+            if not (UpperChars[c] or LowerChars[c] or c == '_') then return end
+            local start = p+i
+            repeat i=i+1 c = peek(i) until not (UpperChars[c] or LowerChars[c] or Digits[c] or c == '_')
+            return src:sub(start, p+i-1),i,c
         end
 
         --shared stuff
@@ -454,6 +469,9 @@ local function LexLua(src)
                 if dat == 'syntax6502' then
                     onoff(syntax6502)
                     toEmit = {Type = 'Symbol', Data = ';'}
+                elseif dat == 'syntax6502k' then
+                    onoff(syntax6502k)
+                    toEmit = {Type = 'Symbol', Data = ';'}
                 elseif dat == 'encapsulate' then
                     onoff(function() end)
                     toEmit = {Type = 'Keyword', Data = 'encapsulate_' .. opt}
@@ -476,7 +494,35 @@ local function LexLua(src)
                 if Keywords[dat] then
                     toEmit = {Type = 'Keyword', Data = dat}
                 else
-                    toEmit = {Type = 'Ident', Data = dat}
+                    if syntax6502k_on then
+                        local i=0
+                        while true do c=peek(i) if not Spaces[c] then break end i=i+1 end
+                        if c == '=' then
+                            local idents,ident = {dat}
+                            repeat
+                                i = i+1
+                                ident,i,c = peek_ident(i)
+                                if not ident then break end
+                                table.insert(idents, ident)
+                            until c ~= '='
+                            local reg = idents[#idents]
+                            if Registers_6502[reg] then
+                                -- list of assignements ends with =a, =x, or =y
+                                get_n(i)
+                                -- TODO find a=expr, emit lda expr
+                                local st = 'st'..reg
+                                idents[#idents] = nil
+                                toEmit = {}
+                                for k,v in ipairs(idents) do
+                                    table.insert(toEmit, { Type='Keyword', Data=st })
+                                    table.insert(toEmit, { Type='Ident', Data=v })
+                                end
+                            end
+                        end
+                    end
+                    if not toEmit then
+                        toEmit = {Type = 'Ident', Data = dat}
+                    end
                 end
 
             elseif Digits[c] or (peek() == '.' and Digits[peek(1)]) then
@@ -594,21 +640,33 @@ local function LexLua(src)
                 end
             end
 
-            --add the emitted symbol, after adding some common data
-            toEmit.LeadingWhite = leading -- table of leading whitespace/comments
-            --for k, tok in pairs(leading) do
-            --  tokens[#tokens + 1] = tok
-            --end
+            if toEmit[1] then
+                toEmit[1].LeadingWhite = leading
+                for k,v in ipairs(toEmit) do
+                    v.Line = thisLine
+                    v.Char = thisChar
+                    v.Print = function()
+                        return "<"..(v.Type..string.rep(' ', 7-#v.Type)).."  "..(v.Data or '').." >"
+                    end
+                    tokens[#tokens+1] = v
+                end
+            else
+                --add the emitted symbol, after adding some common data
+                toEmit.LeadingWhite = leading -- table of leading whitespace/comments
+                --for k, tok in pairs(leading) do
+                --  tokens[#tokens + 1] = tok
+                --end
 
-            toEmit.Line = thisLine
-            toEmit.Char = thisChar
-            toEmit.Print = function()
-                return "<"..(toEmit.Type..string.rep(' ', 7-#toEmit.Type)).."  "..(toEmit.Data or '').." >"
+                toEmit.Line = thisLine
+                toEmit.Char = thisChar
+                toEmit.Print = function()
+                    return "<"..(toEmit.Type..string.rep(' ', 7-#toEmit.Type)).."  "..(toEmit.Data or '').." >"
+                end
+                tokens[#tokens+1] = toEmit
+
+                --halt after eof has been emitted
+                if toEmit.Type == 'Eof' then break end
             end
-            tokens[#tokens+1] = toEmit
-
-            --halt after eof has been emitted
-            if toEmit.Type == 'Eof' then break end
         end
     end)
     if not st then

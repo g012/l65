@@ -277,6 +277,7 @@ M.location = function(start, finish)
         end
         location.start = start[1]
         location.finish = start[2]
+        location.name = start.name
         location.rorg = start.rorg
         if type(location.rorg) == 'number' then
             local offset = location.rorg - location.start

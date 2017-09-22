@@ -83,3 +83,8 @@ do
     local symbols = cpu.symbols
     for k,v in pairs(vcs) do symbols[k] = v end
 end
+-- forbid globals of same key as system address constants
+cpu.__newindex = function(t,k,v)
+    if vcs[k] then error("attempt to modify read only symbol " .. k) end
+    rawset(t,k,v)
+end
