@@ -37,6 +37,9 @@ local Keywords_control = {
     -- control keywords
     'samepage', 'crosspage',
 }
+local Keywords_data = {
+    'dc',
+}
 local Keywords_6502 = {
     -- opcodes
     'adc', 'and', 'asl', 'bcc', 'bcs', 'beq', 'bit', 'bmi',
@@ -56,6 +59,7 @@ local syntax6502_on
 local function syntax6502(on)
     syntax6502_on = on
     lookupify(Keywords_control, Keywords, not on)
+    lookupify(Keywords_data, Keywords, not on)
     lookupify(Keywords_6502, Keywords, not on)
 end
 syntax6502(true)
@@ -760,7 +764,7 @@ local function ParseLua(src)
     local function ParseFunctionArgsAndBody(scope, tokenList)
         local funcScope = CreateScope(scope)
         if not tok:ConsumeSymbol('(', tokenList) then
-            return false, GenerateError("'(' expected.")
+            return false, GenerateError("'(' expected")
         end
 
         --arg list
@@ -774,13 +778,13 @@ local function ParseLua(src)
                     if tok:ConsumeSymbol(')', tokenList) then
                         break
                     else
-                        return false, GenerateError("')' expected.")
+                        return false, GenerateError("')' expected")
                     end
                 end
             elseif tok:ConsumeSymbol('...', tokenList) then
                 isVarArg = true
                 if not tok:ConsumeSymbol(')', tokenList) then
-                    return false, GenerateError("'...' must be the last argument of a function.")
+                    return false, GenerateError("'...' must be the last argument of a function")
                 end
                 break
             else
@@ -815,7 +819,7 @@ local function ParseLua(src)
             local st, ex = ParseExpr(scope)
             if not st then return false, ex end
             if not tok:ConsumeSymbol(')', tokenList) then
-                return false, GenerateError("')' Expected.")
+                return false, GenerateError("')' expected")
             end
             if false then
                 --save the information about parenthesized expressions somewhere
@@ -848,7 +852,7 @@ local function ParseLua(src)
             return true, nodePrimExp
 
         else
-            return false, GenerateError("primary expression expected")
+            return false, GenerateError("Primary expression expected")
         end
     end
 
@@ -863,7 +867,7 @@ local function ParseLua(src)
             if tok:IsSymbol('.') or tok:IsSymbol(':') then
                 local symb = tok:Get(tokenList).Data
                 if not tok:Is('Ident') then
-                    return false, GenerateError("<Ident> expected.")
+                    return false, GenerateError("Identifier expected")
                 end
                 local id = tok:Get(tokenList)
                 local nodeIndex = {}
@@ -879,7 +883,7 @@ local function ParseLua(src)
                 local st, ex = ParseExpr(scope)
                 if not st then return false, ex end
                 if not tok:ConsumeSymbol(']', tokenList) then
-                    return false, GenerateError("']' expected.")
+                    return false, GenerateError("']' expected")
                 end
                 local nodeIndex = {}
                 nodeIndex.AstType  = 'IndexExpr'
@@ -899,7 +903,7 @@ local function ParseLua(src)
                         if tok:ConsumeSymbol(')', tokenList) then
                             break
                         else
-                            return false, GenerateError("')' Expected.")
+                            return false, GenerateError("')' expected")
                         end
                     end
                 end
@@ -990,17 +994,17 @@ local function ParseLua(src)
                     tok:Get(tokenList)
                     local st, key = ParseExpr(scope)
                     if not st then
-                        return false, GenerateError("Key Expression Expected")
+                        return false, GenerateError("Key expression expected")
                     end
                     if not tok:ConsumeSymbol(']', tokenList) then
-                        return false, GenerateError("']' Expected")
+                        return false, GenerateError("']' expected")
                     end
                     if not tok:ConsumeSymbol('=', tokenList) then
-                        return false, GenerateError("'=' Expected")
+                        return false, GenerateError("'=' expected")
                     end
                     local st, value = ParseExpr(scope)
                     if not st then
-                        return false, GenerateError("Value Expression Expected")
+                        return false, GenerateError("Value expression expected")
                     end
                     v.EntryList[#v.EntryList+1] = {
                         Type  = 'Key';
@@ -1015,11 +1019,11 @@ local function ParseLua(src)
                         --we are a key
                         local key = tok:Get(tokenList)
                         if not tok:ConsumeSymbol('=', tokenList) then
-                            return false, GenerateError("'=' Expected")
+                            return false, GenerateError("'=' expected")
                         end
                         local st, value = ParseExpr(scope)
                         if not st then
-                            return false, GenerateError("Value Expression Expected")
+                            return false, GenerateError("Value expression expected")
                         end
                         v.EntryList[#v.EntryList+1] = {
                             Type  = 'KeyString';
@@ -1031,7 +1035,7 @@ local function ParseLua(src)
                         --we are a value
                         local st, value = ParseExpr(scope)
                         if not st then
-                            return false, GenerateError("Value Exected")
+                            return false, GenerateError("Value expected")
                         end
                         v.EntryList[#v.EntryList+1] = {
                             Type = 'Value';
@@ -1050,7 +1054,7 @@ local function ParseLua(src)
                         Value = value;
                     }
                     if not st then
-                        return false, GenerateError("Value Expected")
+                        return false, GenerateError("Value expected")
                     end
                 end
 
@@ -1059,7 +1063,7 @@ local function ParseLua(src)
                 elseif tok:ConsumeSymbol('}', tokenList) then
                     break
                 else
-                    return false, GenerateError("'}' or table entry Expected")
+                    return false, GenerateError("'}' or table entry expected")
                 end
             end
             v.Tokens  = tokenList
@@ -1077,12 +1081,11 @@ local function ParseLua(src)
 
             local argList = {}
             if not tok:ConsumeSymbol('(', tokenList) then while true do
-                if not tok:Is('Ident') then return false, GenerateError("identifier expected") end
+                if not tok:Is('Ident') then return false, GenerateError("Identifier expected") end
                 argList[#argList+1] = funcScope:CreateLocal(tok:Get(tokenList).Data)
                 if tok:ConsumeSymbol('(', tokenList) then break end
                 if not tok:ConsumeSymbol(',', tokenList) then return false, GenerateError("'(' expected") end
             end end
-            --local st, body = ParseStatementList(funcScope)
             local st, body = ParseExpr(funcScope)
             if not st then return false, body end
             if not tok:ConsumeSymbol(')', tokenList) then return false, GenerateError("')' expected after lambda body") end
@@ -1197,22 +1200,40 @@ local function ParseLua(src)
         local stat = nil
         local tokenList = {}
         local commaTokenList = {}
-        local inverse_encapsulate
+        local l,c = function() return tokenList[1].Line end, function() return tokenList[1].Char end
+        local p = function(t,n) return function() return '<' .. t .. string.rep(' ', 7-#t) .. ' ' .. n .. ' >' end end
+        local t = function(t,s,w) return { Type=t, Data=s, Print=p(t,s), Char=c(), Line=l(), LeadingWhite=w or {} } end
+        local no_encapsulation = { Function=true, NumberExpr=true, StringExpr=true }
 
         local function emit_call(params)
-            local name,args = params.name,params.args or {}
-            local tok1 = tokenList[1]
-            if not params.func_white then params.func_white = tok1.LeadingWhite end
-            local c,l = tok1.Char, tok1.Line
-            local p = function(t,n) return function() return '<' .. t .. string.rep(' ', 7-#t) .. ' ' .. n .. ' >' end end
-            local t = function(t,s,w) return { Type=t, Data=s, Print=p(t,s), Char=c, Line=l, LeadingWhite=w or {} } end
-            local space = { Char=c, Line=l, Data=' ', Type='Whitespace' }
+            local name,args,inverse_encapsulate = params.name, params.args or {}, params.inverse_encapsulate
+            if not params.func_white then params.func_white = tokenList[1].LeadingWhite end
+            local space = { Char=c(), Line=l(), Data=' ', Type='Whitespace' }
             local op_var = {
                 AstType='VarExpr', Name=name, Variable={ IsGlobal=true, Name=name, Scope=CreateScope(scope) }, Tokens = { t('Ident', name, params.func_white) }
             }
             local encapsulate = params.encapsulate
             if encapsulate == nil then encapsulate = opcode_arg_encapsulate_on end
-            if #args > 0 and ( (encapsulate and not inverse_encapsulate) or (not encapsulate and inverse_encapsulate) ) and args[1].AstType ~= 'Function' then
+            if type(inverse_encapsulate) == 'table' then
+                -- this is a list of arguments, where each can be encapsulated
+                for arg_ix,arg in ipairs(args) do
+                    if ( (encapsulate and not inverse_encapsulate[arg_ix]) or (not encapsulate and inverse_encapsulate[arg_ix]) ) and not no_encapsulation[arg.AstType] then
+                        local inner_call_scope = CreateScope(op_var.Variable.Scope)
+                        local inner_call_body = {
+                            AstType='StatList', Scope=CreateScope(inner_call_scope), Tokens={}, Body={
+                                { AstType='ReturnStatement', Arguments={arg}, Tokens={ t('Keyword', 'return', {space}) } }
+                            }
+                        }
+                        local inner_call = {
+                            AstType='Function', VarArg=false, IsLocal=true, Scope=inner_call_scope, Body=inner_call_body, Arguments={},
+                            Tokens={ t('Keyword', 'function'), t('Symbol', '('), t('Symbol', ')'), t('Keyword', 'end', {space}) }
+                        }
+                        if #arg.Tokens[1].LeadingWhite == 0 then table.insert(arg.Tokens[1].LeadingWhite, space) end
+                        args[arg_ix] = inner_call
+                    end
+                end
+            elseif #args > 0 and ( (encapsulate and not inverse_encapsulate) or (not encapsulate and inverse_encapsulate) ) and not no_encapsulation[args[1].AstType] then
+                -- opcode arguments of type (late, early), where only late is to be encapsulated with a _o parameter to be set to early and added to late
                 local inner_call_scope = CreateScope(op_var.Variable.Scope)
                 local inner_add = {
                     AstType='BinopExpr', Op='+', OperatorPrecedence=10, Tokens={ t('Symbol', '+') },
@@ -1243,7 +1264,7 @@ local function ParseLua(src)
             do
                 local j=#commaTokenList
                 for i=2,#args do
-                    if j <= 0 then return nil end
+                    assert(j > 0)
                     table.insert(exp_call.Tokens, i, commaTokenList[j])
                     j = j - 1
                 end
@@ -1252,12 +1273,10 @@ local function ParseLua(src)
         end
 
         local function as_string_expr(expr, s)
-            local tok1 = tokenList[1]
-            local c,l = tok1.Char, tok1.Line
             local ss = '"'..s..'"'
             local lw = expr.Tokens and #expr.Tokens > 0 and expr.Tokens[1].LeadingWhite or {}
             local p = function() return '<String   '..s..' >' end
-            local v = { LeadingWhite=lw, Type='String', Data=ss, Constant=s, Char=c, Line=l, Print=p }
+            local v = { LeadingWhite=lw, Type='String', Data=ss, Constant=s, Char=c(), Line=l(), Print=p }
             return { AstType = 'StringExpr', Value = v, Tokens = {v} }
         end
 
@@ -1269,12 +1288,12 @@ local function ParseLua(src)
         -- label declarations
         if not stat then
         if tok:ConsumeSymbol('@@', tokenList) then
-            if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
+            if not tok:Is('Ident') then return false, GenerateError("Identifier expected") end
             local label_name = tok:Get(tokenList)
             label_name = as_string_expr(label_name, label_name.Data)
             stat = emit_call{name = 'section', args = {label_name}, encapsulate=false}
         elseif tok:ConsumeSymbol('@', tokenList) then
-            if not tok:Is('Ident') then return false, GenerateError("<ident> expected.") end
+            if not tok:Is('Ident') then return false, GenerateError("Identifier expected") end
             local label_name = tok:Get(tokenList)
             label_name = as_string_expr(label_name, label_name.Data)
             stat = emit_call{name = 'label', args = {label_name}, encapsulate=false}
@@ -1286,7 +1305,7 @@ local function ParseLua(src)
                 local st, nodeBlock = ParseStatementList(scope)
                 if not st then return false, nodeBlock end
                 if not tok:ConsumeKeyword('end', tokenList) then
-                    return false, GenerateError("'end' expected.")
+                    return false, GenerateError("'end' expected")
                 end
 
                 local nodeDoStat = {}
@@ -1297,8 +1316,7 @@ local function ParseLua(src)
 
                 tokenList[1].Data = 'do'
 
-                local tok1 = tokenList[1]
-                local space = {{ Char=tok1.Char, Line=tok1.Line, Data=' ', Type='Whitespace' }}
+                local space = {{ Char=c(), Line=l(), Data=' ', Type='Whitespace' }}
                 local opencall,closecall = emit_call{name=fpage,func_white=space},emit_call{name='endpage',func_white=space}
                 table.insert(nodeBlock.Body, 1, opencall)
                 table.insert(nodeBlock.Body, closecall)
@@ -1308,9 +1326,39 @@ local function ParseLua(src)
             end
         end
 
+        -- declare data
+        if not stat then
+        if tok:ConsumeKeyword('dc', tokenList) then
+            if not tok:ConsumeSymbol('.', tokenList) then GenerateError("'.' expected") end
+            local suffix_list = { b='byte', w='word', l='long' }
+            local func = suffix_list[tok:Get(tokenList).Data]
+            if not func then GenerateError("'b', 'w' or 'l' expected") end
+            local inverse_encapsulate={}
+            inverse_encapsulate[1] = tok:ConsumeSymbol('!', tokenList)
+            local st, expr = ParseExpr(scope)
+            if not st then return false, expr end
+            if inverse_encapsulate[1] then
+                local d = expr.Tokens[1].LeadingWhite
+                for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(d, v) end
+            end
+            local exprs = { expr }
+            while tok:ConsumeSymbol(',', tokenList) do
+                commaTokenList[#commaTokenList+1] = tokenList[#tokenList]
+                inverse_encapsulate[#exprs+1] = tok:ConsumeSymbol('!', tokenList)
+                local st, expr = ParseExpr(scope)
+                if not st then return false, expr end
+                if inverse_encapsulate[#exprs+1] then
+                    local d = expr.Tokens[1].LeadingWhite
+                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(d, v) end
+                end
+                exprs[#exprs+1] = expr
+            end
+            stat = emit_call{name=func, args=exprs, inverse_encapsulate=inverse_encapsulate}
+        end end
+
         -- 6502 opcodes
         if not stat then
-            local mod_st, mod_expr
+            local mod_st, mod_expr, inverse_encapsulate
         for _,op in pairs(Keywords_6502) do
             if tok:ConsumeKeyword(op, tokenList) then
                 if opcode_relative[op] then
@@ -1321,7 +1369,7 @@ local function ParseLua(src)
                     stat = emit_call{name=op .. "rel", args={expr}, encapsulate=false} break
                 end
                 if opcode_immediate[op] and tok:ConsumeSymbol('#', tokenList) then
-                    if tok:ConsumeSymbol('!', tokenList) then inverse_encapsulate = true end
+                    inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     local paren_open_whites = {}
                     if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
@@ -1331,10 +1379,10 @@ local function ParseLua(src)
                         mod_st, mod_expr = ParseExpr(scope)
                         if not mod_st then return false, mod_expr end
                     end
-                    stat = emit_call{name=op .. "imm", args={expr, mod_expr}, paren_open_white=paren_open_whites} break
+                    stat = emit_call{name=op .. "imm", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
                 end
                 if (opcode_indirect[op] or opcode_indirect_x[op] or opcode_indirect_y[op]) and tok:ConsumeSymbol('(', tokenList) then
-                    if tok:ConsumeSymbol('!', tokenList) then inverse_encapsulate = true end
+                    inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     local paren_open_whites,paren_close_whites,mod_st,mod_expr = {},{}
                     if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
@@ -1352,7 +1400,7 @@ local function ParseLua(src)
                         then return false, expr end
                         for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                         for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                        stat = emit_call{name=op .. "inx", args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                        stat = emit_call{name=op .. "inx", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                     elseif not tok:ConsumeSymbol(')', tokenList) then return false, expr
                     else 
                         if tok:ConsumeSymbol(',', tokenList) then
@@ -1360,10 +1408,10 @@ local function ParseLua(src)
                             then return false, expr end
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                             for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            stat = emit_call{name=op .. "iny", args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            stat = emit_call{name=op .. "iny", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         else
                             if not opcode_indirect[op] then return false, expr end
-                            stat = emit_call{name=op .. "ind", args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            stat = emit_call{name=op .. "ind", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                     end
                 end
@@ -1393,9 +1441,9 @@ local function ParseLua(src)
                                 if not opcode_zeropage[op] then suffix='abs'
                                 elseif not opcode_absolute[op] then suffix='zpg' end
                             end
-                            if suffix == 'zpg' and not opcode_zeropage[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage addressing mode") end
-                            if suffix == 'abs' and not opcode_absolute[op] then return false, GenerateError("opcode " .. op " doesn't support absolute addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr}} break
+                            if suffix == 'zpg' and not opcode_zeropage[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage addressing mode") end
+                            if suffix == 'abs' and not opcode_absolute[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute addressing mode") end
+                            stat = emit_call{name=op .. suffix, args={expr}, inverse_encapsulate=inverse_encapsulate} break
                         end
                         if tok:Peek().Data == 'x' then
                             tok:Get(tokenList)
@@ -1407,9 +1455,9 @@ local function ParseLua(src)
                                 if not opcode_zeropage_x[op] then suffix='abx'
                                 elseif not opcode_absolute_x[op] then suffix='zpx' end
                             end
-                            if suffix == 'zpx' and not opcode_zeropage_x[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage,x addressing mode") end
-                            if suffix == 'abx' and not opcode_absolute_x[op] then return false, GenerateError("opcode " .. op " doesn't support absolute,x addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            if suffix == 'zpx' and not opcode_zeropage_x[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage,x addressing mode") end
+                            if suffix == 'abx' and not opcode_absolute_x[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute,x addressing mode") end
+                            stat = emit_call{name=op .. suffix, args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
                             if not opcode_absolute_y[op] then return false, expr end
@@ -1422,9 +1470,9 @@ local function ParseLua(src)
                                 if not opcode_zeropage_y[op] then suffix='aby'
                                 elseif not opcode_absolute_y[op] then suffix='zpy' end
                             end
-                            if suffix == 'zpy' and not opcode_zeropage_y[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage,y addressing mode") end
-                            if suffix == 'aby' and not opcode_absolute_y[op] then return false, GenerateError("opcode " .. op " doesn't support absolute,y addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            if suffix == 'zpy' and not opcode_zeropage_y[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage,y addressing mode") end
+                            if suffix == 'aby' and not opcode_absolute_y[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute,y addressing mode") end
+                            stat = emit_call{name=op .. suffix, args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         commaTokenList[1] = tokenList[#tokenList]
                         local mod_st, mod_expr = ParseExpr(scope)
@@ -1435,9 +1483,9 @@ local function ParseLua(src)
                                 if not opcode_zeropage[op] then suffix='abs'
                                 elseif not opcode_absolute[op] then suffix='zpg' end
                             end
-                            if suffix == 'zpg' and not opcode_zeropage[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage addressing mode") end
-                            if suffix == 'abs' and not opcode_absolute[op] then return false, GenerateError("opcode " .. op " doesn't support absolute addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr, mod_expr}} break
+                            if suffix == 'zpg' and not opcode_zeropage[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage addressing mode") end
+                            if suffix == 'abs' and not opcode_absolute[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute addressing mode") end
+                            stat = emit_call{name=op .. suffix, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate} break
                         end
                         if tok:Peek().Data == 'x' then
                             tok:Get(tokenList)
@@ -1449,9 +1497,9 @@ local function ParseLua(src)
                                 if not opcode_zeropage_x[op] then suffix='abx'
                                 elseif not opcode_absolute_x[op] then suffix='zpx' end
                             end
-                            if suffix == 'zpx' and not opcode_zeropage_x[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage,x addressing mode") end
-                            if suffix == 'abx' and not opcode_absolute_x[op] then return false, GenerateError("opcode " .. op " doesn't support absolute,x addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            if suffix == 'zpx' and not opcode_zeropage_x[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage,x addressing mode") end
+                            if suffix == 'abx' and not opcode_absolute_x[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute,x addressing mode") end
+                            stat = emit_call{name=op .. suffix, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
                             if not opcode_absolute_y[op] then return false, expr end
@@ -1464,9 +1512,9 @@ local function ParseLua(src)
                                 if not opcode_zeropage_y[op] then suffix='aby'
                                 elseif not opcode_absolute_y[op] then suffix='zpy' end
                             end
-                            if suffix == 'zpy' and not opcode_zeropage_y[op] then return false, GenerateError("opcode " .. op " doesn't support zeropage,y addressing mode") end
-                            if suffix == 'aby' and not opcode_absolute_y[op] then return false, GenerateError("opcode " .. op " doesn't support absolute,y addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr, mod_expr}, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                            if suffix == 'zpy' and not opcode_zeropage_y[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage,y addressing mode") end
+                            if suffix == 'aby' and not opcode_absolute_y[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute,y addressing mode") end
+                            stat = emit_call{name=op .. suffix, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
 
                         return false, expr
@@ -1489,7 +1537,7 @@ local function ParseLua(src)
                 local st, nodeCond = ParseExpr(scope)
                 if not st then return false, nodeCond end
                 if not tok:ConsumeKeyword('then', tokenList) then
-                    return false, GenerateError("'then' expected.")
+                    return false, GenerateError("'then' expected")
                 end
                 local st, nodeBody = ParseStatementList(scope)
                 if not st then return false, nodeBody end
@@ -1510,7 +1558,7 @@ local function ParseLua(src)
 
             --end
             if not tok:ConsumeKeyword('end', tokenList) then
-                return false, GenerateError("'end' expected.")
+                return false, GenerateError("'end' expected")
             end
 
             nodeIfStat.Tokens = tokenList
@@ -1527,7 +1575,7 @@ local function ParseLua(src)
 
             --do
             if not tok:ConsumeKeyword('do', tokenList) then
-                return false, GenerateError("'do' expected.")
+                return false, GenerateError("'do' expected")
             end
 
             --body
@@ -1536,7 +1584,7 @@ local function ParseLua(src)
 
             --end
             if not tok:ConsumeKeyword('end', tokenList) then
-                return false, GenerateError("'end' expected.")
+                return false, GenerateError("'end' expected")
             end
 
             --return
@@ -1550,7 +1598,7 @@ local function ParseLua(src)
             local st, nodeBlock = ParseStatementList(scope)
             if not st then return false, nodeBlock end
             if not tok:ConsumeKeyword('end', tokenList) then
-                return false, GenerateError("'end' expected.")
+                return false, GenerateError("'end' expected")
             end
 
             local nodeDoStat = {}
@@ -1562,7 +1610,7 @@ local function ParseLua(src)
         elseif tok:ConsumeKeyword('for', tokenList) then
             --for block
             if not tok:Is('Ident') then
-                return false, GenerateError("<ident> expected.")
+                return false, GenerateError("Identifier expected")
             end
             local baseVarName = tok:Get(tokenList)
             if tok:ConsumeSymbol('=', tokenList) then
@@ -1573,7 +1621,7 @@ local function ParseLua(src)
                 local st, startEx = ParseExpr(scope)
                 if not st then return false, startEx end
                 if not tok:ConsumeSymbol(',', tokenList) then
-                    return false, GenerateError("',' Expected")
+                    return false, GenerateError("',' expected")
                 end
                 local st, endEx = ParseExpr(scope)
                 if not st then return false, endEx end
@@ -1614,7 +1662,7 @@ local function ParseLua(src)
                     varList[#varList+1] = forScope:CreateLocal(tok:Get(tokenList).Data)
                 end
                 if not tok:ConsumeKeyword('in', tokenList) then
-                    return false, GenerateError("'in' expected.")
+                    return false, GenerateError("'in' expected")
                 end
                 local generators = {}
                 local st, firstGenerator = ParseExpr(scope)
@@ -1626,12 +1674,12 @@ local function ParseLua(src)
                     generators[#generators+1] = gen
                 end
                 if not tok:ConsumeKeyword('do', tokenList) then
-                    return false, GenerateError("'do' expected.")
+                    return false, GenerateError("'do' expected")
                 end
                 local st, body = ParseStatementList(forScope)
                 if not st then return false, body end
                 if not tok:ConsumeKeyword('end', tokenList) then
-                    return false, GenerateError("'end' expected.")
+                    return false, GenerateError("'end' expected")
                 end
                 --
                 local nodeFor = {}
@@ -1649,7 +1697,7 @@ local function ParseLua(src)
             if not st then return false, body end
             --
             if not tok:ConsumeKeyword('until', tokenList) then
-                return false, GenerateError("'until' expected.")
+                return false, GenerateError("'until' expected")
             end
             -- FIX: Used to parse in parent scope
             -- Now parses in repeat scope
@@ -1665,7 +1713,7 @@ local function ParseLua(src)
 
         elseif tok:ConsumeKeyword('function', tokenList) then
             if not tok:Is('Ident') then
-                return false, GenerateError("Function name expected")
+                return false, GenerateError("function name expected")
             end
             local st, name = ParseSuffixedExpr(scope, true) --true => only dots and colons
             if not st then return false, name end
@@ -1713,7 +1761,7 @@ local function ParseLua(src)
 
             elseif tok:ConsumeKeyword('function', tokenList) then
                 if not tok:Is('Ident') then
-                    return false, GenerateError("Function name expected")
+                    return false, GenerateError("function name expected")
                 end
                 local name = tok:Get(tokenList).Data
                 local localVar = scope:CreateLocal(name)
@@ -1806,7 +1854,7 @@ local function ParseLua(src)
 
                 --equals
                 if not tok:ConsumeSymbol('=', tokenList) then
-                    return false, GenerateError("'=' Expected.")
+                    return false, GenerateError("'=' expected")
                 end
 
                 --rhs
@@ -1839,7 +1887,7 @@ local function ParseLua(src)
                 nodeCall.Tokens     = tokenList
                 stat = nodeCall
             else
-                return false, GenerateError("Assignment Statement Expected")
+                return false, GenerateError("Assignment statement expected")
             end
         end
 

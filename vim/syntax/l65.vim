@@ -494,6 +494,7 @@ syn match l65Keyword /\<sreinx\>/
 syn match l65Keyword /\<sreiny\>/
 
 
+syn match l65Opcode /\<dc\.[bwl]\=\>/
 syn match l65Opcode /\<adc\%(.[bw]\)\=\>/
 syn match l65Opcode /\<and\%(.[bw]\)\=\>/
 syn match l65Opcode /\<asl\%(.[bw]\)\=\>/

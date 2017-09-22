@@ -1,10 +1,12 @@
-dofile "vcs.lua"
+require'vcs'
 
 TIM_OVERSCAN    = 50 -- TIM64T,  3200 cycles = ~ 42 scanlines
 TIM_VBLANK      = 61 -- TIM64T,  3904 cycles = ~ 51 scanlines
 TIM_KERNEL      = 17 -- T1024T, 17408 cycles = ~229 scanlines
 
 location(0xf000, 0xffff)
+
+section{'vectors', org=0xfffc} dc.w start,start
 
 local kernel = function()
     ldx#0xd0 @_loop sta WSYNC stx COLUBK dex bne _loop
@@ -24,8 +26,6 @@ local wait = function() local l=label() lda INTIM bne l end
     -- kernel
     lda#TIM_KERNEL sta T1024T kernel() wait()
     jmp main
-
-section{'vectors', org=0xfffc} word(start,start)
 
 local filename=string.match(arg[0], ".-([^\\/]-)%.?[^%.\\/]*$")
 writebin(filename..'.bin')

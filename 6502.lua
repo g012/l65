@@ -372,18 +372,25 @@ M.endpage = function()
 end
 
 local byte_normalize = function(v)
-    if v < -128 or v > 255 then error("value out of byte range: " .. v) end
+    if v < -0x80 or v > 0xFF then error("value out of byte range: " .. v) end
     if v < 0 then v = v + 0x100 end
     return v & 0xff
 end
 M.byte_normalize = byte_normalize
 
 local word_normalize = function(v)
-    if v < -32768 or v > 65535 then error("value out of word range: " .. v) end
+    if v < -0x8000 or v > 0xFFFF then error("value out of word range: " .. v) end
     if v < 0 then v = v + 0x10000 end
     return v & 0xffff
 end
 M.word_normalize = word_normalize
+
+local long_normalize = function(v)
+    if v < -0x80000000 or v > 0xFFFFFFFF then error("value out of word range: " .. v) end
+    if v < 0 then v = v + 0x100000000 end
+    return v & 0xffffffff
+end
+M.long_normalize = long_normalize
 
 -- charset([s] [, f])
 -- Set a new charset to be used for next string data in byte().
@@ -403,7 +410,6 @@ M.charset = function(s, f)
 end
 
 M.byte_impl = function(args, nrm)
-    if #args == 0 then error("byte*() need at least 1 argument") end
     local data,cs = {},M.cs
     for k,v in ipairs(args) do
         local t = type(v)
@@ -448,8 +454,9 @@ M.byte = function(...)
 end
 local byte_encapsulate = function(args)
     for k,v in ipairs(args) do
-        if type(v) == 'table' and (v.type == 'section' or v.type == 'label') then
-            args[k] = function() return symbols[v.label] end
+        local vt = type(v)
+        if vt == 'string' or vt == 'table' and (v.type == 'section' or v.type == 'label') then
+            args[k] = function() return v end
         end
     end
     return args
@@ -471,13 +478,12 @@ end
 --    after symbols have been resolved
 M.word = function(...)
     local args = {...}
-    if #args == 0 then error("word needs() at least 1 argument") end
     local data = {}
     for k,v in ipairs(args) do
         local t = type(v)
         if t == 'number' or t == 'function' or t == 'string' then data[#data+1] = v
         elseif t == 'table' then
-            if v.type == 'section' or v.type == 'label' then data[#data+1] = function() return symbols[v.label] end
+            if v.type == 'section' or v.type == 'label' then data[#data+1] = function() return v end
             else table.move(v,1,#v,#data+1,data) end
         else error("unsupported type for word() argument: " .. t .. ", value: " .. v)
         end
@@ -494,6 +500,34 @@ M.word = function(...)
         end
     end
     table.insert(M.section_current.instructions, { data=data, size=#data*2, asbin=asbin })
+end
+
+M.long = function(...)
+    local args = {...}
+    local data = {}
+    for k,v in ipairs(args) do
+        local t = type(v)
+        if t == 'number' or t == 'function' or t == 'string' then data[#data+1] = v
+        elseif t == 'table' then
+            if v.type == 'section' or v.type == 'label' then data[#data+1] = function() return v end
+            else table.move(v,1,#v,#data+1,data) end
+        else error("unsupported type for long() argument: " .. t .. ", value: " .. v)
+        end
+    end
+    local asbin = function(b)
+        for _,v in ipairs(data) do
+            if type(v) == 'function' then v = v() end
+            local vt = type(v)
+            if vt == 'table' and v.label then v = symbols[v.label]
+            elseif vt == 'string' then v = symbols[v] end
+            v = long_normalize(v)
+            b[#b+1] = v&0xff
+            b[#b+1] = (v>>8)&0xff
+            b[#b+1] = (v>>16)&0xff
+            b[#b+1] = v>>24
+        end
+    end
+    table.insert(M.section_current.instructions, { data=data, size=#data*4, asbin=asbin })
 end
 
 local op,cycles_def,xcross_def
