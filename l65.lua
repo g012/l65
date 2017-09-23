@@ -54,7 +54,7 @@ local Keywords_6502 = {
     'lax', 'rla', 'rra', 'sax', 'sbx', 'sha', 'shs', 'shx',
     'shy', 'slo', 'sre',
 }
-local Registers_6502 = { a=8, x=8, y=8 }
+local Registers_6502 = { a=8, x=8, y=8, s=8 }
 
 local syntax6502_on
 local function syntax6502(on)
@@ -470,8 +470,8 @@ local function LexLua(src)
                     onoff(syntax6502)
                     toEmit = {Type = 'Symbol', Data = ';'}
                 elseif dat == 'syntax6502k' then
-                    onoff(syntax6502k)
-                    toEmit = {Type = 'Symbol', Data = ';'}
+                    onoff(function() end)
+                    toEmit = {Type = 'Keyword', Data = 'syntax6502k_' .. opt}
                 elseif dat == 'encapsulate' then
                     onoff(function() end)
                     toEmit = {Type = 'Keyword', Data = 'encapsulate_' .. opt}
@@ -494,35 +494,7 @@ local function LexLua(src)
                 if Keywords[dat] then
                     toEmit = {Type = 'Keyword', Data = dat}
                 else
-                    if syntax6502k_on then
-                        local i=0
-                        while true do c=peek(i) if not Spaces[c] then break end i=i+1 end
-                        if c == '=' then
-                            local idents,ident = {dat}
-                            repeat
-                                i = i+1
-                                ident,i,c = peek_ident(i)
-                                if not ident then break end
-                                table.insert(idents, ident)
-                            until c ~= '='
-                            local reg = idents[#idents]
-                            if Registers_6502[reg] then
-                                -- list of assignements ends with =a, =x, or =y
-                                get_n(i)
-                                -- TODO find a=expr, emit lda expr
-                                local st = 'st'..reg
-                                idents[#idents] = nil
-                                toEmit = {}
-                                for k,v in ipairs(idents) do
-                                    table.insert(toEmit, { Type='Keyword', Data=st })
-                                    table.insert(toEmit, { Type='Ident', Data=v })
-                                end
-                            end
-                        end
-                    end
-                    if not toEmit then
-                        toEmit = {Type = 'Ident', Data = dat}
-                    end
+                    toEmit = {Type = 'Ident', Data = dat}
                 end
 
             elseif Digits[c] or (peek() == '.' and Digits[peek(1)]) then
@@ -1254,6 +1226,12 @@ local function ParseLua(src)
     end
 
 
+    local pragma_map = {
+        encapsulate_on = function() opcode_arg_encapsulate(true) end,
+        encapsulate_off = function() opcode_arg_encapsulate(false) end,
+        syntax6502k_on = function() syntax6502k(true) end,
+        syntax6502k_off = function() syntax6502k(false) end,
+    }
     local function ParseStatement(scope)
         local stat = nil
         local tokenList = {}
@@ -1262,6 +1240,7 @@ local function ParseLua(src)
         local p = function(t,n) return function() return '<' .. t .. string.rep(' ', 7-#t) .. ' ' .. n .. ' >' end end
         local t = function(t,s,w) return { Type=t, Data=s, Print=p(t,s), Char=c(), Line=l(), LeadingWhite=w or {} } end
         local no_encapsulation = { Function=true, NumberExpr=true, StringExpr=true }
+        local reg = function(e) local t=e.Tokens[1] if t then return Registers_6502[t.Data] end end
 
         local function emit_call(params)
             local name,args,inverse_encapsulate = params.name, params.args or {}, params.inverse_encapsulate
@@ -1339,8 +1318,11 @@ local function ParseLua(src)
         end
 
         -- parser pragmas
-        if tok:ConsumeKeyword('encapsulate_on') then opcode_arg_encapsulate(true)
-        elseif tok:ConsumeKeyword('encapsulate_off') then opcode_arg_encapsulate(false)
+        do
+            ::search_pragma::
+            for k,v in pairs(pragma_map) do
+                if tok:ConsumeKeyword(k) then v() goto search_pragma end
+            end
         end
 
         -- label declarations
@@ -1387,10 +1369,10 @@ local function ParseLua(src)
         -- declare data
         if not stat then
         if tok:ConsumeKeyword('dc', tokenList) then
-            if not tok:ConsumeSymbol('.', tokenList) then GenerateError("'.' expected") end
+            if not tok:ConsumeSymbol('.', tokenList) then return false, GenerateError("'.' expected") end
             local suffix_list = { b='byte', w='word', l='long' }
             local func = suffix_list[tok:Get(tokenList).Data]
-            if not func then GenerateError("'b', 'w' or 'l' expected") end
+            if not func then return false, GenerateError("'b', 'w' or 'l' expected") end
             local inverse_encapsulate={}
             inverse_encapsulate[1] = tok:ConsumeSymbol('!', tokenList)
             local st, expr = ParseExpr(scope)
@@ -1413,6 +1395,83 @@ local function ParseLua(src)
             end
             stat = emit_call{name=func, args=exprs, inverse_encapsulate=inverse_encapsulate}
         end end
+
+        -- k65 style syntax
+        if not stat and syntax6502k_on then
+            -- *=[a,x,y,s]=?
+            do
+                tok:Save()
+                local exprs = {}
+                while true do
+                    local st, expr = ParseExpr(scope)
+                    if not st then break end
+                    table.insert(exprs, expr)
+                    if not tok:ConsumeSymbol('=', tokenList) then break end
+                end
+                if #exprs < 2 then
+                    tok:Restore()
+                else
+                    local hasreg
+                    for e in exprs do hasreg=reg(e) if hasreg then break end end
+                    if not hasreg then
+                        tok:Restore()
+                    else
+                        tok:Commit()
+                        local skip
+                        for i=#exprs-1,1,-1 do
+                            if skip then
+                                skip = false
+                            else
+                                local src,dst = exprs[i+1],exprs[i]
+                                local src_reg,dst_reg = reg(src),reg(dst)
+                                local op,arg
+                                if src_reg=='s' then
+                                    if dst_reg=='x' then 
+                                        op = 'tsximp'
+                                    end
+                                elseif dst_reg=='s' then
+                                    if src_reg=='x' then
+                                        op = 'txsimp'
+                                    end
+                                elseif src_reg and not dst_reg then
+                                    arg = i
+                                    op = 'st'..src_reg
+                                elseif dst_reg and not src_reg then
+                                    arg = i+1
+                                    if dst_reg=='x' and i > 1 and reg(exprs[i-1])=='a' then
+                                        op='lax' skip=true
+                                    else
+                                        op = 'ld'..src_reg
+                                    end
+                                end
+                                if not op then
+                                    return false, GenerateError("no opcode for assignment")
+                                end
+                                if arg then
+                                    arg = exprs[arg]
+                                end
+                            end
+                        end
+                    end
+
+                    local t,r,rexpr,rexpr_ix
+                    rexpr_ix=#exprs rexpr=exprs[rexprs_ix] t=#rexpr.Tokens[1] if t then r=Registers_6502[t.Data] end
+                    if not r then rexpr_ix=#exprs-1 rexpr=exprs[rexprs_ix] t=#rexpr.Tokens[1] if t then r=Registers_6502[t.Data] end end
+                    if r then
+                    end
+                end
+            end
+
+            if tok:Is('Ident') and tok:Peek(1).Data == '=' then
+                local reg = tok:Peek(2).Data
+                if Registers_6502[reg] then
+                    local st, arg = ParseExpr(scope)
+                    tok:Get(tokenList) tok:Get(tokenList)
+                    arg.Tokens[1].LeadingWhite,tokenList[1].LeadingWhite = tokenList[1].LeadingWhite,arg.Tokens[1].LeadingWhite
+                    stat = emit_call{name = 'st'..reg..'zab', args = {arg}}
+                end
+            end
+        end
 
         -- 6502 opcodes
         if not stat then

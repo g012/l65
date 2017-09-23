@@ -50,7 +50,7 @@ vcs = {
     HMCLR   = 0x2b, -- <strobe>  clear horizontal motion registers
     CXCLR   = 0x2c, -- <strobe>  clear collision latches= 0x20
 
-    -- TIA read on,ly
+    -- TIA read only
     CXM0P   = 0x30, -- 11......  read collision M0-P1, M0-P0 (Bit 7 --6)
     CXM1P   = 0x31, -- 11......  read collision M1-P0, M1-P1
     CXP0FB  = 0x32, -- 11......  read collision P0-PF, P0-BL
@@ -83,8 +83,20 @@ do
     local symbols = cpu.symbols
     for k,v in pairs(vcs) do symbols[k] = v end
 end
--- forbid globals of same key as system address constants
-cpu.__newindex = function(t,k,v)
-    if vcs[k] then error("attempt to modify read only symbol " .. k) end
-    rawset(t,k,v)
+
+--[[ TODO enable this when lua load() is changed
+function bank_stubs(count, hotspot)
+    function switchbank(i) bit 0x1000+hotspot+i end
+    local base = 0x10000 - (count << 12)
+    for bi=0,count-1 do
+        local o = base+(bi<<12)
+        _ENV['bank' .. bi] = location{o, o+0xfff, rorg=0xf000}
+        local start=section{"entry"..bi, org=o+hotspot-6} switchbank(0) if bi==0 then jmp main end
+        section{"switchtab"..bi, org=o+hotspot} for i=1,count do byte(0) end
+        section{"vectors"..bi, org=o+0xffc} word(start,start)
+    end
 end
+function f8() bank_stubs(2, 0xff8) end
+function f6() bank_stubs(4, 0xff6) end
+function f4() bank_stubs(8, 0xff4) end
+]]

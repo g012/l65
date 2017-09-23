@@ -4,12 +4,42 @@ local symbols={} M.symbols=symbols
 local locations={} M.locations=locations
 local stats={} M.stats=stats setmetatable(stats, stats)
 
+M.strip = true  -- set to false to disable dead stripping of relocatable sections
+M.pcall = pcall -- set to empty function returning false to disable eval during compute_size()
+-- set to pcall directly if you want to keep ldazab/x/y eval during compute_size() even if
+-- disabled for other parts (required to distinguish automatically between zp/abs addressing)
+M.pcall_za = function(...) return M.pcall(...) end
+
 M.__index = M
+M.__newindex = function(t,k,v)
+    local kk = k
+    if type(k) == 'string' and k:sub(1,1) == '_' and M.label_current then
+        kk = M.label_current .. k
+    end
+    if symbols[kk] then error("attempt to modify symbol " .. k) end
+    rawset(t,k,v)
+end
 symbols.__index = symbols
 setmetatable(M, symbols)
 
 M.link = function()
     if stats.unused then return end
+
+    if M.strip then
+        symbols.__index = function(tab,key)
+            local val = rawget(symbols, key)
+            if type(val) == 'table' and val.type == 'section' then
+                val.refcount = (val.refcount or 0) + 1
+            end
+            return val
+        end
+    end
+    for _,location in ipairs(locations) do
+        for _,section in ipairs(location.sections) do
+            section:compute_size()
+        end
+    end
+    symbols.__index = symbols
 
     stats.used = 0
     stats.unused = 0
@@ -37,13 +67,19 @@ M.link = function()
         local section_count = #sections
         location.cycles=0 location.used=0
         for ix,section in ipairs(sections) do
-            section:compute_size()
             location.cycles = location.cycles + section.cycles
             location.used = location.used + section.size
             if section.size == 0 then
                 sections[ix]=nil
                 if not section.org then table.insert(symbols_to_remove, section.label) end
-            elseif not section.org then table.insert(position_independent_sections, section) end
+            elseif not section.org then
+                if M.strip and not section.refcount then 
+                    sections[ix]=nil
+                    table.insert(symbols_to_remove, section.label)
+                else
+                    table.insert(position_independent_sections, section)
+                end
+            end
         end
         do local j=0 for i=1,section_count do
             if sections[i] ~= nil then j=j+1 sections[j],sections[i] = sections[i],sections[j] end
@@ -173,7 +209,7 @@ M.resolve = function()
 
     -- set local label references resolver
     local llresolver = { __index = function(tab,key)
-        if type(key) ~= 'string' or key:sub(1,1) ~= '_' then return nil end
+        if type(key) ~= 'string' or key:sub(1,1) ~= '_' or not M.label_current then return nil end
         return symbols[M.label_current .. key]
     end }
     setmetatable(symbols, llresolver)
@@ -372,6 +408,29 @@ M.endpage = function()
     constraint.to = #section.instructions
 end
 
+local size_ref = function(v)
+    if type(v) == 'string' then v=symbols[v] end
+    if type(v) == 'table' and v.type == 'section' then v.refcount = 1 + (v.refcount or 0) end
+end
+local size_dc = function(v)
+    if type(v) == 'function' then
+        local r,x = M.pcall(v)
+        if not r then return v end
+        v = x
+    end
+    size_ref(v)
+    return v
+end
+local size_op = function(late, early)
+    if type(late) == 'function' then
+        local r,x = M.pcall(late, early or 0)
+        if not r then return late,early end
+        late=x early=nil
+    end
+    size_ref(late) size_ref(early)
+    return late,early
+end
+
 local byte_normalize = function(v)
     if v < -0x80 or v > 0xFF then error("value out of byte range: " .. v) end
     if v < 0 then v = v + 0x100 end
@@ -430,6 +489,10 @@ M.byte_impl = function(args, nrm)
         else error("unsupported type for byte() argument: " .. t .. ", value: " .. v)
         end
     end
+    local size = function()
+        for i,v in ipairs(data) do data[i] = size_dc(v) end
+        return #data
+    end
     local asbin = function(b)
         for _,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
@@ -439,7 +502,7 @@ M.byte_impl = function(args, nrm)
             b[#b+1] = nrm(v)
         end
     end
-    table.insert(M.section_current.instructions, { data=data, size=#data, asbin=asbin })
+    table.insert(M.section_current.instructions, { data=data, size=size, asbin=asbin })
 end
 -- byte(...)
 -- Declare bytes to go into the binary stream.
@@ -489,6 +552,10 @@ M.word = function(...)
         else error("unsupported type for word() argument: " .. t .. ", value: " .. v)
         end
     end
+    local size = function()
+        for i,v in ipairs(data) do data[i] = size_dc(v) end
+        return #data*2
+    end
     local asbin = function(b)
         for _,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
@@ -500,7 +567,7 @@ M.word = function(...)
             b[#b+1] = v>>8
         end
     end
-    table.insert(M.section_current.instructions, { data=data, size=#data*2, asbin=asbin })
+    table.insert(M.section_current.instructions, { data=data, size=size, asbin=asbin })
 end
 
 M.long = function(...)
@@ -515,6 +582,10 @@ M.long = function(...)
         else error("unsupported type for long() argument: " .. t .. ", value: " .. v)
         end
     end
+    local size = function()
+        for i,v in ipairs(data) do data[i] = size_dc(v) end
+        return #data*4
+    end
     local asbin = function(b)
         for _,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
@@ -528,7 +599,7 @@ M.long = function(...)
             b[#b+1] = v>>24
         end
     end
-    table.insert(M.section_current.instructions, { data=data, size=#data*4, asbin=asbin })
+    table.insert(M.section_current.instructions, { data=data, size=size, asbin=asbin })
 end
 
 local op,cycles_def,xcross_def
@@ -561,8 +632,9 @@ cycles_def=2 xcross_def=0 local opimm={
 } M.opimm = opimm
 for k,v in pairs(opimm) do
     M[k .. 'imm'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 2 end
         local asbin = function(b) b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=2, cycles=2, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=2, asbin=asbin })
     end
 end
 cycles_def=3 xcross_def=0 local opzpg={
@@ -574,8 +646,9 @@ cycles_def=3 xcross_def=0 local opzpg={
 } M.opzpg = opzpg
 for k,v in pairs(opzpg) do
     M[k .. 'zpg'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 2 end
         local asbin = function(b) b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
     end
 end
 cycles_def=4 xcross_def=0 local opabs={
@@ -587,11 +660,12 @@ cycles_def=4 xcross_def=0 local opabs={
 } M.opabs = opabs
 for k,v in pairs(opabs) do
     M[k .. 'abs'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 3 end
         local asbin = function(b)
             local x = op_eval_word(late,early)
             b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
         end
-        table.insert(M.section_current.instructions, { size=3, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
     end
 end
 local opzab={} M.opabs = opabs
@@ -607,8 +681,9 @@ for k,_ in pairs(opzab) do
         local abs = opabs[k]
         local ins = { cycles=abs.cycles }
         ins.size = function()
-            local r,x = pcall(late, early or 0)
+            local r,x = M.pcall_za(late, early or 0)
             if not r then return 3 end
+            size_ref(x)
             x = word_normalize(x)
             local zpg = opzpg[k]
             if x <= 0xff and zpg then
@@ -637,8 +712,9 @@ cycles_def=4 xcross_def=0 local opzpx={
 } M.opzpx = opzpx
 for k,v in pairs(opzpx) do
     M[k .. 'zpx'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 2 end
         local asbin = function(b) b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
     end
 end
 cycles_def=4 xcross_def=1 local opabx={
@@ -649,11 +725,12 @@ cycles_def=4 xcross_def=1 local opabx={
 } M.opabx = opabx
 for k,v in pairs(opabx) do
     M[k .. 'abx'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 3 end
         local asbin = function(b)
             local x = op_eval_word(late,early)
             b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
         end
-        table.insert(M.section_current.instructions, { size=3, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
     end
 end
 local opzax={} M.opabx = opabx
@@ -669,8 +746,9 @@ for k,_ in pairs(opzax) do
         local abx = opabx[k]
         local ins = { cycles=abx.cycles }
         ins.size = function()
-            local r,x = pcall(late, early or 0)
+            local r,x = M.pcall_za(late, early or 0)
             if not r then return 3 end
+            size_ref(x)
             x = word_normalize(x)
             local zpx = opzpx[k]
             if x <= 0xff and zpx then
@@ -698,8 +776,9 @@ cycles_def=4 xcross_def=0 local opzpy={
 } M.opzpy = opzpy
 for k,v in pairs(opzpy) do
     M[k .. 'zpy'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 2 end
         local asbin = function(b) b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
     end
 end
 cycles_def=4 xcross_def=1 local opaby={
@@ -710,11 +789,12 @@ cycles_def=4 xcross_def=1 local opaby={
 } M.opaby = opaby
 for k,v in pairs(opaby) do
     M[k .. 'aby'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 3 end
         local asbin = function(b)
             local x = op_eval_word(late,early)
             b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
         end
-        table.insert(M.section_current.instructions, { size=3, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
     end
 end
 local opzay={} M.opaby = opaby
@@ -730,8 +810,9 @@ for k,_ in pairs(opzay) do
         local aby = opaby[k]
         local ins = { cycles=aby.cycles }
         ins.size = function()
-            local r,x = pcall(late, early or 0)
+            local r,x = M.pcall_za(late, early or 0)
             if not r then return 3 end
+            size_ref(x)
             x = word_normalize(x)
             local zpy = opzpy[k]
             if x <= 0xff and zpy then
@@ -763,7 +844,7 @@ for k,v in pairs(oprel) do
         local op = { cycles=2 }
         op.size = function()
             offset = section.size
-            op.size=2
+            label = size_dc(label)
             return 2
         end
         op.asbin = function(b)
@@ -787,11 +868,12 @@ cycles_def=5 xcross_def=0 local opind={
 } M.opind = opind
 for k,v in pairs(opind) do
     M[k .. 'ind'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 3 end
         local asbin = function(b)
             local x = op_eval_word(late,early)
             b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
         end
-        table.insert(M.section_current.instructions, { size=3, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
     end
 end
 cycles_def=6 xcross_def=0 local opinx={
@@ -801,8 +883,9 @@ cycles_def=6 xcross_def=0 local opinx={
 } M.opinx = opinx
 for k,v in pairs(opinx) do
     M[k .. 'inx'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 2 end
         local asbin = function(b) b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
     end
 end
 cycles_def=5 xcross_def=1 local opiny={
@@ -812,8 +895,9 @@ cycles_def=5 xcross_def=1 local opiny={
 }
 for k,v in pairs(opiny) do
     M[k .. 'iny'] = function(late, early)
+        local size = function() late,early = size_op(late,early) return 2 end
         local asbin = function(b) b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
     end
 end
 
