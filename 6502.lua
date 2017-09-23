@@ -73,7 +73,7 @@ M.link = function()
                 sections[ix]=nil
                 if not section.org then table.insert(symbols_to_remove, section.label) end
             elseif not section.org then
-                if M.strip and not section.refcount then 
+                if M.strip and not section.refcount and not section.strong then 
                     sections[ix]=nil
                     table.insert(symbols_to_remove, section.label)
                 else
