@@ -223,11 +223,12 @@ M.genbin = function(filler)
     local ins,mov = table.insert,table.move
     table.sort(locations, function(a,b) return a.start < b.start end)
     local of0 = locations[1].start
+    local fill
     for _,location in ipairs(locations) do
         if location.start < #bin then
             error(string.format("location [%04x,%04x] overlaps another", location.start, location.finish))
         end
-        for i=#bin+of0,location.start-1 do ins(bin, filler) end
+        if fill then for i=#bin+of0,location.start-1 do ins(bin, filler) end end
         M.size=0 M.cycles=0
         local sections = location.sections
         table.sort(sections, function(a,b) return a.org < b.org end)
@@ -242,7 +243,8 @@ M.genbin = function(filler)
                 M.size=#bin M.cycles=M.cycles+(instruction.cycles or 0)
             end
         end
-        if location.finish then
+        fill = not location.nofill
+        if location.finish and fill then
             for i=#bin+of0,location.finish do ins(bin, filler) end
         end
     end
@@ -302,8 +304,10 @@ stats.__tostring = function()
 end
 
 M.location = function(start, finish)
-    local location = { type='location', start=start, finish=finish, sections={} }
-    if type(start) == 'table' then
+    local location
+    if type(start) ~= 'table' then
+        location = { type='location', start=start, finish=finish }
+    else
         if start.type == 'location' then
             for _,v in ipairs(locations) do if v == start then
                 M.location_current = start
@@ -311,15 +315,15 @@ M.location = function(start, finish)
             end end
             error("unable to find reference to location [" .. (start.start or '?') .. ", " .. (start.finish or '?') .. "]")
         end
+        location = start
         location.start = start[1]
         location.finish = start[2]
-        location.name = start.name
-        location.rorg = start.rorg
         if type(location.rorg) == 'number' then
             local offset = location.rorg - location.start
             location.rorg = function(x) return x+offset end
         end
     end
+    location.sections = {}
     if not location.rorg then location.rorg = function(x) return x end end
     local size = (location.finish or math.huge) - location.start + 1
     location.chunks={ { start=location.start, size=size } }
