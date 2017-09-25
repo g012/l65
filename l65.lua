@@ -2462,17 +2462,24 @@ local function Format65(ast)
     return table.concat(out.rope)
 end
 
+local dirsep = package.config:sub(1,1)
+local dirl65 = (string.match(arg[0], "(.*[\\/]).*") or ''):gsub('/',dirsep)
+local searchl65 = ''
+if #dirl65 > 0 then
+    searchl65 = string.format(";%s?;%s?.l65", dirl65, dirl65)
+    package.path = package.path .. string.format(";%s?.lua", dirl65)
+end
 l65 = {
     parse = ParseLua,
     format = Format65,
     searcher_index = 2,
+    search_path = string.format(".%s?;.%s?.l65%s", dirsep, dirsep, searchl65),
     load_org = load,
     loadfile_org = loadfile,
     dofile_org = dofile,
 }
 l65.searcher = function(name)
-    local dirsep = package.config:sub(1,1)
-    local filename,err = package.searchpath(name, string.format(".%s?;.%s?.l65", dirsep, dirsep), '.', '.')
+    local filename,err = package.searchpath(name, l65.search_path, '.', '.')
     if not filename then return err end
     local file = io.open(filename, 'rb')
     if not file then return "failed to open " .. filename .. " for reading"  end
@@ -2542,6 +2549,6 @@ if #arg ~= 1 then
     print("Invalid arguments, usage:\nl65 <filename>")
     return
 end
-local inf,dirsep = arg[1],package.config:sub(1,1)
+local inf = arg[1]
 local fn='' for i=#inf,1,-1 do local c=inf:sub(i,i) if c==dirsep or c=='/' then break end fn=c..fn if c=='.' then fn='' end end filename=fn
 dofile(arg[1])
