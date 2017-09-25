@@ -2485,9 +2485,9 @@ l65.searcher = function(name)
     if not file then return "failed to open " .. filename .. " for reading"  end
     local src = file:read('*a')
     file:close()
-    local st, ast = ParseLua(src)
+    local st, ast = l65.parse(src)
     if not st then print(ast) return end
-    local bc = assert(l65.load_org(Format65(ast), filename))
+    local bc = assert(l65.load_org(l65.format(ast), filename))
     return bc, filename
 end
 l65.load = function(chunk, chunkname, mode, ...)
@@ -2498,7 +2498,7 @@ l65.load = function(chunk, chunkname, mode, ...)
         s = table.concat(s)
     else return nil, string.format("invalid type for chunk %s: %s", chunkname or "=(load)", chunk_t)
     end
-    local st, ast = ParseLua(s)
+    local st, ast = l65.parse(s)
     if not st then
         if not mode or mode:sub(1,1)=='b' then
             local f = l65.load_org(s, chunkname, mode, ...)
@@ -2506,7 +2506,7 @@ l65.load = function(chunk, chunkname, mode, ...)
         end
         return nil,ast
     end
-    return l65.load_org(Format65(ast), chunkname, 't', ...)
+    return l65.load_org(l65.format(ast), chunkname, 't', ...)
 end
 l65.loadfile = function(filename, mode, ...)
     local s
@@ -2545,10 +2545,69 @@ l65.uninstallhooks = function()
 end
 l65.installhooks()
 
-if #arg ~= 1 then
-    print("Invalid arguments, usage:\nl65 <filename>")
-    return
+function getopt(optstring, ...)
+	local opts = { }
+	local args = { ... }
+	for optc, optv in optstring:gmatch"(%a)(:?)" do
+		opts[optc] = { hasarg = optv == ":" }
+	end
+	return coroutine.wrap(function()
+		local yield = coroutine.yield
+		local i = 1
+		while i <= #args do
+			local arg = args[i]
+			i = i + 1
+			if arg == "--" then
+				break
+			elseif arg:sub(1, 1) == "-" then
+				for j = 2, #arg do
+					local opt = arg:sub(j, j)
+					if opts[opt] then
+						if opts[opt].hasarg then
+							if j == #arg then
+								if args[i] then yield(opt, args[i]) i=i+1
+                                else yield('?', opt) end
+							else yield(opt, arg:sub(j + 1)) end
+							break
+						else yield(opt, false) end
+					else yield('?', opt) end
+				end
+			else yield(false, arg) end
+		end
+		for i = i, #args do yield(false, args[i]) end
+	end)
 end
-local inf = arg[1]
+
+local version = function()
+    print("1.0.0")
+end
+local usage = function()
+    print(string.format([[
+Usage: %s [options] file
+Options:
+  -d <file>        Dump the Lua code after l65 parsing into file
+  -h               Display this information
+  -v               Display the release version]], arg[0]))
+end
+local invalid_usage = function()
+    print("Invalid usage.")
+    usage()
+end
+
+local inf,dump
+for opt,arg in getopt("d:hv", ...) do
+    if opt == '?' then return invalid_usage() end
+    if opt == 'h' then return usage() end
+    if opt == 'v' then return version() end
+    if opt == 'd' then dump = arg end
+    if opt == false then inf = arg end
+end
+if not inf then return invalid_usage() end
+if dump then l65.format = function(ast)
+    local s=Format65(ast) l65.format = Format65
+    local f = assert(io.open(dump, 'wb')) f:write(s) f:close()
+    return s
+end end
+
 local fn='' for i=#inf,1,-1 do local c=inf:sub(i,i) if c==dirsep or c=='/' then break end fn=c..fn if c=='.' then fn='' end end filename=fn
-dofile(arg[1])
+dofile(inf)
