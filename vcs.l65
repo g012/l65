@@ -97,13 +97,13 @@ mappers['4K'] = function()
     section{"vectors", org=0xfffc} word(main,main)
 end
 
-local bank_stubs = function(count, hotspot)
+local bank_stubs = function(count, hotspot, entry)
     function switchrom(i) assert(i>=0 and i<count) bit 0x1000+hotspot+i end
     local base = 0x10000 - (count << 12)
     for bi=0,count-1 do
         local o = base+(bi<<12)
         _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
-        local start=section{"entry"..bi, org=o+hotspot-6} switchrom(0) if bi==0 then jmp main end
+        local start=section{"entry"..bi, org=o+(entry or hotspot-6)} switchrom(0) if bi==0 then jmp main end
         section{"switchtab"..bi, org=o+hotspot} for i=1,count do byte(0) end
         section{"vectors"..bi, org=o+0xffc} word(start,start)
     end
@@ -112,6 +112,7 @@ mappers.FA = function() bank_stubs(3, 0xff8) end
 mappers.F8 = function() bank_stubs(2, 0xff8) end
 mappers.F6 = function() bank_stubs(4, 0xff6) end
 mappers.F4 = function() bank_stubs(8, 0xff4) end
+mappers.EF = function() bank_stubs(16, 0xfe0, 0xffc-6) end
 
 mappers.FE = function()
     rom0 = location(0xd000, 0xdfff)
@@ -168,10 +169,10 @@ mappers.F0 = function()
     for bi=0,15 do
         local o = bi*0x1000 + 0x1000
         _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
-        local start=section{"entry"..bi}
+        local start=section{"entry"..bi, org=o+0xffc-8}
             @_loop switchrom() bne _loop
             if bi==0 then jmp main end
-        section{"switchtab"..bi, org=o+0xff0} byte(0)
+        section{"switchtab"..bi, org=o+0xff0} byte(bi)
         section{"vectors"..bi, org=o+0xffc} word(start,start)
     end
 end
@@ -192,8 +193,44 @@ local bank_stubs2 = function(hotspot0, hotspot1)
 end
 mappers.UA = function() bank_stubs2(0x220, 0x240) end
 mappers['0840'] = function() bank_stubs2(0x800, 0x840) end
+mappers.SB = function(count)
+    function switchrom(i) assert(i>=0 and i<count) bit 0x800+i end
+    for bi=0,count-1 do
+        local o = bi*0x1000 + 0x1000
+        _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
+        local start=section{"entry"..bi, org=o+0xffc-6} switchrom(0) if bi==0 then jmp main end
+        section{"vectors"..bi, org=o+0xffc} word(start,start)
+    end
+end
 
 mappers['3E'] = function(rom_count, ram_count)
     mappers['3F'](rom_count)
     function switchram(i) assert(i>=0 and i<ram_count-1) lda#i sta 0x3E end
+end
+
+-- rom0 refers to the last 1k in ROM, which is mapped automatically on reset,
+-- such that changing the rom count does not change its index
+mappers.MC = function(rom_count, ram_count)
+    for i=0,3 do
+        _ENV['switchrom'..i] = function(i) assert(i>=0 and i<128) lda#i sta 0x3c+i end
+        _ENV['switchram'..i] = function(i) assert(i>=0 and i<128) lda#i+0x80 sta 0x3c+i end
+    end
+    for bi=0,rom_count-1 do
+        local o = bi*0x400 + 0x1000
+        _ENV["rom"..(count-1-bi)] = location{o, 0x3ff+o, rorg=0xf000+(o&0xfff)}
+    end
+    local start=section("entry") switchrom3(0) jmp main
+    section{"vectors", org=0xfffc} word(start,start)
+end
+
+mappers.X07 = function()
+    function switchrom(i) assert(i>=0 and i<16) bit 0x80b+(i<<4) end
+    -- map TIA also to 0x40-0x7F: use VSYNC for bank 14, and VSYNC2 for bank 15
+    vcs.VSYNC2=0x40 cpu.symbols.VSYNC2=0x40
+    for bi=0,count-1 do
+        local o = bi*0x1000 + 0x1000
+        _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
+        local start=section{"entry"..bi, org=o+0xffc-6} switchrom(0) if bi==0 then jmp main end
+        section{"vectors"..bi, org=o+0xffc} word(start,start)
+    end
 end
