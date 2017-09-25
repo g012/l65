@@ -84,8 +84,6 @@ do
     for k,v in pairs(vcs) do symbols[k] = v end
 end
 
---[[ TODO enable this when lua load() is changed
-
 mappers = {}
 
 mappers['2K'] = function()
@@ -178,7 +176,7 @@ mappers.F0 = function()
     end
 end
 
-local function bank_stubs2 = function(hotspot0, hotspot1)
+local bank_stubs2 = function(hotspot0, hotspot1)
     function switchrom(i)
         if i==0 then bit hotspot0
         elseif i==1 then bit hotspot1
@@ -193,11 +191,9 @@ local function bank_stubs2 = function(hotspot0, hotspot1)
     end
 end
 mappers.UA = function() bank_stubs2(0x220, 0x240) end
-mappers.['0840'] = function() bank_stubs2(0x800, 0x840) end
+mappers['0840'] = function() bank_stubs2(0x800, 0x840) end
 
 mappers['3E'] = function(rom_count, ram_count)
     mappers['3F'](rom_count)
     function switchram(i) assert(i>=0 and i<ram_count-1) lda#i sta 0x3E end
 end
-
-]]

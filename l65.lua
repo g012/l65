@@ -2462,29 +2462,25 @@ local function Format65(ast)
     return table.concat(out.rope)
 end
 
-if #arg ~= 2 then
-    print("Invalid arguments, usage:\nl65 source destination")
-    return
+local l65searcher = function(name)
+    local dirsep = package.config:sub(1,1)
+    local filename,err = package.searchpath(name, string.format(".%s?;.%s?.l65", dirsep, dirsep), '.', '.')
+    if not filename then return end
+    local file = io.open(filename, 'rb')
+    if not file then return "failed to open " .. filename .. " for reading"  end
+    local src = file:read('*all')
+    file:close()
+    local st, ast = ParseLua(src)
+    if not st then print(ast) return end
+    local bc = assert(load(Format65(ast), filename))
+    return bc, filename
 end
+table.insert(package.searchers, 2, l65searcher)
 
-local inf = io.open(arg[1], 'r')
-if not inf then
-    print("Failed to open '"..arg[1].."' for reading")
+if #arg ~= 1 then
+    print("Invalid arguments, usage:\nl65 <filename>")
     return
 end
-local outf = io.open(arg[2], 'w')
-if not outf then
-    print("Failed to open '"..arg[2].."' for writing")
-    return
-end
-
-local sourceText = inf:read('*all')
-inf:close()
-local st, ast = ParseLua(sourceText)
-if not st then
-    print(ast)
-    return
-end
-
-outf:write(Format65(ast))
-outf:close()
+local inf,dirsep = arg[1],package.config:sub(1,1)
+local fn='' for i=#inf,1,-1 do local c=inf:sub(i,i) if c==dirsep or c=='/' then break end fn=c..fn if c=='.' then fn='' end end filename=fn
+require(arg[1])
