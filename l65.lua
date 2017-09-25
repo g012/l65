@@ -2462,20 +2462,81 @@ local function Format65(ast)
     return table.concat(out.rope)
 end
 
-local l65searcher = function(name)
+l65 = {
+    parse = ParseLua,
+    format = Format65,
+    searcher_index = 2,
+    load_org = load,
+    loadfile_org = loadfile,
+    dofile_org = dofile,
+}
+l65.searcher = function(name)
     local dirsep = package.config:sub(1,1)
     local filename,err = package.searchpath(name, string.format(".%s?;.%s?.l65", dirsep, dirsep), '.', '.')
-    if not filename then return end
+    if not filename then return err end
     local file = io.open(filename, 'rb')
     if not file then return "failed to open " .. filename .. " for reading"  end
-    local src = file:read('*all')
+    local src = file:read('*a')
     file:close()
     local st, ast = ParseLua(src)
     if not st then print(ast) return end
-    local bc = assert(load(Format65(ast), filename))
+    local bc = assert(l65.load_org(Format65(ast), filename))
     return bc, filename
 end
-table.insert(package.searchers, 2, l65searcher)
+l65.load = function(chunk, chunkname, mode, ...)
+    local chunk_t,s = type(chunk)
+    if chunk_t == 'string' then s = chunk
+    elseif chunk_t == 'function' then
+        s={} for x in chunk do if #x==0 then break end s[#s+1]=x end
+        s = table.concat(s)
+    else return nil, string.format("invalid type for chunk %s: %s", chunkname or "=(load)", chunk_t)
+    end
+    local st, ast = ParseLua(s)
+    if not st then
+        if not mode or mode:sub(1,1)=='b' then
+            local f = l65.load_org(s, chunkname, mode, ...)
+            if f then return f end
+        end
+        return nil,ast
+    end
+    return l65.load_org(Format65(ast), chunkname, 't', ...)
+end
+l65.loadfile = function(filename, mode, ...)
+    local s
+    if not filename then s = io.read('*a')
+    else
+        local file = io.open(filename, 'rb')
+        if not file then return nil,"failed to open " .. filename .. " for reading" end
+        s = file:read('*a')
+        file:close()
+    end
+    return l65.load(s, filename, mode, ...)
+end
+l65.dofile = function(filename)
+    local f = assert(l65.loadfile(filename))
+    return f()
+end
+l65.installhooks = function()
+    if package.searchers[l65.searcher_index] ~= l65.searcher then
+        table.insert(package.searchers, l65.searcher_index, l65.searcher)
+    end
+    if not l65.hooks_installed then l65.hooks_installed = true
+        load = l65.load
+        loadfile = l65.loadfile
+        dofile = l65.dofile
+    end
+end
+l65.uninstallhooks = function()
+    for k,v in ipairs(package.searchers) do
+        if v == l65.searcher then table.remove(package.searchers, k) break end
+    end
+    if l65.hooks_installed then l65.hooks_installed = nil
+        load = l65.load_org
+        loadfile = l65.loadfile_org
+        dofile = l65.dofile_org
+    end
+end
+l65.installhooks()
 
 if #arg ~= 1 then
     print("Invalid arguments, usage:\nl65 <filename>")
@@ -2483,4 +2544,4 @@ if #arg ~= 1 then
 end
 local inf,dirsep = arg[1],package.config:sub(1,1)
 local fn='' for i=#inf,1,-1 do local c=inf:sub(i,i) if c==dirsep or c=='/' then break end fn=c..fn if c=='.' then fn='' end end filename=fn
-require(arg[1])
+dofile(arg[1])
