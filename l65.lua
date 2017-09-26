@@ -2478,15 +2478,31 @@ l65 = {
     loadfile_org = loadfile,
     dofile_org = dofile,
 }
+do
+    local getembedded = type(arg[-1]) == 'function' and arg[-1]
+    l65.load_embedded = function(name)
+        if not getembedded then return end
+        local src,isl65 = getembedded(name)
+        if not src then return end
+        if isl65 then
+            local filename = name .. '.l65'
+            local st, ast = assert(l65.parse(src))
+            local bc = assert(l65.load_org(l65.format(ast), filename))
+            return bc, filename
+        else
+            local filename = name .. '.lua'
+            local bc = assert(l65.load_org(src, filename))
+            return bc, filename
+        end
+    end
+end
 l65.searcher = function(name)
     local filename,err = package.searchpath(name, l65.search_path, '.', '.')
     if not filename then return err end
-    local file = io.open(filename, 'rb')
-    if not file then return "failed to open " .. filename .. " for reading"  end
+    local file = assert(io.open(filename, 'rb'))
     local src = file:read('*a')
     file:close()
-    local st, ast = l65.parse(src)
-    if not st then print(ast) return end
+    local st, ast = assert(l65.parse(src))
     local bc = assert(l65.load_org(l65.format(ast), filename))
     return bc, filename
 end
@@ -2543,6 +2559,7 @@ l65.uninstallhooks = function()
         dofile = l65.dofile_org
     end
 end
+table.insert(package.searchers, l65.searcher_index, l65.load_embedded)
 l65.installhooks()
 
 function getopt(optstring, ...)
@@ -2578,8 +2595,9 @@ function getopt(optstring, ...)
 	end)
 end
 
+local cfg=require"l65cfg" l65.cfg=cfg
 local version = function()
-    print("1.0.0")
+    print(string.format("l65 %s", cfg.version))
 end
 local usage = function()
     print(string.format([[

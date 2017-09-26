@@ -1,0 +1,8 @@
+local M = {}
+
+M.major = ${L65_VERSION_MAJOR}
+M.minor = ${L65_VERSION_MINOR}
+M.revision = ${L65_VERSION_REVISION}
+M.version = "${L65_VERSION}"
+
+return M

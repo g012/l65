@@ -2,6 +2,8 @@
  * lfs.c and lfs.h mixed together
  */
 
+#include "lua.h"
+
 /*
 ** LuaFileSystem
 ** Copyright Kepler Project 2003 - 2016 (http://keplerproject.github.io/luafilesystem)
@@ -16,9 +18,9 @@
 #endif
 
 #ifdef _WIN32
-  #define chdir(p) (_chdir(p))
-  #define getcwd(d, s) (_getcwd(d, s))
-  #define rmdir(p) (_rmdir(p))
+  //#define chdir(p) (_chdir(p))
+  //#define getcwd(d, s) (_getcwd(d, s))
+  //#define rmdir(p) (_rmdir(p))
   #define LFS_EXPORT __declspec (dllexport)
   #ifndef fileno
     #define fileno(f) (_fileno(f))
@@ -101,12 +103,6 @@ LFS_EXPORT  int luaopen_lfs (lua_State *L);
   #include <sys/param.h> /* for MAXPATHLEN */
   #define LFS_MAXPATHLEN MAXPATHLEN
 #endif
-
-//#include <lua.h>
-//#include <lauxlib.h>
-//#include <lualib.h>
-
-//#include "lfs.h"
 
 #define LFS_VERSION "1.6.3"
 #define LFS_LIBNAME "lfs"
@@ -325,7 +321,7 @@ static int lfs_lock_dir(lua_State *L) {
     lua_pushnil(L); lua_pushstring(L, strerror(errno)); return 2;
   }
   strcpy(ln, path); strcat(ln, lockfile);
-  if((fd = CreateFile(ln, GENERIC_WRITE, 0, NULL, CREATE_NEW,
+  if((fd = CreateFileA(ln, GENERIC_WRITE, 0, NULL, CREATE_NEW,
                 FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE, NULL)) == INVALID_HANDLE_VALUE) {
         int en = GetLastError();
         free(ln); lua_pushnil(L);

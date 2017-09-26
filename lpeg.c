@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include "lua.h"
 
 // only exported function
 int luaopen_lpeg (lua_State *L);
@@ -25,7 +26,9 @@ int luaopen_lpeg (lua_State *L);
 
 
 #if !defined(LPEG_DEBUG)
+#ifndef NDEBUG
 #define NDEBUG
+#endif
 #endif
 
 

@@ -13930,7 +13930,7 @@ static int luai_searcherpreload (lua_State *L) {
   const char *name = luaL_checkstring(L, 1);
   lua_getfield(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
   if (lua_getfield(L, -1, name) == LUA_TNIL)  /* not found? */
-    lua_pushfstring(L, "\n\tno luai_field package.preload['%s']", name);
+    lua_pushfstring(L, "\n\tno field package.preload['%s']", name);
   return 1;
 }
 
