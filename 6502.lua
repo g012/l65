@@ -419,8 +419,7 @@ end
 local size_dc = function(v)
     if type(v) == 'function' then
         local r,x = M.pcall(v)
-        if not r then return v end
-        v = x
+        if not r or not x then return v end
     end
     size_ref(v)
     return v
@@ -428,7 +427,7 @@ end
 local size_op = function(late, early)
     if type(late) == 'function' then
         local r,x = M.pcall(late, early or 0)
-        if not r then return late,early end
+        if not r or not x then return late,early end
         late=x early=nil
     end
     size_ref(late) size_ref(early)
@@ -474,6 +473,7 @@ M.charset = function(s, f)
 end
 
 M.byte_impl = function(args, nrm)
+    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local data,cs = {},M.cs
     for k,v in ipairs(args) do
         local t = type(v)
@@ -497,12 +497,13 @@ M.byte_impl = function(args, nrm)
         for i,v in ipairs(data) do data[i] = size_dc(v) end
         return #data
     end
-    local asbin = function(b)
-        for _,v in ipairs(data) do
+    local asbin = function(b) local l65dbg=l65dbg
+        for k,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
             local vt = type(v)
             if vt == 'table' and v.label then v = symbols[v.label]
             elseif vt == 'string' then v = symbols[v] end
+            if type(v) ~= 'number' then error("unresolved symbol for dc.b, index " .. k) end 
             b[#b+1] = nrm(v)
         end
     end
@@ -545,6 +546,7 @@ end
 --  * a function, resolving to exactly one valid range word, evaluated
 --    after symbols have been resolved
 M.word = function(...)
+    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local args = {...}
     local data = {}
     for k,v in ipairs(args) do
@@ -560,12 +562,13 @@ M.word = function(...)
         for i,v in ipairs(data) do data[i] = size_dc(v) end
         return #data*2
     end
-    local asbin = function(b)
-        for _,v in ipairs(data) do
+    local asbin = function(b) local l65dbg=l65dbg
+        for k,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
             local vt = type(v)
             if vt == 'table' and v.label then v = symbols[v.label]
             elseif vt == 'string' then v = symbols[v] end
+            if type(v) ~= 'number' then error("unresolved symbol for dc.w, index " .. k) end 
             v = word_normalize(v)
             b[#b+1] = v&0xff
             b[#b+1] = v>>8
@@ -575,6 +578,7 @@ M.word = function(...)
 end
 
 M.long = function(...)
+    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local args = {...}
     local data = {}
     for k,v in ipairs(args) do
@@ -590,12 +594,13 @@ M.long = function(...)
         for i,v in ipairs(data) do data[i] = size_dc(v) end
         return #data*4
     end
-    local asbin = function(b)
-        for _,v in ipairs(data) do
+    local asbin = function(b) local l65dbg=l65dbg
+        for k,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
             local vt = type(v)
             if vt == 'table' and v.label then v = symbols[v.label]
             elseif vt == 'string' then v = symbols[v] end
+            if type(v) ~= 'number' then error("unresolved symbol for dc.l, index " .. k) end 
             v = long_normalize(v)
             b[#b+1] = v&0xff
             b[#b+1] = (v>>8)&0xff
