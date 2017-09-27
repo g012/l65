@@ -77,7 +77,7 @@ static int writer(lua_State* L, const void* p, size_t size, void* f)
         fprintf(f, "0x%02X, ", (int)(((unsigned char*)p)[i]));
     }
     w_o += size;
-    return size == 0;
+    return 0;
 }
 
 static int pmain(lua_State* L)

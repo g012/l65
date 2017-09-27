@@ -740,7 +740,7 @@ local function LexLua(src)
 end
 
 
-local function ParseLua(src)
+local function ParseLua(src, src_name)
     local st, tok
     if type(src) ~= 'table' then
         st, tok = LexLua(src)
@@ -752,7 +752,7 @@ local function ParseLua(src)
     end
     --
     local function GenerateError(msg)
-        local err = ">> :"..tok:Peek().Line..":"..tok:Peek().Char..": "..msg.."\n"
+        local err = (src_name or '=(string)') .. ":"..tok:Peek().Line..":"..tok:Peek().Char..": "..msg.."\n "
         --find the line
         local lineNum = 0
         if type(src) == 'string' then
@@ -760,7 +760,7 @@ local function ParseLua(src)
                 if line:sub(-1,-1) == '\n' then line = line:sub(1,-2) end
                 lineNum = lineNum+1
                 if lineNum == tok:Peek().Line then
-                    err = err..">> '"..line:gsub('\t','    ').."'\n"
+                    err = err..line:gsub('\t','    ').."\n"
                     for i = 1, tok:Peek().Char do
                         local c = line:sub(i,i)
                         if c == '\t' then
@@ -769,7 +769,7 @@ local function ParseLua(src)
                             err = err..' '
                         end
                     end
-                    err = err.."   ^^^^"
+                    err = err.."^^^^"
                     break
                 end
             end
@@ -2252,7 +2252,7 @@ local function Format65(ast)
             appendNextToken( ")" )
 
         else
-            print("Unknown AST Type: ", statement.AstType)
+            error(string.format("Unknown AST Type: %s\n", tostring(statement.AstType)))
         end
 
         assert(tok_it == #expr.Tokens + 1)
@@ -2441,7 +2441,7 @@ local function Format65(ast)
         elseif statement.AstType == 'SemicolonStatement' then
 
         else
-            print("Unknown AST Type: ", statement.AstType)
+            error(string.format("Unknown AST Type: %s\n", tostring(statement.AstType)))
         end
 
         if statement.Semicolon then
@@ -2478,6 +2478,52 @@ l65 = {
     loadfile_org = loadfile,
     dofile_org = dofile,
 }
+l65.report = function(success, ...)
+    if success then return success,... end
+    local message=... io.stderr:write(message..'\n')
+    os.exit(-1)
+end
+l65.msghandler = function(msg)
+    msg = tostring(msg)
+    msg = msg:gsub('%[string "(.-%.l65)"%]', '%1') -- [string "xxx.l65"] -> xxx.l65
+    local trace_cur = debug.traceback()
+    trace_cur = trace_cur:gsub('%[string "(.-%.l65)"%]', '%1') -- [string "xxx.l65"] -> xxx.l65
+
+    local i=2
+    while debug.getinfo(i) do
+        local j = 1
+        while true do
+            local n,v = debug.getlocal(i, j)
+            if not n then break end
+            if n == 'l65dbg' then
+                local o = function(s) io.stderr:write(s) end
+                o(string.format("%s\n", msg))
+                local trace_cur = debug.traceback()
+                if trace_cur:find("in local 'late'") then
+                    local lines = {}
+                    for line in trace_cur:gmatch("[^\n]+") do
+                        if line:find("in local 'late'") then break end
+                        table.insert(lines, line)
+                    end
+                    print(table.concat(lines,'\n'))
+                end
+                local trace = v.trace:match(".-\n(.*)\n.-'xpcall'")
+                trace = trace:gsub('%[string "(.-%.l65)"%]', '%1')
+                print(trace)
+                os.exit(-2)
+            end
+            j = j + 1
+        end
+        i = i + 1
+    end
+
+    trace_cur = trace_cur:match(".-\n(.*)\n.-'xpcall'")
+    io.stderr:write(string.format("%s\n%s\n", msg, trace_cur))
+    os.exit(-3)
+end
+l65.require = function()
+    -- TODO
+end
 do
     local getembedded = type(arg[-1]) == 'function' and arg[-1]
     l65.load_embedded = function(name)
@@ -2485,15 +2531,14 @@ do
         local src,isl65 = getembedded(name)
         if not src then return end
         if isl65 then
-            local filename = name .. '.l65'
-            local st, ast = assert(l65.parse(src))
-            local bc = assert(l65.load_org(l65.format(ast), filename))
-            return bc, filename
+            name = name .. '.l65'
+            local st, ast = l65.report(l65.parse(src, name))
+            src = l65.format(ast)
         else
-            local filename = name .. '.lua'
-            local bc = assert(l65.load_org(src, filename))
-            return bc, filename
+            name = name .. '.lua'
         end
+        local bc = assert(l65.load_org(src, name))
+        return bc, name
     end
 end
 l65.searcher = function(name)
@@ -2502,7 +2547,7 @@ l65.searcher = function(name)
     local file = assert(io.open(filename, 'rb'))
     local src = file:read('*a')
     file:close()
-    local st, ast = assert(l65.parse(src))
+    local st, ast = l65.report(l65.parse(src, filename))
     local bc = assert(l65.load_org(l65.format(ast), filename))
     return bc, filename
 end
@@ -2514,14 +2559,10 @@ l65.load = function(chunk, chunkname, mode, ...)
         s = table.concat(s)
     else return nil, string.format("invalid type for chunk %s: %s", chunkname or "=(load)", chunk_t)
     end
-    local st, ast = l65.parse(s)
-    if not st then
-        if not mode or mode:sub(1,1)=='b' then
-            local f = l65.load_org(s, chunkname, mode, ...)
-            if f then return f end
-        end
-        return nil,ast
+    if s:sub(1,4) == "\x1bLua" then -- a binary file
+        return l65.load_org(s, chunkname, mode, ...)
     end
+    local st, ast = l65.report(l65.parse(s, chunkname or "=(load)"))
     return l65.load_org(l65.format(ast), chunkname, 't', ...)
 end
 l65.loadfile = function(filename, mode, ...)
@@ -2536,8 +2577,8 @@ l65.loadfile = function(filename, mode, ...)
     return l65.load(s, filename, mode, ...)
 end
 l65.dofile = function(filename)
-    local f = assert(l65.loadfile(filename))
-    return f()
+    local f = l65.report(l65.loadfile(filename))
+    return xpcall(f, l65.msghandler)
 end
 l65.installhooks = function()
     if package.searchers[l65.searcher_index] ~= l65.searcher then
@@ -2599,17 +2640,19 @@ local cfg=require"l65cfg" l65.cfg=cfg
 local version = function()
     print(string.format("l65 %s", cfg.version))
 end
-local usage = function()
-    print(string.format([[
+local usage = function(f)
+    if not f then f = io.stdout end
+    f:write(string.format([[
 Usage: %s [options] file
 Options:
   -d <file>        Dump the Lua code after l65 parsing into file
   -h               Display this information
-  -v               Display the release version]], arg[0]))
+  -v               Display the release version
+]], arg[0]))
 end
 local invalid_usage = function()
-    print("Invalid usage.")
-    usage()
+    io.stderr:write("Invalid usage.\n")
+    usage(io.stderr)
 end
 
 local inf,dump
