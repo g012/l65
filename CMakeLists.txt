@@ -84,14 +84,23 @@ set(L65_RESOURCES
         ${L65_SOURCE_DIR}/vcs.l65
     )
 
-add_executable(embed ${L65_SOURCE_DIR}/embed.c)
 file(GLOB L65_FILES ${L65_SOURCE_DIR}/*.l65)
+set(L65_SCRIPTS
+        ${L65_SOURCE_DIR}/6502.lua
+        ${L65_SOURCE_DIR}/l65.lua
+        ${L65_BINARY_DIR}/l65cfg.lua
+        ${L65_FILES}
+    )
+
+add_executable(embed ${L65_SOURCE_DIR}/embed.c ${L65_SCRIPTS})
 add_custom_command(
     OUTPUT ${L65_BINARY_DIR}/scripts.h
-    COMMAND embed -o ${L65_BINARY_DIR}/scripts.h ${L65_SOURCE_DIR}/6502.lua ${L65_SOURCE_DIR}/l65.lua ${L65_BINARY_DIR}/l65cfg.lua ${L65_FILES}
+    COMMAND embed -o ${L65_BINARY_DIR}/scripts.h ${L65_SCRIPTS}
+    DEPENDS embed ${L65_SCRIPTS}
 )
-
+add_custom_target(prereq DEPENDS ${L65_BINARY_DIR}/scripts.h)
 add_executable(${PROJECT_NAME} ${L65_SOURCES} ${L65_HEADERS} ${L65_RESOURCES})
+add_dependencies(${PROJECT_NAME} prereq)
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY C_STANDARD 99)
 target_include_directories(${PROJECT_NAME} PRIVATE "${L65_SOURCE_DIR}" "${L65_BINARY_DIR}")
