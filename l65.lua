@@ -2486,8 +2486,9 @@ end
 l65.msghandler = function(msg)
     msg = tostring(msg)
     msg = msg:gsub('%[string "(.-%.l65)"%]', '%1') -- [string "xxx.l65"] -> xxx.l65
-    local trace_cur = debug.traceback()
+    local trace_cur = debug.traceback(nil, 2)
     trace_cur = trace_cur:gsub('%[string "(.-%.l65)"%]', '%1') -- [string "xxx.l65"] -> xxx.l65
+    trace_cur = trace_cur:gsub('stack traceback:', '')
 
     local i=2
     while debug.getinfo(i) do
@@ -2498,7 +2499,6 @@ l65.msghandler = function(msg)
             if n == 'l65dbg' then
                 local o = function(s) io.stderr:write(s) end
                 o(string.format("%s\n", msg))
-                local trace_cur = debug.traceback()
                 if trace_cur:find("in local 'late'") then
                     local lines = {}
                     for line in trace_cur:gmatch("[^\n]+") do
@@ -2509,6 +2509,7 @@ l65.msghandler = function(msg)
                 end
                 local trace = v.trace:match(".-\n(.*)\n.-'xpcall'")
                 trace = trace:gsub('%[string "(.-%.l65)"%]', '%1')
+                trace = trace:gsub('stack traceback:', '')
                 print(trace)
                 os.exit(-2)
             end
@@ -2520,9 +2521,6 @@ l65.msghandler = function(msg)
     trace_cur = trace_cur:match(".-\n(.*)\n.-'xpcall'")
     io.stderr:write(string.format("%s\n%s\n", msg, trace_cur))
     os.exit(-3)
-end
-l65.require = function()
-    -- TODO
 end
 do
     local getembedded = type(arg[-1]) == 'function' and arg[-1]
@@ -2578,7 +2576,7 @@ l65.loadfile = function(filename, mode, ...)
 end
 l65.dofile = function(filename)
     local f = l65.report(l65.loadfile(filename))
-    return xpcall(f, l65.msghandler)
+    return f()
 end
 l65.installhooks = function()
     if package.searchers[l65.searcher_index] ~= l65.searcher then
@@ -2671,4 +2669,5 @@ if dump then l65.format = function(ast)
 end end
 
 local fn='' for i=#inf,1,-1 do local c=inf:sub(i,i) if c==dirsep or c=='/' then break end fn=c..fn if c=='.' then fn='' end end filename=fn
-dofile(inf)
+local f = l65.report(l65.loadfile(inf))
+return xpcall(f, l65.msghandler)
