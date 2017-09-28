@@ -1,6 +1,6 @@
 # l65
 
-l65 is a 6502 assembler, operating from within Lua and written in Lua. This means assembler mnemonics become regular Lua statements anywhere in the moddle of regular Lua code.
+l65 is a 6502 assembler, operating from within Lua and written in Lua. This means assembler mnemonics become regular Lua statements anywhere in the middle of Lua code.
 
 ## Building
 
