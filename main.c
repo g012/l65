@@ -5,7 +5,7 @@
 extern int luaopen_lpeg(lua_State *L);
 extern int luaopen_lfs(lua_State *L);
 
-static struct script { const char *name; int t;  const char *data; size_t sz; } embedded[] = {
+static struct script { const char *name; int t;  const unsigned char *data; size_t sz; } embedded[] = {
     { "l65cfg", 0, script_l65cfg_lua, sizeof(script_l65cfg_lua) },
     { "vcs", 1, script_vcs_l65, sizeof(script_vcs_l65) },
 };
@@ -17,7 +17,7 @@ static int getembedded(lua_State *L)
     {
         if (!strcmp(s->name, name))
         {
-            lua_pushlstring(L, s->data, s->sz);
+            lua_pushlstring(L, (const char*)s->data, s->sz);
             lua_pushboolean(L, s->t);
             return 2;
         }
@@ -47,14 +47,14 @@ int main(int argc, char *argv[])
 
     // preload embedded lua scripts
     luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
-    luaL_loadbufferx(L, script_6502_lua, sizeof(script_6502_lua), "6502.lua", "b");
+    luaL_loadbufferx(L, (const char*)script_6502_lua, sizeof(script_6502_lua), "6502.lua", "b");
     lua_setfield(L, -2, "6502");
     lua_pop(L, 1);
 
     // error handler
     lua_pushcfunction(L, msghandler);
     // l65.lua script
-    luaL_loadbufferx(L, script_l65_lua, sizeof(script_l65_lua), "l65.lua", "b");
+    luaL_loadbufferx(L, (const char*)script_l65_lua, sizeof(script_l65_lua), "l65.lua", "b");
     // arg[] table
     lua_createtable(L, argc-1, 2);
     lua_pushcfunction(L, getembedded); // pass embedded script lookup function as arg[-1]

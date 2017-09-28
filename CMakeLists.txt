@@ -110,7 +110,10 @@ if (MSVC)
 
 elseif (UNIX)
 
-    list(APPEND LINKLIBS m dl)
+    list(APPEND LINKLIBS m)
+    if (NOT APPLE)
+        list(APPEND LINKLIBS dl)
+    endif()
 
 endif()
 

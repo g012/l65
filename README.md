@@ -1,4 +1,5 @@
 # l65
+[![Build Status](https://travis-ci.org/g012/l65.svg?branch=master)](https://travis-ci.org/g012/l65)
 
 l65 is a 6502 assembler, operating from within Lua and written in Lua. This means assembler mnemonics become regular Lua statements anywhere in the middle of Lua code.
 
@@ -13,6 +14,7 @@ Use CMake to build a standalone executable. Following are basic instructions if 
 mkdir build\win32
 cd build\win32
 cmake -G "Visual Studio 15 2017" ..\..
+cd ..
 cmake --build win32 --config Release
 ```
 
@@ -21,13 +23,14 @@ cmake --build win32 --config Release
 mkdir build\win64
 cd build\win64
 cmake -G "Visual Studio 15 2017 Win64" ..\..
+cd ..
 cmake --build win64 --config Release
 ```
 
 ### Linux
 
 ```
-mkdir build/linux
+mkdir -p build/linux
 cd build/linux
 cmake ../.. -DCMAKE_BUILD_TYPE=Release
 make
@@ -35,7 +38,7 @@ make
 
 Force 32b build on 64b system:
 ```
-mkdir build/linux32
+mkdir -p build/linux32
 cd build/linux32
 cmake ../.. -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-m32
 make

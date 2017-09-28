@@ -283,7 +283,7 @@ typedef struct Pattern {
 
 
 /* number of children for each tree */
-static const byte numsiblings[];
+static const byte numsiblings[17];
 
 /* access to children */
 #define sib1(t)         ((t) + 1)
@@ -2203,7 +2203,7 @@ static void printktable (lua_State *L, int idx) {
 */
 
 /* number of siblings for each tree */
-static const byte numsiblings[] = {
+static const byte numsiblings[17] = {
   0, 0, 0,	/* char, set, any */
   0, 0,		/* true, false */	
   1,		/* rep */
