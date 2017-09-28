@@ -2340,11 +2340,11 @@ static void newktable (lua_State *L, int n) {
 ** If new element is nil, does not add it to table (as it would be
 ** useless) and returns 0, as ktable[0] is always nil.
 */
-static int addtoktable (lua_State *L, int idx) {
+static lua_Integer addtoktable (lua_State *L, int idx) {
   if (lua_isnil(L, idx))  /* nil value? */
     return 0;
   else {
-    int n;
+    lua_Integer n;
     lua_getuservalue(L, -1);  /* get ktable from pattern */
     n = lua_rawlen(L, -1);
     if (n >= USHRT_MAX)
@@ -2363,7 +2363,7 @@ static int addtoktable (lua_State *L, int idx) {
 ** a table. Treat it as an empty table. In Lua 5.1, assumes that
 ** the environment has no numeric indices (len == 0)
 */
-static int ktablelen (lua_State *L, int idx) {
+static lua_Integer ktablelen (lua_State *L, int idx) {
   if (!lua_istable(L, idx)) return 0;
   else return lua_rawlen(L, idx);
 }
@@ -2521,7 +2521,7 @@ static Pattern *getpattern (lua_State *L, int idx) {
 }
 
 
-static int getsize (lua_State *L, int idx) {
+static lua_Integer getsize (lua_State *L, int idx) {
   return (lua_rawlen(L, idx) - sizeof(Pattern)) / sizeof(TTree) + 1;
 }
 
@@ -2539,7 +2539,7 @@ static TTree *gettree (lua_State *L, int idx, int *len) {
 ** metatable. (It could be any empty sequence; the metatable is at
 ** hand here, so we use it.)
 */
-static TTree *newtree (lua_State *L, int len) {
+static TTree *newtree (lua_State *L, lua_Integer len) {
   size_t size = (len - 1) * sizeof(TTree) + sizeof(Pattern);
   Pattern *p = (Pattern *)lua_newuserdata(L, size);
   luaL_getmetatable(L, PATTERN_T);
@@ -2632,7 +2632,7 @@ static TTree *getpatt (lua_State *L, int idx, int *len) {
         tree = newleaf(L, TTrue);  /* always match */
       else {
         tree = newtree(L, 2 * (slen - 1) + 1);
-        fillseq(tree, TChar, slen, s);  /* sequence of 'slen' chars */
+        fillseq(tree, TChar, (int)slen, s);  /* sequence of 'slen' chars */
       }
       break;
     }
@@ -3252,7 +3252,7 @@ static void verifygrammar (lua_State *L, TTree *grammar) {
 */
 static void initialrulename (lua_State *L, TTree *grammar, int frule) {
   if (sib1(grammar)->key == 0) {  /* initial rule is not referenced? */
-    int n = lua_rawlen(L, -1) + 1;  /* index for name */
+    lua_Integer n = lua_rawlen(L, -1) + 1;  /* index for name */
     lua_pushvalue(L, frule);  /* rule's name */
     lua_rawseti(L, -2, n);  /* ktable was on the top of the stack */
     sib1(grammar)->key = n;

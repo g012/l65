@@ -92,7 +92,7 @@ set(L65_SCRIPTS
         ${L65_FILES}
     )
 
-add_executable(embed ${L65_SOURCE_DIR}/embed.c ${L65_SCRIPTS})
+add_executable(embed ${L65_SOURCE_DIR}/embed.c)
 add_custom_command(
     OUTPUT ${L65_BINARY_DIR}/scripts.h
     COMMAND embed -o ${L65_BINARY_DIR}/scripts.h ${L65_SCRIPTS}

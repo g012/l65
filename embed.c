@@ -68,7 +68,7 @@ static int doargs(int argc, char* argv[])
 
 #define FUNCTION "(function()end)();"
 
-static int w_o;
+static size_t w_o;
 static int writer(lua_State* L, const void* p, size_t size, void* f)
 {
     for (size_t i = 0; i < size; ++i)
@@ -98,7 +98,7 @@ static int pmain(lua_State* L)
         char *name = malloc(1024);
         sprintf(name, "script_%s", ufname + fnix);
         free(ufname);
-        int fnl = strlen(filename);
+        int fnl = (int)strlen(filename);
         compile = fnl > 4 && !strcmp(".lua", filename + fnl - 4);
         if (compile)
         {
