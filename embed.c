@@ -103,7 +103,7 @@ static int pmain(lua_State* L)
         if (compile)
         {
             if (luaL_loadfile(L, filename) != LUA_OK) fatal(lua_tostring(L, -1));
-            fprintf(f, "static const unsigned char %s[] = {", name);
+            fprintf(f, "static const char %s[] = {", name);
             w_o = 0;
             lua_dump(L, writer, f, 0);
             lua_pop(L, 1);
