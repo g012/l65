@@ -283,7 +283,7 @@ typedef struct Pattern {
 
 
 /* number of children for each tree */
-extern const byte numsiblings[];
+static const byte numsiblings[];
 
 /* access to children */
 #define sib1(t)         ((t) + 1)

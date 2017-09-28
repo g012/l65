@@ -116,7 +116,7 @@ static int pmain(lua_State* L)
             int size = (int)ftell(l);
             rewind(l);
             unsigned char *buffer = malloc(size);
-            if (size != fread(buffer, 1, size, l)) fatal("failed reading input file");
+            if (size != (int)fread(buffer, 1, size, l)) fatal("failed reading input file");
             fclose(l);
             fprintf(f, "static const char %s[] = {", name);
             for (int i = 0; i < size; ++i)

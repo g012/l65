@@ -62,9 +62,8 @@ else ()
 
 	add_definitions(-D_FILE_OFFSET_BITS=64)
 
-    add_compile_options(-fno-strict-aliasing -fomit-frame-pointer -ffast-math -fvisibility=hidden -fno-threadsafe-statics -fvisibility-inlines-hidden)
-    add_compile_options(-fno-rtti -fno-exceptions)
-    add_compile_options(-Werror -Wsign-compare -Wno-dangling-else -Wno-missing-braces -Wno-unused-function -Wno-shift-op-parentheses -Wno-unused-variable -Wno-switch -Wno-parentheses)
+    add_compile_options(-fno-strict-aliasing -fomit-frame-pointer -ffast-math -fvisibility=hidden)
+    add_compile_options(-Wsign-compare -Wno-missing-braces -Wno-unused-function -Wno-unused-variable -Wno-switch -Wno-parentheses)
 
 endif()
 
@@ -93,6 +92,7 @@ set(L65_SCRIPTS
     )
 
 add_executable(embed ${L65_SOURCE_DIR}/embed.c)
+set_property(TARGET embed PROPERTY C_STANDARD 99)
 add_custom_command(
     OUTPUT ${L65_BINARY_DIR}/scripts.h
     COMMAND embed -o ${L65_BINARY_DIR}/scripts.h ${L65_SCRIPTS}
@@ -101,7 +101,6 @@ add_custom_command(
 add_custom_target(prereq DEPENDS ${L65_BINARY_DIR}/scripts.h)
 add_executable(${PROJECT_NAME} ${L65_SOURCES} ${L65_HEADERS} ${L65_RESOURCES})
 add_dependencies(${PROJECT_NAME} prereq)
-
 set_property(TARGET ${PROJECT_NAME} PROPERTY C_STANDARD 99)
 target_include_directories(${PROJECT_NAME} PRIVATE "${L65_SOURCE_DIR}" "${L65_BINARY_DIR}")
 
@@ -115,4 +114,5 @@ elseif (UNIX)
 
 endif()
 
+target_link_libraries(embed ${LINKLIBS})
 target_link_libraries(${PROJECT_NAME} ${LINKLIBS})
