@@ -84,45 +84,160 @@ do
     for k,v in pairs(vcs) do symbols[k] = v end
 end
 
+NTSC = {
+    TIM_OVERSCAN    = 38, -- TIM64T,  2432 cycles =   32 scanlines
+    TIM_VBLANK      = 45, -- TIM64T,  2880 cycles = ~ 38 scanlines
+    TIM_KERNEL      = 15, -- T1024T, 15360 cycles = ~202 scanlines
+}
+PAL = {
+    TIM_OVERSCAN    = 50, -- TIM64T,  3200 cycles = ~ 42 scanlines
+    TIM_VBLANK      = 61, -- TIM64T,  3904 cycles = ~ 51 scanlines
+    TIM_KERNEL      = 17, -- T1024T, 17408 cycles = ~229 scanlines
+}
+TV = PAL
+
+init = function() cld ldx#0 txa local l=label() dex tsx pha bne l end
+wait = function() local l=label() lda INTIM bne l end
+overscan_begin = function() sta WSYNC lda#2 sta VBLANK lda#TV.TIM_OVERSCAN sta TIM64T end
+overscan_end = wait
+overscan = function(f) overscan_begin() if f then f() end overscan_end() end
+vblank_begin = function()
+    lda#0b1110 local l=label() sta WSYNC sta VSYNC lsr bne l
+    lda#2 sta VBLANK lda#TV.TIM_VBLANK sta TIM64T
+end
+vblank_end = function() wait() sta WSYNC sta VBLANK end
+vblank = function(f) vblank_begin() if f then f() end vblank_end() end
+screen_begin = function() lda#TV.TIM_KERNEL sta T1024T end
+screen_end = wait
+screen = function(f) screen_begin() if f then f() end screen_end() end
+
+nusiz = {
+    MSL_SIZE_1 = 16*0,
+    MSL_SIZE_2 = 16*1,
+    MSL_SIZE_4 = 16*2,
+    MSL_SIZE_8 = 16*3,
+    ONE_COPY = 0,
+    TWO_COPIES_CLOSE = 1,
+    TWO_COPIES_MEDIUM = 2,
+    THREE_COPIES_CLOSE = 3,
+    TWO_COPIES_WIDE = 4,
+    DOUBLE_SIZED_PLAYER = 5,
+    THREE_COPIES_MEDIUM = 6,
+    QUAD_SIZED_PLAYER = 7,
+}
+
+ctrlpf = {
+	BALL_SIZE_1 = 16*0,
+	BALL_SIZE_2 = 16*1,
+	BALL_SIZE_4 = 16*2,
+	BALL_SIZE_8 = 16*3,
+	PF_MIRRORED = 1,
+	PF_SCOREMODE = 2,
+	PF_PRIO_BALLABOVE = 4,
+}
+
+enable = {
+	DISABLE = 0,
+	ENABLE = 2,
+}
+
+vdel = {
+	DISABLE = 0,
+	ENABLE = 1,
+}
+
+hm = {
+	LEFT_7 = 7*16,
+	LEFT_6 = 6*16,
+	LEFT_5 = 5*16,
+	LEFT_4 = 4*16,
+	LEFT_3 = 3*16,
+	LEFT_2 = 2*16,
+	LEFT_1 = 1*16,
+	NO_MOTION = 0,
+	RIGHT_1 = 15*16,
+	RIGHT_2 = 14*16,
+	RIGHT_3 = 13*16,
+	RIGHT_4 = 12*16,
+	RIGHT_5 = 11*16,
+	RIGHT_6 = 10*16,
+	RIGHT_7 = 9*16,
+	RIGHT_8 = 8*16,
+	
+	C74_LEFT_15 = 7*16,
+	C74_LEFT_14 = 6*16,
+	C74_LEFT_13 = 5*16,
+	C74_LEFT_12 = 4*16,
+	C74_LEFT_11 = 3*16,
+	C74_LEFT_10 = 2*16,
+	C74_LEFT_9 = 1*16,
+	C74_LEFT_8 = 0*16,
+	C74_LEFT_7 = 15*16,
+	C74_LEFT_6 = 14*16,
+	C74_LEFT_5 = 13*16,
+	C74_LEFT_4 = 12*16,
+	C74_LEFT_3 = 11*16,
+	C74_LEFT_2 = 10*16,
+	C74_LEFT_1 = 9*16,
+	C74_NO_MOTION = 8*16,
+}
+
+-- for mappers that swap banks in place
+-- call an asm function into another bank and generate the stubs if needed
+local far_stubs = {} M.far_stubs=far_stubs
+local far = function(dst)
+    local stub,loc_src,loc_dst = far_stubs[dst],location_current,dst.section.location
+    if not (stub and stub.stub_caller.location==loc_src and stub.stub_callee.location==loc_dst) then
+        local seccur = section_current
+        local stub_caller = section()   switchrom(loc_dst.rom) skip(6) rts
+        location(loc_dst)
+        local stub_callee = section()   jsr dst switchrom(loc_src.rom)
+        location(loc_src) section_current=seccur
+        far_stubs[dst] = relate(stub_caller, stub_callee, 3)
+    end
+    jsr stub_caller
+end
+
 mappers = {}
 
-mappers['2K'] = function()
+mappers['2K'] = function(irq)
     rom0 = location(0xf800, 0xffff)
-    section{"vectors", org=0xfffc} word(main,main)
+    section{"vectors", org=0xfffc} dc.w main if irq then dc.w main end
 end
 mappers.CV = mappers['2K']
 
-mappers['4K'] = function()
+mappers['4K'] = function(irq)
     rom0 = location(0xf000, 0xffff)
-    section{"vectors", org=0xfffc} word(main,main)
+    section{"vectors", org=0xfffc} dc.w main if irq then dc.w main end
 end
 
-local bank_stubs = function(count, hotspot, entry)
+local bank_stubs = function(irq, count, hotspot, entry)
     function switchrom(i) assert(i>=0 and i<count) bit 0x1000+hotspot+i end
+    far = far
     local base = 0x10000 - (count << 12)
     for bi=0,count-1 do
         local o = base+(bi<<12)
-        _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
+        _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000, rom=bi}
         local start=section{"entry"..bi, org=o+(entry or hotspot-6)} switchrom(0) if bi==0 then jmp main end
         section{"switchtab"..bi, org=o+hotspot} for i=1,count do byte(0) end
-        section{"vectors"..bi, org=o+0xffc} word(start,start)
+        section{"vectors"..bi, org=o+0xffc} dc.w start if irq then dc.w start end
     end
 end
-mappers.FA = function() bank_stubs(3, 0xff8) end
-mappers.F8 = function() bank_stubs(2, 0xff8) end
-mappers.F6 = function() bank_stubs(4, 0xff6) end
-mappers.F4 = function() bank_stubs(8, 0xff4) end
-mappers.EF = function() bank_stubs(16, 0xfe0, 0xffc-6) end
+mappers.FA = function(irq) bank_stubs(irq, 3, 0xff8) end
+mappers.F8 = function(irq) bank_stubs(irq, 2, 0xff8) end
+mappers.F6 = function(irq) bank_stubs(irq, 4, 0xff6) end
+mappers.F4 = function(irq) bank_stubs(irq, 8, 0xff4) end
+mappers.EF = function(irq) bank_stubs(irq, 16, 0xfe0, 0xffc-6) end
 
-mappers.FE = function()
-    rom0 = location(0xd000, 0xdfff)
-    section{"vectors0", org=0xdffc} word(main,main)
+mappers.FE = function(irq)
+    rom1 = location(0xd000, 0xdfff)
+    section{"vectors1", org=0xdffc} dc.w main if irq then dc.w main end
     location{0xe000, 0xefff, nofill=true}
-    rom1 = location(0xf000, 0xffff)
-    section{"vectors1", org=0xfffc} word(main,main)
+    rom0 = location(0xf000, 0xffff)
+    section{"vectors0", org=0xfffc} dc.w main if irq then dc.w main end
 end
 
-mappers.E0 = function(map)
+mappers.E0 = function(map, irq)
     function switchrom0(i) assert(map[i]==0) bit 0x1fe0+i end
     function switchrom1(i) assert(map[i]==1) bit 0x1fe8+i end
     function switchrom2(i) assert(map[i]==2) bit 0x1ff0+i end
@@ -132,12 +247,12 @@ mappers.E0 = function(map)
         _ENV["rom"..bi] = location{0xe000+o, 0xe3ff+o, rorg=0xf000+map[bi]*0x400}
     end
     section{"switchtab", org=0xffe0} for i=1,8*3 do byte(0) end
-    section{"vectors", org=0xfffc} word(main,main)
+    section{"vectors", org=0xfffc} dc.w main if irq then dc.w main end
 end
 
 -- rom0 refers to the last one in ROM, ie the one always mapped to 0xF800-0xFFFF,
 -- such that changing the rom count does not change its index
-mappers['3F'] = function(count)
+mappers['3F'] = function(count, irq)
     function switchrom(i) assert(i>=0 and i<count-1) lda#i sta 0x3f end
     local symbols=cpu.symbols for k,v in pairs(vcs) do -- remap TIA to 0x40-0x7F
         if v<0x40 then v=v+0x40 vcs[k]=v symbols[k]=v end
@@ -148,10 +263,10 @@ mappers['3F'] = function(count)
     end
     local o = 0x800 * (count-1) + 0x10000
     rom0 = location{o, 0x7ff+o, rorg=0xf800}
-    section{"vectors", org=0xfffc} word(main,main)
+    section{"vectors", org=0xfffc} dc.w main if irq then dc.w main end
 end
 
-mappers.E7 = function()
+mappers.E7 = function(irq)
     function switchrom(i) assert(i>=0 and i<7) bit 0x1fe0+i end
     function enableram() bit 0x1fe7 end
     function switchram(i) assert(i>=0 and i<4) bit 0x1fe8+i end
@@ -161,56 +276,58 @@ mappers.E7 = function()
     end
     rom7 = location{0xf800, 0xffff, rorg=0xf800}
     section{"switchtab", org=0xffe0} for i=1,12 do byte(0) end
-    section{"vectors", org=0xfffc} word(main,main)
+    section{"vectors", org=0xfffc} dc.w main if irq then dc.w main end
 end
 
-mappers.F0 = function()
+mappers.F0 = function(irq)
     function switchrom() lda 0x1ff0 end
     for bi=0,15 do
         local o = bi*0x1000 + 0x1000
         _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
         local start=section{"entry"..bi, org=o+0xffc-8}
-            @_loop switchrom() bne _loop
+            local l=label() switchrom() bne l
             if bi==0 then jmp main end
         section{"switchtab"..bi, org=o+0xff0} byte(bi)
-        section{"vectors"..bi, org=o+0xffc} word(start,start)
+        section{"vectors"..bi, org=o+0xffc} dc.w start if irq then dc.w start end
     end
 end
 
-local bank_stubs2 = function(hotspot0, hotspot1)
+local bank_stubs2 = function(irq, hotspot0, hotspot1)
     function switchrom(i)
         if i==0 then bit hotspot0
         elseif i==1 then bit hotspot1
         else error("invalid rom index: " .. i) end
     end
+    far = far
     local base = 0xe000
     for bi=0,1 do
         local o = base+(bi<<12)
         _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
         local start=section{"entry"..bi, org=o+0xffc-6} switchrom(0) if bi==0 then jmp main end
-        section{"vectors"..bi, org=o+0xffc} word(start,start)
+        section{"vectors"..bi, org=o+0xffc} dc.w start if irq then dc.w start end
     end
 end
-mappers.UA = function() bank_stubs2(0x220, 0x240) end
-mappers['0840'] = function() bank_stubs2(0x800, 0x840) end
-mappers.SB = function(count)
+mappers.UA = function(irq) bank_stubs2(irq, 0x220, 0x240) end
+mappers['0840'] = function(irq) bank_stubs2(irq, 0x800, 0x840) end
+mappers.SB = function(count, irq)
     function switchrom(i) assert(i>=0 and i<count) bit 0x800+i end
+    far = far
     for bi=0,count-1 do
         local o = bi*0x1000 + 0x1000
         _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
         local start=section{"entry"..bi, org=o+0xffc-6} switchrom(0) if bi==0 then jmp main end
-        section{"vectors"..bi, org=o+0xffc} word(start,start)
+        section{"vectors"..bi, org=o+0xffc} dc.w start if irq then dc.w start end
     end
 end
 
-mappers['3E'] = function(rom_count, ram_count)
-    mappers['3F'](rom_count)
+mappers['3E'] = function(rom_count, ram_count, irq)
+    mappers['3F'](rom_count, irq)
     function switchram(i) assert(i>=0 and i<ram_count-1) lda#i sta 0x3E end
 end
 
 -- rom0 refers to the last 1k in ROM, which is mapped automatically on reset,
 -- such that changing the rom count does not change its index
-mappers.MC = function(rom_count, ram_count)
+mappers.MC = function(rom_count, ram_count, irq)
     for i=0,3 do
         _ENV['switchrom'..i] = function(i) assert(i>=0 and i<128) lda#i sta 0x3c+i end
         _ENV['switchram'..i] = function(i) assert(i>=0 and i<128) lda#i+0x80 sta 0x3c+i end
@@ -220,17 +337,18 @@ mappers.MC = function(rom_count, ram_count)
         _ENV["rom"..(count-1-bi)] = location{o, 0x3ff+o, rorg=0xf000+(o&0xfff)}
     end
     local start=section("entry") switchrom3(0) jmp main
-    section{"vectors", org=0xfffc} word(start,start)
+    section{"vectors", org=0xfffc} dc.w start if irq then dc.w start end
 end
 
-mappers.X07 = function()
+mappers.X07 = function(irq)
     function switchrom(i) assert(i>=0 and i<16) bit 0x80b+(i<<4) end
+    far = far
     -- map TIA also to 0x40-0x7F: use VSYNC for bank 14, and VSYNC2 for bank 15
     vcs.VSYNC2=0x40 cpu.symbols.VSYNC2=0x40
     for bi=0,count-1 do
         local o = bi*0x1000 + 0x1000
         _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
         local start=section{"entry"..bi, org=o+0xffc-6} switchrom(0) if bi==0 then jmp main end
-        section{"vectors"..bi, org=o+0xffc} word(start,start)
+        section{"vectors"..bi, org=o+0xffc} dc.w start if irq then dc.w start end
     end
 end

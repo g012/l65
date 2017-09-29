@@ -1,0 +1,15 @@
+require'vcs'
+mappers['2K']()
+
+local kernel = function()
+    ldx#0xb0 @_loop sta WSYNC stx COLUBK dex bne _loop
+end
+
+@@main
+    init()
+@_frame
+    overscan() vblank() screen(kernel) jmp _frame
+
+writebin(filename..'.bin')
+writesym(filename..'.sym')
+print(stats)
