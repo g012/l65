@@ -32,8 +32,8 @@ M.link = function()
     if M.strip then
         symbols.__index = function(tab,key)
             local val = rawget(symbols, key)
-            if type(val) == 'table' and val.type == 'section' then
-                val.refcount = (val.refcount or 0) + 1
+            if type(val) == 'table' and val.type == 'label' then
+                val.section.refcount = val.section.refcount + 1
             end
             return val
         end
@@ -43,29 +43,43 @@ M.link = function()
     end
     symbols.__index = symbols
 
-    local chunk_reserve = function(chunks, chunk_ix, chunk, start, size)
-        if start == chunk.start then
-            if size == chunk.size then chunks[chunk_ix] = nil
-            else chunk.start=start+size chunk.size=chunk.size-size end
-        else
-            if chunk.size - (start - chunk.start) == size then chunk.size = chunk.size - size
-            else
-                local sz = start - chunk.start
-                table.insert(chunks, chunk_ix+1, { start=start+size, size=chunk.size-(sz+size) })
-                chunk.size = sz
-            end
+    local chunk_reserve = function(section, chunk_ix)
+        local chunks = section.location.chunks
+        local chunk = chunks[chunk_ix]
+        local holes = section.holes
+        local new_chunks,ins = {},table.insert
+
+        local chunk1 = { id=id(), start=chunk.start, size=section.org-chunk.start }
+        local hole_ix = 1
+        local hole1 = holes[1]
+        if hole1 and hole1.start==0 then
+            chunk1.size = chunk1.size + hole1.size
+            hole_ix = 2
         end
+        if chunk1.size > 0 then ins(new_chunks, chunk1) end
+        while hole_ix <= #holes do
+            local hole = holes[hole_ix]
+            local chunki = { id=id(), start=section.org+hole.start, size=hole.size }
+            ins(new_chunks, chunki)
+            hole_ix = hole_ix + 1
+        end
+        local chunkl = { id=id(), start=section.org+section.size, size=chunk.start+chunk.size-(section.org+section.size) }
+        local chunkn = new_chunks[#new_chunks]
+        if chunkn and chunkn.start+chunkn.size==chunkl.start then
+            chunkn.size = chunkn.size + chunkl.size
+        elseif chunkl.size > 0 then
+            ins(new_chunks, chunkl)
+        end
+
+        table.remove(chunks, chunk_ix)
+        for i=chunk_ix,chunk_ix+#new_chunks-1 do ins(chunks, i, new_chunks[i-chunk_ix+1]) end
     end
 
     local position_section = function(section, constrain)
         local location = section.location
-        local rorg = location.rorg
-        local chunks = {}
-        for _,chunk in ipairs(location.chunks) do
-            if chunk.size >= section.size then chunks[#chunks+1] = chunk end
-        end
-        table.sort(chunks, function(a,b) return a.size < b.size end)
-        for chunk_ix,chunk in ipairs(chunks) do
+        local chunks,rorg = location.chunks,location.rorg
+        table.sort(chunks, function(a,b) return a.size==b.size and a.id<b.id or a.size<b.size end)
+        for chunk_ix,chunk in ipairs(chunks) do if chunk.size >= section.size then
             local waste,position,position_end = math.maxinteger
             local usage_lowest = function(start, finish)
                 local inc=1
@@ -120,14 +134,14 @@ M.link = function()
                 usage_lowest(start, chunk.start + chunk.size - section.size)
             end
             if position then
-                chunk_reserve(location.chunks, chunk_ix, chunk, position, section.size)
                 section.org = position
+                chunk_reserve(section, chunk_ix)
                 symbols[section.label] = rorg(position)
                 --print(section.label, string.format("%04X\t%d", position, section.size))
                 --for k,v in ipairs(location.chunks) do print(string.format("  %04X  %04X  %d", v.start, v.size+v.start-1, v.size)) end
                 return position
             end
-        end
+        end end
     end
 
     local sibling_sections = {}
@@ -174,7 +188,7 @@ M.link = function()
             end
             for chunk_ix,chunk in ipairs(location.chunks) do
                 if chunk.start <= section.org and chunk.size - (section.org - chunk.start) >= section.size then
-                    chunk_reserve(location.chunks, chunk_ix, chunk, section.org, section.size)
+                    chunk_reserve(section, chunk_ix)
                     symbols[section.label] = rorg(section.org)
                     goto chunk_located
                 end
@@ -362,7 +376,7 @@ M.location = function(start, finish)
     location.sections = {} -- TODO remove
     if not location.rorg then location.rorg = function(x) return x end end
     local size = (location.finish or math.huge) - location.start + 1
-    location.chunks={ { start=location.start, size=size } }
+    location.chunks={ { id=id(), start=location.start, size=size } }
     locations[#locations+1] = location
     M.location_current = location
     return location
@@ -394,6 +408,8 @@ M.section = function(t)
     section.instructions = {}
     assert(name:sub(1,1) ~= '_', "sections can't be named with a local label")
     section.label = M.label(name)
+    section.holes = {}
+    section.refcount = 0
     function section:compute_size()
         local instructions = self.instructions
         self.size=0 self.cycles=0
@@ -461,9 +477,13 @@ end
 -- relocatable sections.
 M.skip = function(bytes)
     local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
-    local size = function() return bytes end
-    local bin = function(filler) return nil,bytes end
-    table.insert(M.section_current.instructions, { size=size, bin=bin })
+    local ins,section = {},M.section_current
+    ins.size = function()
+        table.insert(section.holes, { start=ins.offset, size=bytes })
+        return bytes
+    end
+    ins.bin = function(filler) return nil,bytes end
+    table.insert(section.instructions, ins)
 end
 
 -- sleep(cycles [, noillegal])
@@ -782,7 +802,7 @@ for k,_ in pairs(opzab) do
         ins.bin = function() local l65dbg=l65dbg 
             local x = word_normalize(late(early or 0))
             -- since we assumed absolute on link phase, we must generate absolute in binary
-            if x <= 0xff and opzpg[k] then print("warning: forcing abs on zpg operand for opcode " .. k) end
+            if x <= 0xff and opzpg[k] then io.stderr:write("warning: forcing abs on zpg operand for opcode " .. k) end
             return { abs.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
@@ -850,7 +870,7 @@ for k,_ in pairs(opzax) do
         ins.bin = function() local l65dbg=l65dbg
             local x = word_normalize(late(early or 0))
             -- since we assumed absolute on link phase, we must generate absolute in binary
-            if x <= 0xff and opzpx[k] then print("warning: forcing abx on zpx operand for opcode " .. k) end
+            if x <= 0xff and opzpx[k] then io.stderr:write("warning: forcing abx on zpx operand for opcode " .. k) end
             return { abx.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
@@ -917,7 +937,7 @@ for k,_ in pairs(opzay) do
         ins.bin = function() local l65dbg=l65dbg
             local x = word_normalize(late(early or 0))
             -- since we assumed absolute on link phase, we must generate absolute in binary
-            if x <= 0xff and opzpy[k] then print("warning: forcing aby on zpy operand for opcode " .. k) end
+            if x <= 0xff and opzpy[k] then io.stderr:write("warning: forcing aby on zpy operand for opcode " .. k) end
             return { aby.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
