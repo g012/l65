@@ -84,33 +84,6 @@ do
     for k,v in pairs(vcs) do symbols[k] = v end
 end
 
-NTSC = {
-    TIM_OVERSCAN    = 38, -- TIM64T,  2432 cycles =   32 scanlines
-    TIM_VBLANK      = 45, -- TIM64T,  2880 cycles = ~ 38 scanlines
-    TIM_KERNEL      = 15, -- T1024T, 15360 cycles = ~202 scanlines
-}
-PAL = {
-    TIM_OVERSCAN    = 50, -- TIM64T,  3200 cycles = ~ 42 scanlines
-    TIM_VBLANK      = 61, -- TIM64T,  3904 cycles = ~ 51 scanlines
-    TIM_KERNEL      = 17, -- T1024T, 17408 cycles = ~229 scanlines
-}
-TV = PAL
-
-init = function() cld ldx#0 txa local l=label() dex tsx pha bne l end
-wait = function() local l=label() lda INTIM bne l end
-overscan_begin = function() sta WSYNC lda#2 sta VBLANK lda#TV.TIM_OVERSCAN sta TIM64T end
-overscan_end = wait
-overscan = function(f) overscan_begin() if f then f() end overscan_end() end
-vblank_begin = function()
-    lda#0b1110 local l=label() sta WSYNC sta VSYNC lsr bne l
-    lda#2 sta VBLANK lda#TV.TIM_VBLANK sta TIM64T
-end
-vblank_end = function() wait() sta WSYNC sta VBLANK end
-vblank = function(f) vblank_begin() if f then f() end vblank_end() end
-screen_begin = function() lda#TV.TIM_KERNEL sta T1024T end
-screen_end = wait
-screen = function(f) screen_begin() if f then f() end screen_end() end
-
 nusiz = {
     MSL_SIZE_1 = 16*0,
     MSL_SIZE_2 = 16*1,
@@ -182,9 +155,36 @@ hm = {
 	C74_NO_MOTION = 8*16,
 }
 
+NTSC = {
+    TIM_OVERSCAN    = 38, -- TIM64T,  2432 cycles =   32 scanlines
+    TIM_VBLANK      = 45, -- TIM64T,  2880 cycles = ~ 38 scanlines
+    TIM_KERNEL      = 15, -- T1024T, 15360 cycles = ~202 scanlines
+}
+PAL = {
+    TIM_OVERSCAN    = 50, -- TIM64T,  3200 cycles = ~ 42 scanlines
+    TIM_VBLANK      = 61, -- TIM64T,  3904 cycles = ~ 51 scanlines
+    TIM_KERNEL      = 17, -- T1024T, 17408 cycles = ~229 scanlines
+}
+TV = PAL
+
+init = function() cld ldx#0 txa local l=label() dex tsx pha bne l end
+wait = function() local l=label() lda INTIM bne l end
+overscan_begin = function() sta WSYNC lda#2 sta VBLANK lda#TV.TIM_OVERSCAN sta TIM64T end
+overscan_end = wait
+overscan = function(f) overscan_begin() if f then f() end overscan_end() end
+vblank_begin = function()
+    lda#0b1110 local l=label() sta WSYNC sta VSYNC lsr bne l
+    lda#2 sta VBLANK lda#TV.TIM_VBLANK sta TIM64T
+end
+vblank_end = function() wait() sta WSYNC sta VBLANK end
+vblank = function(f) vblank_begin() if f then f() end vblank_end() end
+screen_begin = function() lda#TV.TIM_KERNEL sta T1024T end
+screen_end = wait
+screen = function(f) screen_begin() if f then f() end screen_end() end
+
 -- for mappers that swap banks in place
 -- call an asm function into another bank and generate the stubs if needed
-local far_stubs = {} M.far_stubs=far_stubs
+local far_stubs = {} far_stubs=far_stubs
 local far = function(dst)
     local stub,loc_src,loc_dst = far_stubs[dst],location_current,dst.section.location
     if not (stub and stub.stub_caller.location==loc_src and stub.stub_callee.location==loc_dst) then
@@ -192,7 +192,7 @@ local far = function(dst)
         local stub_caller = section()   switchrom(loc_dst.rom) skip(6) rts
         location(loc_dst)
         local stub_callee = section()   jsr dst switchrom(loc_src.rom)
-        location(loc_src) section_current=seccur
+        section(seccur)
         far_stubs[dst] = relate(stub_caller, stub_callee, 3)
     end
     jsr stub_caller

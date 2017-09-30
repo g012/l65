@@ -26,7 +26,7 @@ local wait = function() local l=label() lda INTIM bne l end
     -- kernel
     lda#TIM_KERNEL sta T1024T kernel() wait()
     jmp main
-
+;
 writebin(filename..'.bin')
 writesym(filename..'.sym')
 print(stats)

@@ -265,12 +265,17 @@ M.genbin = function(filler)
         local sections = location.sections
         table.sort(sections, function(a,b) return a.org < b.org end)
         for _,section in ipairs(sections) do
-            assert(section.org >= #bin+of0)
             for i=#bin+of0,section.org-1 do ins(bin, filler) end
+            local bin_offset = math.min(#bin, section.org-of0)+1
             for _,instruction in ipairs(section.instructions) do
-                local b,f = instruction.bin,instruction.asbin
-                if b then mov(b,1,#b,#bin+1,bin)
-                elseif f then f(bin) end
+                local b,o = instruction.bin
+                if type(b) == 'function' then b,o = b(filler) end
+                if type(b) == 'table' then mov(b,1,#b,bin_offset,bin) bin_offset=bin_offset+#b
+                elseif b then bin[bin_offset]=b bin_offset=bin_offset+1 end
+                if o then
+                    bin_offset=bin_offset+o
+                    for i=#bin,bin_offset-1 do ins(bin, filler) end
+                end
                 M.size=#bin M.cycles=M.cycles+(instruction.cycles or 0)
             end
         end
@@ -368,14 +373,22 @@ M.section = function(t)
     local name = t or 'S'..id()
     if (type(name) ~= 'string') then
         assert(type(t) == 'table', "invalid arguments for section")
-        assert(type(t[1]) == 'string' and string.len(t[1]) > 0, "invalid name for section")
-        section=t name=t[1] section[1]=nil
+        if t.type == 'section' then
+            for _,v in ipairs(sections) do if v == t then
+                M.location_current = t.location
+                M.section_current = t
+                return t
+            end end
+            error("unable to find reference to section " .. (t.label or '?'))
+        end
+        section=t name=t[1] or 'S'..id() section[1]=nil
         if section.offset and not section.align then error("section " .. name .. " has offset, but no align") end
     end
     table.insert(M.location_current.sections, section) -- TODO remove
     table.insert(M.sections, section)
     section.location = M.location_current
     M.section_current = section
+    section.type = 'section'
     section.id = id()
     section.constraints = {}
     section.instructions = {}
@@ -414,7 +427,7 @@ M.label = function(name)
         name = M.label_current .. name
     else
         M.label_current = name
-        label.asbin = function() M.label_current = name end
+        label.bin = function() M.label_current = name end
     end
     if symbols[name] then error("duplicate symbol: " .. name) end
     symbols[name] = label
@@ -443,6 +456,18 @@ M.endpage = function()
     constraint.to = #section.instructions
 end
 
+-- skip(bytes)
+-- Insert a hole in the section of 'bytes' bytes, which can be used by other
+-- relocatable sections.
+M.skip = function(bytes)
+    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+    local size = function() return bytes end
+    local bin = function(filler) return nil,bytes end
+    table.insert(M.section_current.instructions, { size=size, bin=bin })
+end
+
+-- sleep(cycles [, noillegal])
+-- Waste 'cycles' cycles. If 'noillegal' is true, trashes NZ flags.
 M.sleep = function(cycles, noillegal)
     assert(cycles > 1, "can't sleep for less than 2 cycles")
     if cycles & 1 ~= 0 then
@@ -537,7 +562,8 @@ M.byte_impl = function(args, nrm)
         for i,v in ipairs(data) do data[i] = size_dc(v) end
         return #data
     end
-    local asbin = function(b) local l65dbg=l65dbg
+    local bin = function() local l65dbg=l65dbg
+        local b={}
         for k,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
             local vt = type(v)
@@ -546,8 +572,9 @@ M.byte_impl = function(args, nrm)
             if type(v) ~= 'number' then error("unresolved symbol for dc.b, index " .. k) end 
             b[#b+1] = nrm(v)
         end
+        return b
     end
-    table.insert(M.section_current.instructions, { data=data, size=size, asbin=asbin })
+    table.insert(M.section_current.instructions, { data=data, size=size, bin=bin })
 end
 -- byte(...)
 -- Declare bytes to go into the binary stream.
@@ -602,7 +629,8 @@ M.word = function(...)
         for i,v in ipairs(data) do data[i] = size_dc(v) end
         return #data*2
     end
-    local asbin = function(b) local l65dbg=l65dbg
+    local bin = function() local l65dbg=l65dbg
+        local b={}
         for k,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
             local vt = type(v)
@@ -613,8 +641,9 @@ M.word = function(...)
             b[#b+1] = v&0xff
             b[#b+1] = v>>8
         end
+        return b
     end
-    table.insert(M.section_current.instructions, { data=data, size=size, asbin=asbin })
+    table.insert(M.section_current.instructions, { data=data, size=size, bin=bin })
 end
 
 M.long = function(...)
@@ -634,7 +663,8 @@ M.long = function(...)
         for i,v in ipairs(data) do data[i] = size_dc(v) end
         return #data*4
     end
-    local asbin = function(b) local l65dbg=l65dbg
+    local bin = function() local l65dbg=l65dbg
+        local b={}
         for k,v in ipairs(data) do
             if type(v) == 'function' then v = v() end
             local vt = type(v)
@@ -647,8 +677,9 @@ M.long = function(...)
             b[#b+1] = (v>>16)&0xff
             b[#b+1] = v>>24
         end
+        return b
     end
-    table.insert(M.section_current.instructions, { data=data, size=size, asbin=asbin })
+    table.insert(M.section_current.instructions, { data=data, size=size, bin=bin })
 end
 
 local op,cycles_def,xcross_def
@@ -670,8 +701,7 @@ cycles_def=2 xcross_def=0 local opimp={
 } M.opimp = opimp
 for k,v in pairs(opimp) do
     M[k .. 'imp'] = function()
-        local asbin = function(b) b[#b+1] = v.opc end
-        table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
     end
 end
 cycles_def=2 xcross_def=0 local opimm={
@@ -683,8 +713,8 @@ for k,v in pairs(opimm) do
     M[k .. 'imm'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 2 end
-        local asbin = function(b) local l65dbg=l65dbg b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=size, cycles=2, asbin=asbin })
+        local bin = function() local l65dbg=l65dbg return { v.opc, op_eval_byte(late,early) } end
+        table.insert(M.section_current.instructions, { size=size, cycles=2, bin=bin })
     end
 end
 cycles_def=3 xcross_def=0 local opzpg={
@@ -698,8 +728,8 @@ for k,v in pairs(opzpg) do
     M[k .. 'zpg'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 2 end
-        local asbin = function(b) local l65dbg=l65dbg b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
+        local bin = function() local l65dbg=l65dbg return { v.opc, op_eval_byte(late,early) } end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
 cycles_def=4 xcross_def=0 local opabs={
@@ -713,11 +743,11 @@ for k,v in pairs(opabs) do
     M[k .. 'abs'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 3 end
-        local asbin = function(b) local l65dbg=l65dbg 
+        local bin = function() local l65dbg=l65dbg 
             local x = op_eval_word(late,early)
-            b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
+            return { v.opc, x&0xff, x>>8 }
         end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
 local opzab={} M.opabs = opabs
@@ -742,18 +772,18 @@ for k,_ in pairs(opzab) do
             if x <= 0xff and zpg then
                 ins.size = 2
                 ins.cycles = zpg.cycles
-                ins.asbin = function(b) b[#b+1]=zpg.opc b[#b+1]=x end
+                ins.bin = function() return { zpg.opc, x } end
                 return 2
             end
             ins.size = 3
-            ins.asbin = function(b) b[#b+1]=abs.opc b[#b+1]=x&0xff b[#b+1]=x>>8 end
+            ins.bin = function() return { abs.opc, x&0xff, x>>8 } end
             return 3
         end
-        ins.asbin = function(b) local l65dbg=l65dbg 
+        ins.bin = function() local l65dbg=l65dbg 
             local x = word_normalize(late(early or 0))
             -- since we assumed absolute on link phase, we must generate absolute in binary
             if x <= 0xff and opzpg[k] then print("warning: forcing abs on zpg operand for opcode " .. k) end
-            b[#b+1]=abs.opc b[#b+1]=x&0xff b[#b+1]=x>>8
+            return { abs.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
     end
@@ -767,8 +797,8 @@ for k,v in pairs(opzpx) do
     M[k .. 'zpx'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 2 end
-        local asbin = function(b) local l65dbg=l65dbg b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
+        local bin = function() local l65dbg=l65dbg return { v.opc, op_eval_byte(late,early) } end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
 cycles_def=4 xcross_def=1 local opabx={
@@ -781,11 +811,11 @@ for k,v in pairs(opabx) do
     M[k .. 'abx'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 3 end
-        local asbin = function(b) local l65dbg=l65dbg 
+        local bin = function() local l65dbg=l65dbg 
             local x = op_eval_word(late,early)
-            b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
+            return { v.opc, x&0xff, x>>8 }
         end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
 local opzax={} M.opabx = opabx
@@ -810,18 +840,18 @@ for k,_ in pairs(opzax) do
             if x <= 0xff and zpx then
                 ins.size = 2
                 ins.cycles = zpx.cycles
-                ins.asbin = function(b) b[#b+1]=zpx.opc b[#b+1]=x end
+                ins.bin = function() return { zpx.opc, x } end
                 return 2
             end
             ins.size = 3
-            ins.asbin = function(b) b[#b+1]=abx.opc b[#b+1]=x&0xff b[#b+1]=x>>8 end
+            ins.bin = function() return { abx.opc, x&0xff, x>>8 } end
             return 3
         end
-        ins.asbin = function(b) local l65dbg=l65dbg
+        ins.bin = function() local l65dbg=l65dbg
             local x = word_normalize(late(early or 0))
             -- since we assumed absolute on link phase, we must generate absolute in binary
             if x <= 0xff and opzpx[k] then print("warning: forcing abx on zpx operand for opcode " .. k) end
-            b[#b+1]=abx.opc b[#b+1]=x&0xff b[#b+1]=x>>8
+            return { abx.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
     end
@@ -834,8 +864,8 @@ for k,v in pairs(opzpy) do
     M[k .. 'zpy'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 2 end
-        local asbin = function(b) local l65dbg=l65dbg b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
+        local bin = function() local l65dbg=l65dbg return { v.opc, op_eval_byte(late,early) } end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
 cycles_def=4 xcross_def=1 local opaby={
@@ -848,11 +878,11 @@ for k,v in pairs(opaby) do
     M[k .. 'aby'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 3 end
-        local asbin = function(b) local l65dbg=l65dbg
+        local bin = function() local l65dbg=l65dbg
             local x = op_eval_word(late,early)
-            b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
+            return { v.opc, x&0xff, x>>8 }
         end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
 local opzay={} M.opaby = opaby
@@ -877,18 +907,18 @@ for k,_ in pairs(opzay) do
             if x <= 0xff and zpy then
                 ins.size = 2
                 ins.cycles = zpy.cycles
-                ins.asbin = function(b) b[#b+1]=zpy.opc b[#b+1]=x end
+                ins.bin = function() return { zpy.opc, x } end
                 return 2
             end
             ins.size = 3
-            ins.asbin = function(b) b[#b+1]=aby.opc b[#b+1]=x&0xff b[#b+1]=x>>8 end
+            ins.bin = function() return { aby.opc, x&0xff, x>>8 } end
             return 3
         end
-        ins.asbin = function(b) local l65dbg=l65dbg
+        ins.bin = function() local l65dbg=l65dbg
             local x = word_normalize(late(early or 0))
             -- since we assumed absolute on link phase, we must generate absolute in binary
             if x <= 0xff and opzpy[k] then print("warning: forcing aby on zpy operand for opcode " .. k) end
-            b[#b+1]=aby.opc b[#b+1]=x&0xff b[#b+1]=x>>8
+            return { aby.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
     end
@@ -907,7 +937,7 @@ for k,v in pairs(oprel) do
             label = size_dc(label)
             return 2
         end
-        op.asbin = function(b) local l65dbg=l65dbg 
+        op.bin = function() local l65dbg=l65dbg 
             local x,l = label,label
             if type(x) == 'function' then x=x() end
             if type(x) == 'string' then
@@ -917,7 +947,7 @@ for k,v in pairs(oprel) do
             if type(x) ~= 'number' then error("unresolved branch target: " .. tostring(x)) end
             x = x-2 - offset - rorg(section.org)
             if x < -128 or x > 127 then error("branch target out of range for " .. l .. ": " .. x) end
-            b[#b+1]=v.opc b[#b+1]=x&0xff
+            return { v.opc, x&0xff }
         end
         table.insert(M.section_current.instructions, op)
     end
@@ -930,11 +960,11 @@ for k,v in pairs(opind) do
     M[k .. 'ind'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 3 end
-        local asbin = function(b) local l65dbg=l65dbg
+        local bin = function() local l65dbg=l65dbg
             local x = op_eval_word(late,early)
-            b[#b+1]=v.opc b[#b+1]=x&0xff b[#b+1]=x>>8
+            return { v.opc, x&0xff, x>>8 }
         end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
 cycles_def=6 xcross_def=0 local opinx={
@@ -946,8 +976,8 @@ for k,v in pairs(opinx) do
     M[k .. 'inx'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 2 end
-        local asbin = function(b) local l65dbg=l65dbg b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
+        local bin = function() local l65dbg=l65dbg return { v.opc, op_eval_byte(late,early) } end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
 cycles_def=5 xcross_def=1 local opiny={
@@ -959,8 +989,8 @@ for k,v in pairs(opiny) do
     M[k .. 'iny'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 2 end
-        local asbin = function(b) local l65dbg=l65dbg b[#b+1]=v.opc b[#b+1]=op_eval_byte(late,early) end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, asbin=asbin })
+        local bin = function() local l65dbg=l65dbg return { v.opc, op_eval_byte(late,early) } end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
 
