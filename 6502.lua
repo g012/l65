@@ -3,6 +3,7 @@ local M = {}
 local symbols={} M.symbols=symbols
 local locations={} M.locations=locations
 local sections={} M.sections=sections
+local relations={} M.relations=relations
 local stats={} M.stats=stats setmetatable(stats, stats)
 
 M.strip = true  -- set to false to disable dead stripping of relocatable sections
@@ -75,12 +76,53 @@ M.link = function()
         for i=chunk_ix,chunk_ix+#new_chunks-1 do ins(chunks, i, new_chunks[i-chunk_ix+1]) end
     end
 
+    local chunk_from_address = function(section, address)
+        local chunks,rorg = section.location.chunks,section.location.rorg
+        for i,chunk in ipairs(chunks) do
+            if address >= chunk.start and address+section.size <= chunk.start+chunk.size then
+                return chunk,i
+            end
+        end
+    end
+
+    local check_section_position = function(section, address, chunk)
+        local chunk = chunk_from_address(section, address)
+        if not chunk then return end
+        local rorg = section.location.rorg
+        if section.align then
+            local raddress = rorg(address)
+            if section.offset then raddress = raddress - section.offset end
+            if raddress % section.align ~= 0 then return end
+        end
+        for _,constraint in ipairs(section.constraints) do
+            local cstart, cfinish = address+constraint.start, address+constraint.finish
+            if rorg(cstart) // 0x100 == rorg(cfinish) // 0x100 then
+                if constraint.type == 'crosspage' then return end
+            else
+                if constraint.type == 'samepage' then return end
+            end
+        end
+        local address_end = address+section.size
+        local waste = math.min(address - chunk.start, chunk.size - (address_end - chunk.start))
+        local raddress,raddress_end = rorg(address),rorg(address_end)
+        local align,cross=0x100,0
+        repeat
+            local cross_count = (raddress_end+align-1)//align - (raddress+align-1)//align
+            if raddress&(align-1) == 0 then cross_count=cross_count+1 end
+            cross = cross + align * align * cross_count
+            align = align>>1
+        until align==1
+        local lsb=0
+        for i=0,15 do if raddress&(1<<i) == 0 then lsb=lsb+1 else break end end
+        return waste, cross, lsb
+    end
+
     local position_section = function(section, constrain)
         local location = section.location
         local chunks,rorg = location.chunks,location.rorg
         table.sort(chunks, function(a,b) return a.size==b.size and a.id<b.id or a.size<b.size end)
         for chunk_ix,chunk in ipairs(chunks) do if chunk.size >= section.size then
-            local waste,position,position_end = math.maxinteger
+            local waste,cross,lsb,position = math.maxinteger,math.maxinteger,math.maxinteger
             local usage_lowest = function(start, finish)
                 local inc=1
                 if section.align then
@@ -91,40 +133,24 @@ M.link = function()
                     inc = section.align
                 end
                 for address=start,finish,inc do
-                    for _,constraint in ipairs(section.constraints) do
-                        local cstart, cfinish = address+constraint.start, address+constraint.finish
-                        if rorg(cstart) // 0x100 == rorg(cfinish) // 0x100 then
-                            if constraint.type == 'crosspage' then goto constraints_not_met end
-                        else
-                            if constraint.type == 'samepage' then goto constraints_not_met end
+                    local nwaste, ncross, nlsb = check_section_position(section, address, chunk)
+                    if nwaste then
+                        if constrain then
+                            nwaste, ncross, nlsb = constrain(address, nwaste, ncross, nlsb)
+                            if not nwaste then goto skip end
                         end
+                        if nwaste > waste then goto skip end
+                        if nwaste == waste then
+                            -- if waste is the same, keep the one that uses the least amount of aligned addresses
+                            if ncross > cross then goto skip end
+                            if ncross == cross then
+                                -- if cross count is same, take the one with the most set LSB count (eg. select 11 over 10)
+                                if nlsb > lsb then goto skip end
+                            end
+                        end
+                        position,waste,cross,lsb = address,nwaste,ncross,nlsb
+                        ::skip::
                     end
-                    local address_end = address+section.size
-                    local w = math.min(address - chunk.start, chunk.size - (address_end - chunk.start))
-                    if w > waste then goto constraints_not_met end
-                    if w==waste then
-                        local rposition,rposition_end = rorg(position),rorg(position_end)
-                        local raddress,raddress_end = rorg(address),rorg(address_end)
-                        -- if waste is the same, keep the one that uses the least amount of aligned addresses
-                        local align=0x100
-                        repeat
-                            local cross_count_cur = (rposition_end+align-1)//align - (rposition+align-1)//align
-                            if rposition&(align-1) == 0 then cross_count_cur=cross_count_cur+1 end
-                            local cross_count_new = (raddress_end+align-1)//align - (raddress+align-1)//align
-                            if raddress&(align-1) == 0 then cross_count_new=cross_count_new+1 end
-                            if cross_count_new < cross_count_cur then goto select_pos end
-                            align = align>>1
-                        until align==1
-                        -- if cross count is same, take the one with the most set LSB count (eg. select 11 over 10)
-                        local lsb_cur,lsb_new=0,0
-                        for i=0,15 do if rposition&(1<<i) == 0 then lsb_cur=lsb_cur+1 else break end end
-                        for i=0,15 do if raddress&(1<<i) == 0 then lsb_new=lsb_new+1 else break end end
-                        if lsb_cur <= lsb_new then goto constraints_not_met end
-                    end
-                    ::select_pos::
-                    if constrain and not constrain(address) then goto constraints_not_met end
-                    waste=w position=address position_end=address_end
-                    ::constraints_not_met::
                 end
             end
             local finish = math.min(chunk.start + 0xff, chunk.start + chunk.size - section.size)
@@ -144,10 +170,10 @@ M.link = function()
         end end
     end
 
-    local sibling_sections = {}
     stats.used = 0
     stats.unused = 0
     stats.cycles = 0
+    local related_sections = {}
     for _,location in ipairs(locations) do
         local sections,rorg = location.sections,location.rorg
 
@@ -166,8 +192,8 @@ M.link = function()
                 if M.strip and not section.refcount and not section.strong then 
                     sections[ix]=nil
                     table.insert(symbols_to_remove, section.label)
-                elseif section.siblings then
-                    table.insert(sibling_sections, section)
+                elseif section.related then
+                    table.insert(related_sections, section)
                 else
                     table.insert(position_independent_sections, section)
                 end
@@ -197,24 +223,43 @@ M.link = function()
             ::chunk_located::
         end end
     end
---[[
-    for _,section in ipairs(sibling_sections) do
-        local sections = section.siblings
-        table.insert(sections, section)
-        -- biggest of all siblings first
-        table.sort(sections, function(a,b) return a.size==b.size and a.id<b.id or a.size>b.size end)
-    end
-    table.sort(sibling_sections, function(a,b) return a[1].size==b[1].size and a[1].id<b[1].id or a[1].size>b[1].size end)
-    for _,section in ipairs(sibling_sections) do
-        local siblings = section.siblings
-        local relate = section.relate or function(sibling, siblings)
+
+    table.sort(related_sections, function(a,b) return a[1].size==b[1].size and a[1].id<b[1].id or a[1].size>b[1].size end)
+    for _,section in ipairs(related_sections) do
+        local related,ins = {},table.insert
+        local function collect(section, offset)
+            local relatives = relations[section]
+            if relatives then
+                for relative,relative_offset in pairs(relatives) do
+                    if not related[relative] then
+                        relative_offset = relative_offset + offset
+                        related[relative] = relative_offset
+                        collect(relative, relative_offset)
+                    end
+                end
+            end
         end
-        for _,sibling in siblings do
-            if not relate(sibling, siblings) then goto not_suitable end
+        collect(section, 0)
+        local position = position_section(section, function(address, waste, cross, lsb)
+            local waste, cross, lsb = 0, 0, 0
+            for section,offset in pairs(related) do
+                local nwaste, ncross, nlsb = check_section_position(section, address+offset)
+                if not nwaste then return end
+                waste, cross, lsb = waste+nwaste, cross+ncross, lsb+nlsb
+            end
+            return waste, cross, lsb
+        end)
+        if not position then
+            error("unable to find space for section " .. section.label)
         end
-        ::not_suitable::
+        for section,offset in pairs(related) do
+            section.org = position + offset
+            local chunk,chunk_ix = chunk_from_address(section, section.org)
+            chunk_reserve(section, chunk_ix)
+            symbols[section.label] = section.location.rorg(section.org)
+        end
     end
-]]
+
     for _,location in ipairs(locations) do
         local position_independent_sections = location.position_independent_sections
         table.sort(position_independent_sections, function(a,b) return a.size==b.size and a.label>b.label or a.size>b.size end)
@@ -373,7 +418,7 @@ M.location = function(start, finish)
             location.rorg = function(x) return x+offset end
         end
     end
-    location.sections = {} -- TODO remove
+    location.sections = {}
     if not location.rorg then location.rorg = function(x) return x end end
     local size = (location.finish or math.huge) - location.start + 1
     location.chunks={ { id=id(), start=location.start, size=size } }
@@ -398,7 +443,7 @@ M.section = function(t)
         section=t name=t[1] or 'S'..id() section[1]=nil
         if section.offset and not section.align then error("section " .. name .. " has offset, but no align") end
     end
-    table.insert(M.location_current.sections, section) -- TODO remove
+    table.insert(M.location_current.sections, section)
     table.insert(M.sections, section)
     section.location = M.location_current
     M.section_current = section
@@ -432,6 +477,22 @@ M.section = function(t)
         end
     end
     return section
+end
+
+-- relate(section1, section2 [, [offset1,] offset2])
+-- Add a position relationship between 'section1' and 'section2', with 'offset1'
+-- bytes from selected position for 'section2', and 'offset2' bytes from selec-
+-- -ted positon for 'section1'.
+-- If offset1 is omitted, -offset2 is used.
+M.relate = function(section1, section2, offset, offset2)
+    local rel1 = relations[section1] or {}
+    rel1[section2] = offset2 or offset
+    relations[section1] = rel1
+    local rel2 = relations[section2] or {}
+    rel2[section1] = offset2 and offset
+    relations[section2] = rel2
+    section1.related = true
+    section2.related = true
 end
 
 M.label = function(name)

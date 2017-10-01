@@ -9,7 +9,16 @@ location(0xf000, 0xffff)
 section{'vectors', org=0xfffc} dc.w start,start
 
 local kernel = function()
-    ldx#0xd0 @_loop sta WSYNC stx COLUBK dex bne _loop
+    -- add a dummy instruction to collect cycle count and binary size
+    local kernel_cycles,kernel_size
+    table.insert(section_current.instructions, { bin=function() kernel_cycles=cycles kernel_size=size end })
+ 
+    samepage
+        ldx#0xd0 @_loop sta WSYNC stx COLUBK dex bne _loop
+    end
+
+    -- and get the delta (cycles are counted without taking any branch)
+    table.insert(section_current.instructions, { bin=function() print('kernel cycles: ', cycles-kernel_cycles, 'kernel size: ', size-kernel_size) end })
 end
 
 local wait = function() local l=label() lda INTIM bne l end
