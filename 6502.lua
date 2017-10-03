@@ -572,7 +572,7 @@ local op_resolve = function(v)
     if type(v) == 'string' then v = symbols[v] end
     if type(v) ~= 'number' then error("unresolved symbol: " .. tostring(v)) end
     return v
-end
+end M.op_resolve = op_resolve
 
 local size_ref = function(v)
     if type(v) == 'string' then v=symbols[v] end

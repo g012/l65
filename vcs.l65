@@ -182,6 +182,10 @@ screen_begin = function() lda#TV.TIM_KERNEL sta T1024T end
 screen_end = wait
 screen = function(f) screen_begin() if f then f() end screen_end() end
 
+setptr = function(f) lda#op_resolve(f)&0xff sta mappers.tmp lda#op_resolve(f)>>8 sta mappers.tmp+1 end
+xcall = function(f) setptr(f) jsr jmpfar end
+rtximp = function() jmp rtsfar end
+
 -- for mappers that swap banks in place
 -- call an asm function into another bank and generate the stubs if needed
 local far_stubs = {} _ENV.far_stubs=far_stubs
@@ -205,7 +209,7 @@ farcall = function(dst)
     jsr far_stubs[dst][loc_src]
 end
 
-mappers = {}
+mappers = { tmp=0x8a }
 
 mappers['2K'] = function()
     rom0 = location(0xf800, 0xffff)
@@ -221,12 +225,25 @@ end
 local bank_stubs = function(count, hotspot, entry)
     function switchrom(i) assert(i>=0 and i<count) if mappers.noillegal then bit 0x1000+hotspot+i else nop 0x1000+hotspot+i end end
     local base = 0x10000 - (count << 12)
+    local jmpfar0,rtsfar0
     for bi=0,count-1 do
-        local o = base+(bi<<12)
-        _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000, rom=bi}
+        local o,ro = base+(bi<<12), mappers.jmpfar and 0x1000+(bi<<13) or 0xf000 -- stella doesn't honor breakpoints in banks with jmpfar method
+        _ENV['rom' .. bi] = location{o, o+0xfff, rorg=ro, rom=bi}
         local start=section{"entry"..bi, org=o+(entry or hotspot-6)} switchrom(0) if bi==0 then jmp main end
         section{"switchtab"..bi, org=o+hotspot} for i=1,count do byte(0) end
         section{"vectors"..bi, org=o+0xffc} dc.w start if mappers.irq then dc.w start end
+        if mappers.jmpfar then
+            local jmpfar = section("jmpfar"..(bi>0 and bi or ''))
+                lda mappers.tmp+1 lsr lsr lsr lsr lsr tax
+                if mappers.noillegal then and 0x1000+hotspot,x else nop 0x1000+hotspot,x end
+                jmp (mappers.tmp)
+            local rtsfar = section("rtsfar"..(bi>0 and bi or ''))
+                tsx lda 2,x lsr lsr lsr lsr lsr tax
+                if mappers.noillegal then and 0x1000+hotspot,x else nop 0x1000+hotspot,x end
+                rts
+            if bi==0 then jmpfar0=jmpfar rtsfar0=rtsfar
+            else relate(jmpfar0, jmpfar) relate(rtsfar0, rtsfar) end
+        end
     end
 end
 mappers.FA = function() bank_stubs(3, 0xff8) end
