@@ -9,7 +9,8 @@ end
     init()
 @_frame
     overscan() vblank() screen(kernel) jmp _frame
-;
+
+; -- needed if last instruction is implied
 writebin(filename..'.bin')
 writesym(filename..'.sym')
 print(stats)

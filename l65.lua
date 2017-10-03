@@ -1270,15 +1270,18 @@ local function ParseLua(src, src_name)
                     end
                 end
             elseif #args > 0 and ( (encapsulate and not inverse_encapsulate) or (not encapsulate and inverse_encapsulate) ) and not no_encapsulation[args[1].AstType] then
-                -- opcode arguments of type (late, early), where only late is to be encapsulated with a _o parameter to be set to early and added to late
+                -- opcode arguments of type (late, early), where only late is to be encapsulated with _o parameter to be set to early and added to _f(late)
                 local inner_call_scope = CreateScope(op_var.Variable.Scope)
+                local fvarexpr = {
+                    AstType='VarExpr', Name='_f', Variable={ Name='_f', Scope=CreateScope(inner_call_scope) }, Tokens = { t('Ident', '_f') }
+                }
                 local inner_add = {
                     AstType='BinopExpr', Op='+', OperatorPrecedence=10, Tokens={ t('Symbol', '+') },
                     Lhs = {
                         AstType='VarExpr', Name='_o', Variable={ IsGlobal=false, Name='_o', Scope=inner_call_scope }, Tokens={ t('Ident', '_o', {space}) }
                     },
                     Rhs = {
-                        AstType='Parentheses', Inner=args[1], Tokens={ t('Symbol', '('), t('Symbol', ')') }
+                        AstType = 'CallExpr', Base = fvarexpr, Arguments = {args[1]}, Tokens = { t('Symbol', '('), t('Symbol', ')') }
                     }
                 }
                 local inner_call_body = {
@@ -1288,8 +1291,11 @@ local function ParseLua(src, src_name)
                 }
                 local inner_call = {
                     AstType='Function', VarArg=false, IsLocal=true, Scope=inner_call_scope, Body=inner_call_body,
-                    Arguments={ { IsGlobal=false, Name='_o', Scope=inner_call_scope } },
-                    Tokens={ t('Keyword', 'function'), t('Symbol', '('), t('Ident', '_o'), t('Symbol', ')'), t('Keyword', 'end', {space}) }
+                    Arguments={
+                        { IsGlobal=false, Name='_o', Scope=inner_call_scope },
+                        { IsGlobal=false, Name='_f', Scope=inner_call_scope },
+                    },
+                    Tokens={ t('Keyword', 'function'), t('Symbol', '('), t('Ident', '_o'), t('Symbol', ','), t('Ident', '_f'), t('Symbol', ')'), t('Keyword', 'end', {space}) }
                 }
                 args[1] = inner_call
             end
@@ -2505,12 +2511,15 @@ l65.msghandler = function(msg)
                         if line:find("in local 'late'") then break end
                         table.insert(lines, line)
                     end
-                    print(table.concat(lines,'\n'))
+                    lines = table.concat(lines,'\n')
+                    lines = lines:gsub("^%s*\r?\n$", '')
+                    io.stderr:write(lines .. '\n')
                 end
                 local trace = v.trace:match(".-\n(.*)\n.-'xpcall'")
                 trace = trace:gsub('%[string "(.-%.l65)"%]', '%1')
                 trace = trace:gsub('stack traceback:', '')
-                print(trace)
+                trace = trace:gsub("^%s*\r?\n$", '')
+                io.stderr:write(trace .. '\n')
                 os.exit(-2)
             end
             j = j + 1

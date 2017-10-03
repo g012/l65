@@ -224,14 +224,14 @@ M.link = function()
         end end
     end
 
-    table.sort(related_sections, function(a,b) return a[1].size==b[1].size and a[1].id<b[1].id or a[1].size>b[1].size end)
-    for _,section in ipairs(related_sections) do
+    table.sort(related_sections, function(a,b) return a.size==b.size and a.id<b.id or a.size>b.size end)
+    for _,section in ipairs(related_sections) do if not section.org then
         local related,ins = {},table.insert
-        local function collect(section, offset)
-            local relatives = relations[section]
+        local function collect(section_parent, offset)
+            local relatives = relations[section_parent]
             if relatives then
                 for relative,relative_offset in pairs(relatives) do
-                    if not related[relative] then
+                    if not related[relative] and relative ~= section then
                         relative_offset = relative_offset + offset
                         related[relative] = relative_offset
                         collect(relative, relative_offset)
@@ -240,10 +240,12 @@ M.link = function()
             end
         end
         collect(section, 0)
+        local location_start = section.location.start
         local position = position_section(section, function(address, waste, cross, lsb)
             local waste, cross, lsb = 0, 0, 0
             for section,offset in pairs(related) do
-                local nwaste, ncross, nlsb = check_section_position(section, address+offset)
+                local section_address = address + (section.location.start - location_start) + offset
+                local nwaste, ncross, nlsb = check_section_position(section, section_address)
                 if not nwaste then return end
                 waste, cross, lsb = waste+nwaste, cross+ncross, lsb+nlsb
             end
@@ -253,12 +255,12 @@ M.link = function()
             error("unable to find space for section " .. section.label)
         end
         for section,offset in pairs(related) do
-            section.org = position + offset
+            section.org = position + (section.location.start - location_start) + offset
             local chunk,chunk_ix = chunk_from_address(section, section.org)
             chunk_reserve(section, chunk_ix)
             symbols[section.label] = section.location.rorg(section.org)
         end
-    end
+    end end
 
     for _,location in ipairs(locations) do
         local position_independent_sections = location.position_independent_sections
@@ -401,7 +403,7 @@ end
 M.location = function(start, finish)
     local location
     if type(start) ~= 'table' then
-        location = { type='location', start=start, finish=finish }
+        location = { start=start, finish=finish }
     else
         if start.type == 'location' then
             for _,v in ipairs(locations) do if v == start then
@@ -418,6 +420,7 @@ M.location = function(start, finish)
             location.rorg = function(x) return x+offset end
         end
     end
+    location.type = 'location'
     location.sections = {}
     if not location.rorg then location.rorg = function(x) return x end end
     local size = (location.finish or math.huge) - location.start + 1
@@ -486,10 +489,10 @@ end
 -- If offset1 is omitted, -offset2 is used.
 M.relate = function(section1, section2, offset, offset2)
     local rel1 = relations[section1] or {}
-    rel1[section2] = offset2 or offset
+    rel1[section2] = (offset2 or offset) or 0
     relations[section1] = rel1
     local rel2 = relations[section2] or {}
-    rel2[section1] = offset2 and offset
+    rel2[section1] = (offset2 and offset) or -rel1[section2]
     relations[section2] = rel2
     section1.related = true
     section2.related = true
@@ -508,6 +511,7 @@ M.label = function(name)
     end
     if symbols[name] then error("duplicate symbol: " .. name) end
     symbols[name] = label
+    label.label = name
     label.size = function()
         offset = section.size
         label.size = 0
@@ -558,6 +562,14 @@ M.sleep = function(cycles, noillegal)
     for i=1,cycles/2 do nopimp() end
 end
 
+local op_resolve = function(v)
+    if type(v) == 'function' then v=v() end
+    if type(v) == 'table' and v.label then v = symbols[v.label] end
+    if type(v) == 'string' then v = symbols[v] end
+    if type(v) ~= 'number' then error("unresolved symbol: " .. tostring(v)) end
+    return v
+end
+
 local size_ref = function(v)
     if type(v) == 'string' then v=symbols[v] end
     if type(v) == 'table' and v.type == 'label' then v.section.refcount = 1 + (v.section.refcount or 0) end
@@ -572,7 +584,7 @@ local size_dc = function(v)
 end
 local size_op = function(late, early)
     if type(late) == 'function' then
-        local r,x = M.pcall(late, early or 0)
+        local r,x = M.pcall(late, early or 0, op_resolve)
         if not r or not x then return late,early end
         late=x early=nil
     end
@@ -769,7 +781,7 @@ op = function(code, cycles, extra_on_crosspage)
 end
 local op_eval = function(late, early)
     local x = early or 0
-    return type(late) == 'function' and late(x) or x+late
+    return type(late) == 'function' and late(x,op_resolve) or x+op_resolve(late)
 end
 local op_eval_byte = function(late, early) return byte_normalize(op_eval(late, early)) end
 local op_eval_word = function(late, early) return word_normalize(op_eval(late, early)) end
@@ -845,7 +857,7 @@ for k,_ in pairs(opzab) do
         local abs = opabs[k]
         local ins = { cycles=abs.cycles }
         ins.size = function() local l65dbg=l65dbg 
-            local r,x = M.pcall_za(late, early or 0)
+            local r,x = M.pcall_za(op_eval, late, early)
             if not r then return 3 end
             size_ref(x)
             x = word_normalize(x)
@@ -861,9 +873,9 @@ for k,_ in pairs(opzab) do
             return 3
         end
         ins.bin = function() local l65dbg=l65dbg 
-            local x = word_normalize(late(early or 0))
+            local x = word_normalize(op_eval(late, early))
             -- since we assumed absolute on link phase, we must generate absolute in binary
-            if x <= 0xff and opzpg[k] then io.stderr:write("warning: forcing abs on zpg operand for opcode " .. k) end
+            if x <= 0xff and opzpg[k] then io.stderr:write("warning: forcing abs on zpg operand for opcode " .. k .. "\n") end
             return { abs.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
@@ -913,7 +925,7 @@ for k,_ in pairs(opzax) do
         local abx = opabx[k]
         local ins = { cycles=abx.cycles }
         ins.size = function() local l65dbg=l65dbg 
-            local r,x = M.pcall_za(late, early or 0)
+            local r,x = M.pcall_za(op_eval, late, early)
             if not r then return 3 end
             size_ref(x)
             x = word_normalize(x)
@@ -929,9 +941,9 @@ for k,_ in pairs(opzax) do
             return 3
         end
         ins.bin = function() local l65dbg=l65dbg
-            local x = word_normalize(late(early or 0))
+            local x = word_normalize(op_eval(late, early))
             -- since we assumed absolute on link phase, we must generate absolute in binary
-            if x <= 0xff and opzpx[k] then io.stderr:write("warning: forcing abx on zpx operand for opcode " .. k) end
+            if x <= 0xff and opzpx[k] then io.stderr:write("warning: forcing abx on zpx operand for opcode " .. k .. "\n") end
             return { abx.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
@@ -980,7 +992,7 @@ for k,_ in pairs(opzay) do
         local aby = opaby[k]
         local ins = { cycles=aby.cycles }
         ins.size = function() local l65dbg=l65dbg
-            local r,x = M.pcall_za(late, early or 0)
+            local r,x = M.pcall_za(op_eval, late, early)
             if not r then return 3 end
             size_ref(x)
             x = word_normalize(x)
@@ -996,9 +1008,9 @@ for k,_ in pairs(opzay) do
             return 3
         end
         ins.bin = function() local l65dbg=l65dbg
-            local x = word_normalize(late(early or 0))
+            local x = word_normalize(op_eval(late, early))
             -- since we assumed absolute on link phase, we must generate absolute in binary
-            if x <= 0xff and opzpy[k] then io.stderr:write("warning: forcing aby on zpy operand for opcode " .. k) end
+            if x <= 0xff and opzpy[k] then io.stderr:write("warning: forcing aby on zpy operand for opcode " .. k .. "\n") end
             return { aby.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
