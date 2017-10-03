@@ -572,6 +572,8 @@ syn match l65Opcode /\<shy\>/
 syn match l65Opcode /\<slo\%(.[bw]\)\=\>/
 syn match l65Opcode /\<sre\%(.[bw]\)\=\>/
 
+syn match l65Opcode /\<far\>/
+
 " Define the default highlighting.
 " For version 5.7 and earlier: only when not done already
 " For version 5.8 and later: only when an item doesn't have highlighting yet

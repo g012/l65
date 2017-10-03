@@ -76,6 +76,7 @@ local function opcode_arg_encapsulate(on)
 end
 opcode_arg_encapsulate(true)
 
+local opcode_encapsulate = {} -- additionnal opcode, to have basic encapsulation (function(a) return a end)
 local opcode_implied = lookupify{
     'asl', 'brk', 'clc', 'cld', 'cli', 'clv', 'dex', 'dey',
     'inx', 'iny', 'lsr', 'nop', 'pha', 'php', 'pla', 'plp',
@@ -150,6 +151,21 @@ local opcode_indirect_y = lookupify{
 }
 local opcode_relative = lookupify{
     'bcc', 'bcs', 'beq', 'bmi', 'bne', 'bpl', 'bvc', 'bvs',
+}
+
+local addressing_map = {
+    imp = opcode_implied,
+    imm = opcode_immediate,
+    zpg = opcode_zeropage,
+    zpx = opcode_zeropage_x,
+    zpy = opcode_zeropage_y,
+    abs = opcode_absolute,
+    abx = opcode_absolute_x,
+    aby = opcode_absolute_y,
+    ind = opcode_indirect,
+    inx = opcode_indirect_x,
+    iny = opcode_indirect_y,
+    rel = opcode_relative,
 }
 
 local Scope = {
@@ -459,12 +475,13 @@ local function LexLua(src)
             if char == 1 and peek_n(7) == '#pragma' then
                 get_n(7)
                 local dat,opt = get_word()
-                local onoff = function(f)
+                local onoff = function(f, noerr)
                     opt = get_word()
                     if opt == 'on' then f(true)
                     elseif opt == 'off' then f(false)
-                    else generateError("invalid option for pragma " .. dat .. ", expected: [on,off]")
+                    elseif not noerr then generateError("invalid option for pragma " .. dat .. ", expected: [on,off]")
                     end
+                    return opt
                 end
                 if dat == 'syntax6502' then
                     onoff(syntax6502)
@@ -473,8 +490,23 @@ local function LexLua(src)
                     onoff(function() end)
                     toEmit = {Type = 'Keyword', Data = 'syntax6502k_' .. opt}
                 elseif dat == 'encapsulate' then
-                    onoff(function() end)
-                    toEmit = {Type = 'Keyword', Data = 'encapsulate_' .. opt}
+                    local opcode = onoff(function() end, true)
+                    if opcode then
+                        opcode_encapsulate[opcode] = get_word()
+                        table.insert(Keywords_6502, opcode)
+                        Keywords[opcode] = syntax6502_on
+                        toEmit = {Type = 'Symbol', Data = ';'}
+                    else
+                        toEmit = {Type = 'Keyword', Data = 'encapsulate_' .. opt}
+                    end
+                elseif dat == 'add_opcode' then
+                    local opcode,addressing = get_word(),get_word()
+                    local map = addressing_map[addressing]
+                    if not map then generateError("invalid addressing for pragma add_opcode: " .. addressing .. " (opcode: " .. opcode .. ")") end
+                    map[opcode] = true
+                    table.insert(Keywords_6502, opcode)
+                    Keywords[opcode] = syntax6502_on
+                    toEmit = {Type = 'Symbol', Data = ';'}
                 else generateError("unknown pragma: " .. dat)
                 end
 
@@ -1271,32 +1303,44 @@ local function ParseLua(src, src_name)
                 end
             elseif #args > 0 and ( (encapsulate and not inverse_encapsulate) or (not encapsulate and inverse_encapsulate) ) and not no_encapsulation[args[1].AstType] then
                 -- opcode arguments of type (late, early), where only late is to be encapsulated with _o parameter to be set to early and added to _f(late)
-                local inner_call_scope = CreateScope(op_var.Variable.Scope)
-                local fvarexpr = {
-                    AstType='VarExpr', Name='_f', Variable={ Name='_f', Scope=CreateScope(inner_call_scope) }, Tokens = { t('Ident', '_f') }
-                }
-                local inner_add = {
-                    AstType='BinopExpr', Op='+', OperatorPrecedence=10, Tokens={ t('Symbol', '+') },
-                    Lhs = {
-                        AstType='VarExpr', Name='_o', Variable={ IsGlobal=false, Name='_o', Scope=inner_call_scope }, Tokens={ t('Ident', '_o', {space}) }
-                    },
-                    Rhs = {
-                        AstType = 'CallExpr', Base = fvarexpr, Arguments = {args[1]}, Tokens = { t('Symbol', '('), t('Symbol', ')') }
+                local inner_call_scope,inner_call = CreateScope(op_var.Variable.Scope)
+                if params.basic then
+                    local inner_call_body = {
+                        AstType='StatList', Scope=CreateScope(inner_call_scope), Tokens={}, Body={
+                            { AstType='ReturnStatement', Arguments={args[1]}, Tokens={ t('Keyword', 'return', {space}) } }
+                        }
                     }
-                }
-                local inner_call_body = {
-                    AstType='StatList', Scope=CreateScope(inner_call_scope), Tokens={}, Body={
-                        { AstType='ReturnStatement', Arguments={inner_add}, Tokens={ t('Keyword', 'return', {space}) } }
+                    inner_call = {
+                        AstType='Function', VarArg=false, IsLocal=true, Scope=inner_call_scope, Body=inner_call_body, Arguments={},
+                        Tokens={ t('Keyword', 'function'), t('Symbol', '('), t('Symbol', ')'), t('Keyword', 'end', {space}) }
                     }
-                }
-                local inner_call = {
-                    AstType='Function', VarArg=false, IsLocal=true, Scope=inner_call_scope, Body=inner_call_body,
-                    Arguments={
-                        { IsGlobal=false, Name='_o', Scope=inner_call_scope },
-                        { IsGlobal=false, Name='_f', Scope=inner_call_scope },
-                    },
-                    Tokens={ t('Keyword', 'function'), t('Symbol', '('), t('Ident', '_o'), t('Symbol', ','), t('Ident', '_f'), t('Symbol', ')'), t('Keyword', 'end', {space}) }
-                }
+                else
+                    local fvarexpr = {
+                        AstType='VarExpr', Name='_f', Variable={ Name='_f', Scope=CreateScope(inner_call_scope) }, Tokens = { t('Ident', '_f') }
+                    }
+                    local inner_add = {
+                        AstType='BinopExpr', Op='+', OperatorPrecedence=10, Tokens={ t('Symbol', '+') },
+                        Lhs = {
+                            AstType='VarExpr', Name='_o', Variable={ IsGlobal=false, Name='_o', Scope=inner_call_scope }, Tokens={ t('Ident', '_o', {space}) }
+                        },
+                        Rhs = {
+                            AstType = 'CallExpr', Base = fvarexpr, Arguments = {args[1]}, Tokens = { t('Symbol', '('), t('Symbol', ')') }
+                        }
+                    }
+                    local inner_call_body = {
+                        AstType='StatList', Scope=CreateScope(inner_call_scope), Tokens={}, Body={
+                            { AstType='ReturnStatement', Arguments={inner_add}, Tokens={ t('Keyword', 'return', {space}) } }
+                        }
+                    }
+                    inner_call = {
+                        AstType='Function', VarArg=false, IsLocal=true, Scope=inner_call_scope, Body=inner_call_body,
+                        Arguments={
+                            { IsGlobal=false, Name='_o', Scope=inner_call_scope },
+                            { IsGlobal=false, Name='_f', Scope=inner_call_scope },
+                        },
+                        Tokens={ t('Keyword', 'function'), t('Symbol', '('), t('Ident', '_o'), t('Symbol', ','), t('Ident', '_f'), t('Symbol', ')'), t('Keyword', 'end', {space}) }
+                    }
+                end
                 args[1] = inner_call
             end
             local exp_call = {
@@ -1484,7 +1528,14 @@ local function ParseLua(src, src_name)
             local mod_st, mod_expr, inverse_encapsulate
         for _,op in pairs(Keywords_6502) do
             if tok:ConsumeKeyword(op, tokenList) then
-                if opcode_relative[op] then
+                if opcode_encapsulate[op] then
+                    inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
+                    local st, expr = ParseExpr(scope) if not st then return false, expr end
+                    local paren_open_whites = {}
+                    if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
+                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
+                    stat = emit_call{name=opcode_encapsulate[op], args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, basic=true} break
+                elseif opcode_relative[op] then
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     if expr.AstType == 'VarExpr' and expr.Variable.IsGlobal then
                         expr = as_string_expr(expr, expr.Name)
@@ -2490,6 +2541,8 @@ l65.report = function(success, ...)
     os.exit(-1)
 end
 l65.msghandler = function(msg)
+    local o = function(s) io.stderr:write(s) end
+
     msg = tostring(msg)
     msg = msg:gsub('%[string "(.-%.l65)"%]', '%1') -- [string "xxx.l65"] -> xxx.l65
     local trace_cur = debug.traceback(nil, 2)
@@ -2503,7 +2556,6 @@ l65.msghandler = function(msg)
             local n,v = debug.getlocal(i, j)
             if not n then break end
             if n == 'l65dbg' then
-                local o = function(s) io.stderr:write(s) end
                 o(string.format("%s\n", msg))
                 if trace_cur:find("in local 'late'") then
                     local lines = {}
@@ -2511,15 +2563,12 @@ l65.msghandler = function(msg)
                         if line:find("in local 'late'") then break end
                         table.insert(lines, line)
                     end
-                    lines = table.concat(lines,'\n')
-                    lines = lines:gsub("^%s*\r?\n$", '')
-                    io.stderr:write(lines .. '\n')
+                    o(table.concat(lines,'\n'))
                 end
                 local trace = v.trace:match(".-\n(.*)\n.-'xpcall'")
                 trace = trace:gsub('%[string "(.-%.l65)"%]', '%1')
                 trace = trace:gsub('stack traceback:', '')
-                trace = trace:gsub("^%s*\r?\n$", '')
-                io.stderr:write(trace .. '\n')
+                o(trace .. '\n')
                 os.exit(-2)
             end
             j = j + 1
@@ -2528,7 +2577,7 @@ l65.msghandler = function(msg)
     end
 
     trace_cur = trace_cur:match(".-\n(.*)\n.-'xpcall'")
-    io.stderr:write(string.format("%s\n%s\n", msg, trace_cur))
+    o(string.format("%s\n%s\n", msg, trace_cur))
     os.exit(-3)
 end
 do

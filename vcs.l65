@@ -184,20 +184,24 @@ screen = function(f) screen_begin() if f then f() end screen_end() end
 
 -- for mappers that swap banks in place
 -- call an asm function into another bank and generate the stubs if needed
-local far_stubs = {} far_stubs=far_stubs
-local far = function(dst)
-    dst.section.refcount = dst.section.refcount + 1
-    local stub,loc_src,loc_dst = far_stubs[dst],location_current,dst.section.location
-    if not (stub and stub[loc_src]) then
-        local seccur = section_current
-        local stub_caller = section()   switchrom(loc_dst.rom) skip(6) rts
-        location(loc_dst)
-        local stub_callee = section()   jsr dst switchrom(loc_src.rom)
-        section(seccur)
-        relate(stub_caller, stub_callee, 3)
-        if not stub then far_stubs[dst] = {} end
-        far_stubs[dst][loc_src] = stub_caller
+local far_stubs = {} _ENV.far_stubs=far_stubs
+farcall = function(dst)
+    local loc_src = location_current
+    local create_stubs = function()
+        if type(dst) == 'function' then dst = dst() end
+        local stub,loc_dst = far_stubs[dst],dst.section.location
+        if not (stub and stub[loc_src]) then
+            location(loc_src)
+            local stub_caller = section()   switchrom(loc_dst.rom) skip(6) rts
+            location(loc_dst)
+            local stub_callee = section()   jsr dst switchrom(loc_src.rom)
+            relate(stub_caller, stub_callee, 3)
+            if not stub then far_stubs[dst] = {} end
+            far_stubs[dst][loc_src] = stub_caller
+        end
     end
+    -- create stubs at the end to get to the referenced labels
+    table.insert(before_link, create_stubs)
     jsr far_stubs[dst][loc_src]
 end
 
@@ -216,7 +220,6 @@ end
 
 local bank_stubs = function(irq, count, hotspot, entry)
     function switchrom(i) assert(i>=0 and i<count) bit 0x1000+hotspot+i end
-    _ENV.far = far
     local base = 0x10000 - (count << 12)
     for bi=0,count-1 do
         local o = base+(bi<<12)
@@ -301,7 +304,6 @@ local bank_stubs2 = function(irq, hotspot0, hotspot1)
         elseif i==1 then bit hotspot1
         else error("invalid rom index: " .. i) end
     end
-    _ENV.far = far
     local base = 0xe000
     for bi=0,1 do
         local o = base+(bi<<12)
@@ -314,7 +316,6 @@ mappers.UA = function(irq) bank_stubs2(irq, 0x220, 0x240) end
 mappers['0840'] = function(irq) bank_stubs2(irq, 0x800, 0x840) end
 mappers.SB = function(count, irq)
     function switchrom(i) assert(i>=0 and i<count) bit 0x800+i end
-    _ENV.far = far
     for bi=0,count-1 do
         local o = bi*0x1000 + 0x1000
         _ENV['rom' .. bi] = location{o, o+0xfff, rorg=0xf000}
@@ -345,7 +346,6 @@ end
 
 mappers.X07 = function(irq)
     function switchrom(i) assert(i>=0 and i<16) bit 0x80b+(i<<4) end
-    _ENV.far = far
     -- map TIA also to 0x40-0x7F: use VSYNC for bank 14, and VSYNC2 for bank 15
     vcs.VSYNC2=0x40 cpu.symbols.VSYNC2=0x40
     for bi=0,count-1 do

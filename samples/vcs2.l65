@@ -1,17 +1,18 @@
 require'vcs'
+#pragma encapsulate far farcall
 
 mappers.F4()
 local bank_core,bank_fx = rom0,rom1
-
-location(bank_fx)
-@@kernel
-    ldx#0xd0 @_loop sta WSYNC stx COLUBK dex bne _loop rts
 
 location(bank_core)
 @@main
     init()
 @_frame
-    overscan() vblank() screen_begin() far(kernel) screen_end() jmp _frame
+    overscan() vblank() screen_begin() far kernel screen_end() jmp _frame
+
+location(bank_fx)
+@@kernel
+    ldx#0xd0 @_loop sta WSYNC stx COLUBK dex bne _loop rts
 
 ;
 writebin(filename..'.bin')

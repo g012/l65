@@ -6,6 +6,8 @@ local sections={} M.sections=sections
 local relations={} M.relations=relations
 local stats={} M.stats=stats setmetatable(stats, stats)
 
+local before_link={} M.before_link=before_link
+
 M.strip = true  -- set to false to disable dead stripping of relocatable sections
 M.pcall = pcall -- set to empty function returning false to disable eval during compute_size()
 -- set to pcall directly if you want to keep ldazab/x/y eval during compute_size() even if
@@ -29,6 +31,8 @@ local id = function() id_=id_+1 return id_ end M.id=id
 
 M.link = function()
     if stats.unused then return end
+
+    for _,v in ipairs(before_link) do v() end
 
     if M.strip then
         symbols.__index = function(tab,key)
