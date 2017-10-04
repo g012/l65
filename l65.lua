@@ -2526,7 +2526,7 @@ if #dirl65 > 0 then
     searchl65 = string.format(";%s?;%s?.l65", dirl65, dirl65)
     package.path = package.path .. string.format(";%s?.lua", dirl65)
 end
-l65 = {
+l65_def = {
     parse = ParseLua,
     format = Format65,
     searcher_index = 2,
@@ -2535,6 +2535,7 @@ l65 = {
     loadfile_org = loadfile,
     dofile_org = dofile,
 }
+if not l65 then l65 = l65_def else for k,v in pairs(l65_def) do l65[k]=v end end
 l65.report = function(success, ...)
     if success then return success,... end
     local message=... io.stderr:write(message..'\n')

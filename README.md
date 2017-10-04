@@ -52,10 +52,11 @@ make
 ## Credits
 
 Developed by g012, using:
- * [Lua 5.3.4](https://www.lua.org/)
+ * [Lua 5.3.4](https://www.lua.org)
  * [LuaMinify](https://github.com/stravant/LuaMinify)
  * Lua syntax file shipping with [vim](http://www.vim.org)
  * Lua indent file from [vim-lua](https://github.com/tbastos/vim-lua)
+ * [stb_image](https://github.com/nothings/stb)
 
 Not using, but integrated for end-user convenience:
  * [LuaFileSystem](https://keplerproject.github.io/luafilesystem)
