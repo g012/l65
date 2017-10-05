@@ -480,7 +480,7 @@ M.section = function(t)
         end
         for _,constraint in ipairs(self.constraints) do
             constraint.start = instructions[constraint.from].offset
-            constraint.finish =  instructions[constraint.to].offset
+            constraint.finish = constraint.to==#instructions and self.size or instructions[constraint.to+1].offset
         end
     end
     return section

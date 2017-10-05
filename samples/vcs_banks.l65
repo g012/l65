@@ -1,0 +1,43 @@
+require'vcs' -- import vcs.l65
+-- translate 'far x' to 'farcall(function() return x end)', farcall is defined in vcs.l65
+#pragma encapsulate far farcall
+-- translate 'xsr x' to 'xcall(function() return x end)', xcall is defined in vcs.l65
+#pragma encapsulate xsr xcall
+-- translate 'rtx' to 'rtximp()', rtximp is defined in vcs.l65
+#pragma add_opcode rtx imp
+
+-- enable generation of cross banks code sections using xsr/rtx method (3 MSB of address = bank index)
+mappers.jmpfar=true
+mappers.F8() -- use F8 (2 * 4Kb) bank mapper
+local bank_core,bank_fx = rom0,rom1 -- bank name aliases 
+
+-- main bank content
+location(bank_core)
+@@main
+    init()
+@_frame
+    overscan() vblank() screen_begin()
+        -- call section 'kernel' in bank_fx using per-function generated stubs
+        far kernel
+        -- make a separation
+        sta WSYNC lda#0xaa sta COLUBK for i=1,10 do sta WSYNC end
+        -- call section 'kernel2' in bank_fx using shared stub with bank index in 3 MSB of address
+        xsr kernel2
+    screen_end()
+    jmp _frame
+
+-- secondary bank content
+location(bank_fx)
+-- regular function, can be called inside the same bank with a jsr or from
+-- another bank using automatic stubs generation for caller/callee pair
+@@kernel
+    ldx#0x50 @_loop sta WSYNC stx COLUBK dex bne _loop rts
+-- function only callable using xsr method, from any bank without additional
+-- stub generation, but higher cycle count overhead
+@@kernel2
+    ldx#0x50 @_loop sta WSYNC stx COLUBK dex bne _loop rtx -- note the 'rtx' instead of 'rts'!
+
+;
+writebin(filename..'.bin')
+writesym(filename..'.sym')
+print(stats)

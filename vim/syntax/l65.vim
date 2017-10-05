@@ -572,7 +572,11 @@ syn match l65Opcode /\<shy\>/
 syn match l65Opcode /\<slo\%(.[bw]\)\=\>/
 syn match l65Opcode /\<sre\%(.[bw]\)\=\>/
 
+" These are only if defined by user for VCS cross bank calls.
+" Remove these lines if desired.
 syn match l65Opcode /\<far\>/
+syn match l65Opcode /\<rtx\>/
+syn match l65Opcode /\<xsr\>/
 
 " Define the default highlighting.
 " For version 5.7 and earlier: only when not done already

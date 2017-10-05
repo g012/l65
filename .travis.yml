@@ -9,9 +9,11 @@ script:
     - cmake . -DCMAKE_BUILD_TYPE=Release
     - make
     - cd samples
-    - ../l65 vcs0.l65
-    - ../l65 vcs1.l65
+    - ../l65 vcs_banks.l65
+    - ../l65 vcs_basic.l65
+    - ../l65 vcs_flush.l65
     - ../l65 vcs_hello.l65
+    - ../l65 vcs_hooks.l65
     - cd ..
 deploy:
     provider: releases

@@ -1,0 +1,113 @@
+require'vcs'
+mappers['4K']()
+
+local HEADER_LEN = 92
+local PICTURE_LEN = 64
+local STEP_COUNT = 32
+
+-- FLUSH text as playfield
+local logo_img = assert(l65.image("flush.png")) -- analyse the image twice, so load it separately
+@@logo_col samepage byte(0x00, 0xd4, 0x72, linecol(logo_img)) end
+local pfs = playfield(logo_img)
+for i=1,#pfs do
+    local pf = pfs[i]
+    section("logo_pf"..(i-1)) samepage byte(0, pf[1], pf[#pf], pf) end
+end
+local LOGO_HEIGHT = #pfs[1]
+
+-- background
+local bg = linecol("flushbg.png")
+@@logo_bg_all
+samepage
+    @logo_bg_pre for i=1,8 do dc.b bg[1] end
+    @logo_bg
+        for i=1,13 do dc.b bg[1] end
+        byte(bg)
+        for i=1,13 do dc.b bg[#bg] end
+    @logo_bg_post for i=1,8 do dc.b bg[#bg] end
+end
+
+-- generate offset tables into logo_pf*
+do
+    local DISP_HEIGHT = PICTURE_LEN
+    local transfo,bgshift = {},{}
+    for x=0,STEP_COUNT-1 do
+        local theta = x/(STEP_COUNT-1) * math.pi/2 - math.pi/4
+        local s,c = math.sin(theta),math.cos(theta)
+        local ra,rb,rc,rd = -c, s-c, s+c, c
+        for y=0,DISP_HEIGHT-1 do
+            local r = DISP_HEIGHT / LOGO_HEIGHT
+            local yn = r * (2 * y/(DISP_HEIGHT-1) - 1)
+            local function f()
+                local y = (s-yn) / c
+                return math.min(math.floor((y+1)/2*LOGO_HEIGHT), LOGO_HEIGHT-1) + 3
+            end
+            local v
+            if rd < rc then v = yn>rc and 0 or yn>rb and f(yn) or yn>ra and 2 or 0
+            else v = yn>rd and 0 or yn>rc and 1 or yn>rb and f(yn) or 0 end
+            transfo[x*DISP_HEIGHT+DISP_HEIGHT-y] = v
+        end
+        bgshift[#bgshift+1] = math.floor(math.sin(math.pi+theta)*LOGO_HEIGHT/4)
+    end
+    @@logo_transfo byte(transfo)
+    @@logo_bgshift byte(bgshift)
+end
+
+-- rotation anim
+do
+    local PERIOD = 128
+    local f = \x((math.sin(x*2*math.pi/PERIOD)+1)/2 * (STEP_COUNT-1))
+    local rotation = {}
+    for x=1,128 do
+        rotation[#rotation+1] = math.floor(math.min(f(x-1), (STEP_COUNT-1)))
+    end
+    @@logo_rotation byte(rotation)
+end
+
+local bg_ptr = 0x80
+local trans_ptr = 0x82
+local time = 0x84
+local tmp = 0x85
+
+local on_vblank = function()
+    inc time asl time lsr time
+    ldy time lda logo_rotation,y sta tmp
+
+    ldy tmp lda logo_bgshift,y sta bg_ptr
+    lda#logo_bg&0xff clc adc bg_ptr sta bg_ptr lda#logo_bg>>8 sta bg_ptr+1
+
+    setptr(logo_transfo, trans_ptr)
+    lda tmp asl asl asl asl asl asl clc adc trans_ptr sta trans_ptr
+    lda trans_ptr+1 adc#0 sta trans_ptr+1
+    lda tmp lsr lsr clc adc trans_ptr+1 sta trans_ptr+1
+
+    ldy#PICTURE_LEN-1 lda (bg_ptr),y sta COLUBK
+end
+
+local kernel = function()
+    ldy#HEADER_LEN @_header sta WSYNC dey bne _header
+    samepage @_line
+        lda (trans_ptr),y tax
+        lda (bg_ptr),y 
+        sta WSYNC sta COLUBK
+        lda logo_col,x sta COLUPF
+        lda logo_pf0,x sta PF0
+        lda logo_pf1,x sta PF1
+        lda logo_pf2,x sta PF2
+        lda logo_pf3,x sta PF0
+        lda logo_pf4,x sta PF1
+        lda logo_pf5,x sta PF2
+        iny cpy#PICTURE_LEN bne _line
+    end
+    lda#0 sta WSYNC sta PF0 sta PF1 sta PF2
+end
+
+@@main
+    init()
+@_frame
+    overscan() vblank(on_vblank) screen(kernel) jmp _frame
+
+;
+writebin(filename..'.bin')
+writesym(filename..'.sym')
+print(stats)
