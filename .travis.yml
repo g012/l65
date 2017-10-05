@@ -8,8 +8,11 @@ compiler:
 script:
     - cmake . -DCMAKE_BUILD_TYPE=Release
     - make
-    - ./l65 samples/vcs0.l65
-    - ./l65 samples/vcs1.l65
+    - cd samples
+    - ../l65 vcs0.l65
+    - ../l65 vcs1.l65
+    - ../l65 vcs_hello.l65
+    - cd ..
 deploy:
     provider: releases
     api_key:

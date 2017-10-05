@@ -628,8 +628,8 @@ M.charset = function(s, f)
     if st == 'table' then M.cs = s return s end
     if not f then f = function(v) return v end
     elseif type(f) == 'number' then f = function(v) return v + f end end
-    local t={}
-    for c in s:gmatch'.' do t[c]=f(#t) end
+    local t,i={},0
+    for c in s:gmatch'.' do t[c]=f(i) i=i+1 end
     M.cs=t
     return t
 end

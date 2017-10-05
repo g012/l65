@@ -182,8 +182,8 @@ screen_begin = function() lda#TV.TIM_KERNEL sta T1024T end
 screen_end = wait
 screen = function(f) screen_begin() if f then f() end screen_end() end
 
-setptr = function(f) lda#op_resolve(f)&0xff sta mappers.tmp lda#op_resolve(f)>>8 sta mappers.tmp+1 end
-xcall = function(f) setptr(f) jsr jmpfar end
+setptr = function(f, add) if not add then add=tmp end lda#op_resolve(f)&0xff sta add lda#op_resolve(f)>>8 sta add+1 end
+xcall = function(f) setptr(f, mappers.tmp) jsr jmpfar end
 rtximp = function() jmp rtsfar end
 
 -- for mappers that swap banks in place
