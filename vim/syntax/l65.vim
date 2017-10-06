@@ -577,6 +577,18 @@ syn match l65Opcode /\<sre\%(.[bw]\)\=\>/
 syn match l65Opcode /\<far\>/
 syn match l65Opcode /\<rtx\>/
 syn match l65Opcode /\<xsr\>/
+" Common alias, reomve if desired.
+syn match l65Opcode /\<dna\%(.[bw]\)\=\>/
+syn match l65Keyword /\<dnaimm\>/
+syn match l65Keyword /\<dnazpg\>/
+syn match l65Keyword /\<dnazpx\>/
+syn match l65Keyword /\<dnaabs\>/
+syn match l65Keyword /\<dnaabx\>/
+syn match l65Keyword /\<dnaaby\>/
+syn match l65Keyword /\<dnazab\>/
+syn match l65Keyword /\<dnazax\>/
+syn match l65Keyword /\<dnainx\>/
+syn match l65Keyword /\<dnainy\>/
 
 " Define the default highlighting.
 " For version 5.7 and earlier: only when not done already

@@ -1,6 +1,8 @@
 require'vcs'
 mappers['2K']()
 
+#pragma alias and dna
+
 local i = 0x80
 local ramk=i i=i+51
 local spritestack=i i=i+31
@@ -16,7 +18,6 @@ local img = assert(l65.image("dotbin.png"))
 local sp = sprite{image=img, y0=185, y1=0, yinc=-1}
 for i=1,6 do
     section{"spr"..i, align=256} byte(sp[i])
-    local c = #sp[i]
 end
 
 -- sprite anim frames offset in spr*
@@ -103,7 +104,7 @@ local on_vblank = function()
     inc time bne _noover inc time+1 @_noover
 
     -- frame change
-    lda time; and#3 bne _keep lda seed jsr rand sta seed @_keep
+    lda time dna#3 bne _keep lda seed jsr rand sta seed @_keep
     ldy#8 @_glitch
         lda time+1 cmp glitch_cmphi,y bcc _glitchdone bne _glitchnext
         lda time cmp glitch_cmplo,y bcc _glitchdone
@@ -113,7 +114,7 @@ local on_vblank = function()
     tay jsr setframe
 
     -- position change
-    lda time; and#7 bne _skipmove
+    lda time; and#7 bne _skipmove -- alias opcode 'and' to 'dna' to avoid use of ';', as on line 107
     ldy#6 @_move
         lda time+1 cmp sproff_cmphi,y bcc _stay bne _movenext
         lda time cmp sproff_cmplo,y bcc _stay

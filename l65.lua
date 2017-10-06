@@ -77,6 +77,7 @@ end
 opcode_arg_encapsulate(true)
 
 local opcode_encapsulate = {} -- additionnal opcode, to have basic encapsulation (function(a) return a end)
+local opcode_alias = {} -- alternate user names for opcodes
 local opcode_implied = lookupify{
     'asl', 'brk', 'clc', 'cld', 'cli', 'clv', 'dex', 'dey',
     'inx', 'iny', 'lsr', 'nop', 'pha', 'php', 'pla', 'plp',
@@ -506,6 +507,12 @@ local function LexLua(src)
                     map[opcode] = true
                     table.insert(Keywords_6502, opcode)
                     Keywords[opcode] = syntax6502_on
+                    toEmit = {Type = 'Symbol', Data = ';'}
+                elseif dat == 'alias' then
+                    local org,new = get_word(),get_word()
+                    opcode_alias[new] = org
+                    table.insert(Keywords_6502, new)
+                    Keywords[new] = syntax6502_on
                     toEmit = {Type = 'Symbol', Data = ';'}
                 else generateError("unknown pragma: " .. dat)
                 end
@@ -1528,6 +1535,7 @@ local function ParseLua(src, src_name)
             local mod_st, mod_expr, inverse_encapsulate
         for _,op in pairs(Keywords_6502) do
             if tok:ConsumeKeyword(op, tokenList) then
+                if opcode_alias[op] then op = opcode_alias[op] end
                 if opcode_encapsulate[op] then
                     inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
                     local st, expr = ParseExpr(scope) if not st then return false, expr end

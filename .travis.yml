@@ -14,6 +14,7 @@ script:
     - ../l65 vcs_flush.l65
     - ../l65 vcs_hello.l65
     - ../l65 vcs_hooks.l65
+    - ../l65 vcs_spr48.l65
     - cd ..
 deploy:
     provider: releases
