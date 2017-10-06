@@ -383,16 +383,17 @@ image_scan = function(img, opt)
     yinc=opt.yinc or 1 y0=opt.y0 or 0 y1=opt.y1 or img.height-1
     if x1<x0 and xinc<0 then x0,x1=x1,x0 xinc=-xinc flipx=true end
     if y1<y0 and yinc<0 then y0,y1=y1,y0 yinc=-yinc flipy=true end
-    assert(y1>=y0 and x1>=x0 and x1<img.width and y1<img.height, "invalid dimensions")
+    assert(y1>=y0 and x1>=x0 and x1<img.width and y1<img.height,
+        string.format("invalid dimensions: x[%d -> %d] y[%d -> %d] for img[%d, %d]", x0, x1, y0, y1, img.width, img.height))
     width  = 1 + (x1 - x0) // xinc
     height = 1 + (y1 - y0) // yinc
     for y=y0,y1,yinc do for x=x0,x1,xinc do b[#b+1] = img[y*img.width+x+1] end end
     if flipx then for y=0,height-1 do for x=0,width//2-1 do
-        local i0, i1 = y*width+x, y*height+width-1
+        local i0, i1 = y*width+x+1, y*height+width
         b[i0], b[i1] = b[i1], b[i0]
     end end end
     if flipy then for y=0,height//2-1 do for x=0,width-1 do
-        local i0, i1 = y*width+x, (height-1-y)*width+x
+        local i0, i1 = y*width+x+1, (height-1-y)*width+x+1
         b[i0], b[i1] = b[i1], b[i0]
     end end end
     return b, width, height
@@ -442,7 +443,7 @@ sprite = function(opt)
         local s={} sp[#sp+1]=s
         for y=0,h-1 do
             local o=c*8
-            local e=o+7 > w and w-1 or o+7
+            local e=o+7 >= w and w-1 or o+7
             local i,color = 7,0
             for x=o,e do
                 if b[y*w+x+1] ~= 0 then color = color | 1<<i end

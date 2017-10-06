@@ -1,0 +1,139 @@
+require'vcs'
+mappers['2K']()
+
+local i = 0x80
+local ramk=i i=i+51
+local spritestack=i i=i+31
+local stackbackup=i i=i+1
+local time=i i=i+2
+local seed=i i=i+2
+local spritepos=i i=i+1
+local tmp=i
+
+-- load the 6 sprites and the shared color palette
+local img = assert(l65.image("dotbin.png"))
+@@col samepage byte(linecol{image=img, y0=30, y1=0, yinc=-1}, 0, 0) end
+local sp = sprite{image=img, y0=185, y1=0, yinc=-1}
+for i=1,6 do
+    section{"spr"..i, align=256} byte(sp[i])
+    local c = #sp[i]
+end
+
+-- sprite anim frames offset in spr*
+@@frame samepage dc.b 0,31,62,93,124,155 end
+-- sprite anim palette offset
+@@paloff samepage dc.b 0,0,0,2,0,0 end
+
+-- division by 3 table: result in 6 LSB, remainder in 2 MSB
+do
+    local t = {}
+    for x=0,113 do t[#t+1] = x//3 & 0x3f | x%3 << 6 end
+    @@div3 samepage byte(t) end
+end
+
+-- y: sprite pos
+-- return result of division in x
+@@slide
+    lda#_start>>8 pha
+    lax div3,y and#0x3f clc adc#_start&0xff pha
+    samepage
+        sta WSYNC
+@_start
+        rts
+        for i=1,35 do dc.b 0xc9 end
+        dc.b 0xc5 nop
+    end 
+    rts
+
+-- y: sprite pos
+@@setpos
+    jsr slide sleep(6) sta RESP0 sta RESP1
+    txa lsr lsr and#0x30 sta HMP0 adc#0x10 sta HMP1 sta WSYNC sta HMOVE
+    rts
+
+-- y: frame index
+@@setframe -- modify ram kernel with new palette offset and sprite frame pointers
+    lda#col&0xff sta tmp lda paloff,y clc adc tmp sta ramk+3
+    lda frame,y
+    local off = { 10, 15, 20, 29, 32 }
+    for _,o in ipairs(off) do sta ramk,o end
+    tsx stx tmp ldx#spritestack+30 txs
+    sta tmp+2 clc adc#31 sta tmp+1 ldy tmp+2 @_push lda spr4,y pha iny cpy tmp+1 bne _push
+    ldx tmp txs
+    rts
+
+@@spritek
+    ldy tmp lda col,y sta COLUP1 sta COLUP0
+    ldx spr1,y stx GRP0 lda spr2,y sta GRP1 lda spr3,y sta GRP0
+    sleep(8) -- use this time to set COLUPF :)
+    ldx spr5,y lda spr6,y tay pla
+    sta GRP1 stx GRP0 sty GRP1 stx GRP0
+    dec tmp bpl spritek
+    jmp spritek_done
+
+local kernel = function()
+    ldy#50 @_delay sta WSYNC dey bpl _delay
+
+    tsx stx stackbackup
+    lda#30 sta tmp ldy spritepos
+    samepage
+        jsr slide sleep(24)
+        ldx#(spritestack&0xff)-1 txs
+        jmp ramk
+    end
+@spritek_done
+    lda#0 sta GRP0 sta GRP1 sta GRP0
+    ldx stackbackup txs
+end
+
+@@rand
+    beq _xor asl beq _nor bmi _nor
+    @_xor eor#0x5f
+    @_nor rts
+
+@@glitch_cmphi dc.b 0xFF,0x03,0x02,0x02,0x02,0x01,0x00,0x00,0x00,0x00
+@@glitch_cmplo dc.b 0xFF,0x10,0xA0,0x60,0x30,0x20,0xE0,0xC0,0x90,0x60
+@@glitch dc.b 4,3,2,1,0,1,2,3,4
+@@sproff_cmphi dc.b 0xFF,0x03,0x03,0x02,0x01,0x00,0x00
+@@sproff_cmplo dc.b 0xFF,0x40,0x10,0x80,0x20,0xA0,0x60
+@@sproff dc.b 7,3,1,0,1,3,7
+@@sproff_add dc.b 6,8,10,11,10,8,6
+
+local on_vblank = function()
+    inc time bne _noover inc time+1 @_noover
+
+    -- frame change
+    lda time; and#3 bne _keep lda seed jsr rand sta seed @_keep
+    ldy#8 @_glitch
+        lda time+1 cmp glitch_cmphi,y bcc _glitchdone bne _glitchnext
+        lda time cmp glitch_cmplo,y bcc _glitchdone
+        @_glitchnext dey bne _glitch
+    @_glitchdone
+    lda glitch,y tay lda seed cpy#1 bcc _wait @_lower lsr dey bne _lower @_wait cmp#6 bcc _noreset lda#5 @_noreset
+    tay jsr setframe
+
+    -- position change
+    lda time; and#7 bne _skipmove
+    ldy#6 @_move
+        lda time+1 cmp sproff_cmphi,y bcc _stay bne _movenext
+        lda time cmp sproff_cmplo,y bcc _stay
+        @_movenext dey bne _move
+    @_stay
+    lda sproff,y sta tmp lda sproff_add,y sta tmp+1
+    lda seed+1 jsr rand sta seed+1; and tmp clc adc tmp+1 adc#50 sta spritepos tay jsr setpos
+    @_skipmove
+end
+
+@@main
+    init()
+    lda#vdel.ENABLE sta VDELP1 sta VDELP0
+    lda#nusiz.THREE_COPIES_CLOSE sta NUSIZ0 sta NUSIZ1
+    -- load kernel into RAM
+    ldy#50 @_loadk lda spritek,y sta ramk,y dey bpl _loadk
+@doframe
+    overscan() vblank(on_vblank) screen(kernel) jmp doframe
+
+;
+writebin(filename..'.bin')
+writesym(filename..'.sym')
+print(stats)

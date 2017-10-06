@@ -58,7 +58,7 @@ do
     local PERIOD = 128
     local f = \x((math.sin(x*2*math.pi/PERIOD)+1)/2 * (STEP_COUNT-1))
     local rotation = {}
-    for x=1,128 do
+    for x=1,PERIOD do
         rotation[#rotation+1] = math.floor(math.min(f(x-1), (STEP_COUNT-1)))
     end
     @@logo_rotation byte(rotation)
