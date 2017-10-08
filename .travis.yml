@@ -16,12 +16,12 @@ script:
     - ../l65 vcs_hooks.l65
     - ../l65 vcs_spr48.l65
     - cd ..
+    - cp l65 l65-$TRAVIS_TAG-$TRAVIS_OS_NAME
 deploy:
     provider: releases
     api_key:
         secure: MhH11SvqA5SCbxBbIPpT4lupbkZitK+4N5nKj0HZMBejVnY78bpePJ20pdIDGZQ+bUkZP8NEfLxrIsIheRuvS7nFOXehqAFmZhC3qA7LNrgColC2jISLrzipuG9fS1M8cYdGk11imYEZIx1RrpLAdGrMSR1dx+c44Fwzs271r2t2gchgcFlUvJiAUl9Fy5bEsX95jCJF4N8ozss3oBs7coFfuGBeC9AcFahekDsRrJh8oUA1VmP+pHukgronhDz9gqVAKNSrIR7/gZjOLVXU9e/rdmFUbO6WeYBlgDF85Jqzw0KI+O9pORfcRcxb+tXqLcECQJX0s4fyS/AdObr5lMov6NCT1Z6krkxrlko6ahHc5ZgZIkEcC9RNnmGfj+1ZPspCphiQfgUd7Z4KDLK6bqIGBFQlfPQHtz8BDW8tLTxLC3heSMzu5FI8i9lBxQKQa6+mifE1kmmj2v60TndocJ4YWb3diSBYWrQYFCI1pwcE5JerffP4mF9OL42oXsQbi9dqtnc3aqEPR5C4BUSoQtzknrm4UFjPCl8dPX2mpkXaRemcpn3Xi/ANx5VOdy5EfIQ10jkg/TkdRHr+YqrfW4fHEn5lKhhNrf1l2jDg30BPJ/3D7lW5wOuaHezDUzVUdXPVO0cxj2ap6nj88WHx66+ySAPZK0/wF2XVnTkEHM0=
-    file: l65
-    name: l65-$TRAVIS_TAG-$TRAVIS_OS_NAME
+    file: l65-$TRAVIS_TAG-$TRAVIS_OS_NAME
     skip_cleanup: true
     on:
         repo: g012/l65
