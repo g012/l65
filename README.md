@@ -132,7 +132,7 @@ Since anonymous functions are core to l65, the extension syntax such as `\a,b(a+
 
 #### Deriving Function Names
 
-Each opcode is parsed by l65 then transformed to a Lua function call inside the 6502 module by concatenating the name of the opcode with on of following the addressing mode:
+Each opcode is parsed by l65 then transformed to a Lua function call inside the 6502 module by concatenating the name of the opcode with one of the following addressing mode:
 
 |Mode|Code|
 |----|----|
@@ -230,7 +230,7 @@ Each argument is either a byte size number, a function evaluated after resolve p
 
 Insert a word as two bytes in little-endian order.
 
-Each argument is either a string to be used as key in the `symbols` table, a section, a label, a word size number, a function evaluated after resolve phase and returning exactly on word size number, or a table of word size numbers.
+Each argument is either a string to be used as key in the `symbols` table, a section, a label, a word size number, a function evaluated after resolve phase and returning exactly one word size number, or a table of word size numbers.
 
 `dc.w` encapsulates each of its arguments into a parameter-less function. For each argument, the current encapsulation state can be inverted using `!`.
 
@@ -238,13 +238,13 @@ Each argument is either a string to be used as key in the `symbols` table, a sec
 
 Insert a long as four bytes in little-endian order.
 
-Each argument is either a string to be used as key in the `symbols` table, a section, a label, a long size number, a function evaluated after resolve phase and returning exactly on long size number, or a table of long size numbers.
+Each argument is either a string to be used as key in the `symbols` table, a section, a label, a long size number, a function evaluated after resolve phase and returning exactly one long size number, or a table of long size numbers.
 
 `dc.l` encapsulates each of its arguments into a parameter-less function. For each argument, the current encapsulation state can be inverted using `!`.
 
 #### charset([s] [, f])
 
-Set a new charset to be used for next string data in byte(). Without argument, revert to Lua charset.
+Set a new character set to be used for next string data in byte(). Without argument, revert to Lua charset.
 
 `s`: string of all the letters of charset, or a table of the charset as returned by a previous `charset` call to set again, in which case `f` is ignored.
 
@@ -254,15 +254,15 @@ Return the charset table.
 
 #### byte_normalize(v)
 
-Checks if `v` is within byte range, calls `error` if it is not, or convert negative values to positive values if it is.
+Check if `v` is within byte range, call `error` if it is not, or convert negative values to positive values if it is.
 
 #### word_normalize(v)
 
-Checks if `v` is within word range, calls `error` if it is not, or convert negative values to positive values if it is.
+Check if `v` is within word range, call `error` if it is not, or convert negative values to positive values if it is.
 
 #### long_normalize(v)
 
-Checks if `v` is within long range, calls `error` if it is not, or convert negative values to positive values if it is.
+Check if `v` is within long range, call `error` if it is not, or convert negative values to positive values if it is.
 
 ### Assembler Functions (6502.lua)
 
@@ -270,7 +270,7 @@ Checks if `v` is within long range, calls `error` if it is not, or convert negat
 
 `strip`: defaults to `true`. Set to `false` to disable dead stripping of relocatable sections.
 
-`pcall`: defaults to system's `pcall`. Set to an empty function returning `false` to disable early evaluation of expressions during link phase for computing the size of each section. This will force all opcodes without an explicit size to default to the largest...
+`pcall`: defaults to system's `pcall`. Set to an empty function returning `false` to disable early evaluation of expressions during link phase for computing the size of each section. This will force all opcodes without an explicit size to default to the largest possible size...
 
 `pcall_za`: ...unless this field is set to system's `pcall`. Defaults to module's `pcall`. This field is used only by the `za*` (`zab`, `zax`, `zay`) virtual addressing modes, to discriminate between zeropage and absolute addressing.
 
@@ -290,7 +290,7 @@ Checks if `v` is within long range, calls `error` if it is not, or convert negat
 
 `before_link`: a list of hook functions called just before the linking phase.
 
-`id()`: returns a new unique numeric identifier.
+`id()`: return a new unique numeric identifier.
 
 `stats`: a table of statistics regarding the build:
  * `cycles`: the total 6502 cycle count of the program, considering no branch is taken and no page is crossed.
@@ -348,7 +348,7 @@ Return the section table.
  * `label`: the name of this section.
  * `size`: the computed size of the section during link phase.
  * `cycles`: the sum of cycle count of the instructions within `instructions`, after link phase.
- * `refcount`: a positive number of this section is referenced.
+ * `refcount`: a positive number if this section is referenced.
  * `location`: the location containing this section, the currently active one at the point of the section function call.
  * `instructions`: the list of opcode functions contained within this section. Each instruction can contain:
    - `size`: a number or function returning the size of the opcode and its operands.
@@ -356,7 +356,7 @@ Return the section table.
    - `bin`: a byte or a function returning the binary representation of the opcode and its operands.
    - `offset`: the number of bytes from the start of the section at which this instruction is located; set during link phase.
  * `constraints`: the list of constraints within the section, filled by `samepage` and `crosspage` blocks. Each constraint has a `type` set to `'samepage'` or `'crosspage'`,  `from` and inclusive `to` indices into `instructions`, and after link phase a `start` and inclusive `finish` address position.
- * `holes`: a list of holes created by `skip`. Each hole has `start` index into `instructions` and a `size` number set to the parameter of `skip`.
+ * `holes`: a list of holes created by [skip](#skipbytes). Each hole has `start` index into `instructions` and a `size` number set to the parameter of `skip`.
 
 #### @name ; label(name)
 
@@ -389,7 +389,7 @@ Insert a hole in the current section of size `bytes`, which can be used by anoth
 
 #### relate(section1, section2 [, [offset1,] offset2])
 
-Add a position relationship between `section1` and `section2`, with `offset1` bytes from selected position for `section2`, and `offset2` bytes from selected positon for `section1`, in relation to their containing locations. If `offset1` is omitted, `-offset2` is used.
+Add a position relationship between `section1` and `section2`, with `offset1` bytes from selected position for `section2`, and `offset2` bytes from selected position for `section1`, in relation to their containing locations. If `offset1` is omitted, `-offset2` is used.
 
 This is used to ensure two sections in different locations will start at the same or related offset. For instance, if the location of `section1` starts at 0xE000 and the location of `section2` starts at 0xF000, and the linker sets `section1` to 0xE100, then `relate(section1, section2)` implies that `section2` is at 0xF100.
 
@@ -433,7 +433,7 @@ Write a DASM symbol file into `filename` for debuggers. The last `_` in a label 
 
 #### Pragmas
 
-##### syntax6502 oo|off
+##### syntax6502 on|off
 
 Enable or disable 6502 syntax parsing, besides pragma itself. Default is `on`.
 For instance:
@@ -494,7 +494,7 @@ Create an alias `newname` for opcode `opcode`, retaining the original name as we
     dna #0x3F -- same as and #0x3F
 ```
 
-Note that alias `and` might be a good idea, since it's also a keyword for expressions in Lua. Consider this:
+Note that aliasing `and` might be a good idea, since it's also a keyword for expressions in Lua. Consider this:
 
 ```lua
 lda time; and#7 -- ';' is required here to prevent considering it as ldazab(time and #7)
@@ -513,19 +513,19 @@ Return `true` and an AST table on success; `false` and an error string otherwise
 
 Transform `ast` into a string.
 
-Return a string of `ast` on success; raises an error otherwise.
+Return a string of `ast` on success; raise an error otherwise.
 
 ##### searcher_index
 
-The index at which to insert the embedded scripts searcher, followed by the l65 file searcher. Defaults to 2.
+The index at which to insert the l65 file searcher, followed by the embedded scripts searcher. Defaults to 2.
 
 ##### search_path
 
-The search path used by the l65 file searcher. Defaults to filename if current directory, then with added '.l65' extension, then in l65 execution directory, then in l65 execution directory with '.l65' extension.
+The search path used by the l65 file searcher. Defaults to filename if current directory, then with added '.l65' extension, then in l65 executable directory, then in l65 executable directory with '.l65' extension.
 
 ##### report(success, ...)
 
-If `success` resolves to `true`, it returns all of its arguments. Otherwise, it writes the message, which is the first field of `...` to `stderr` and exits the program.
+If `success` resolves to `true`, it returns all of its arguments. Otherwise, it writes the message, which is the first field of `...`, to `stderr` and exits the program.
 
 ##### msghandler(msg)
 
@@ -545,13 +545,13 @@ Hook functions to load l65 chunks and files automatically. Installed by default.
 
 ##### image(filename)
 
-A C function, calling stb_image on `filename`, with only 8b palette-based PNG. It does not translate colors to RGB triplets, but keeps the palette index as the value of the pixel.
+A C function, calling stb_image on `filename`, with only 8b palette-based PNG support. It does not translate colors to RGB triplets, but keeps the palette index as the value of the pixel.
 
 Return `nil` and an error message on failure, or a table with the following fields on success:
  * `filename`: PNG filename
  * `width`: image width, in pixels
  * `height`: image height, in pixels
- * [1..w\*b]: the pixels, as palette indices (all bytes)
+ * [1..width\*height]: the pixels, as palette indices (all bytes)
 
 ### VCS Module
 
