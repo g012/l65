@@ -10,7 +10,9 @@ Table of Contents
   * [Command Line Usage](#command-line-usage)
   * [Samples - Getting Started](#samples---getting-started)
   * [API](#api)
-     * [Lambda Functions](#lambda-functions)
+     * [Lua Extensions](#lua-extensions)
+        * [Lambda Functions](#lambda-functions)
+        * [Binary Numbers](#binary-numbers)
      * [Instruction List](#instruction-list)
         * [Regular Opcodes](#regular-opcodes)
         * [Undocumented Opcodes](#undocumented-opcodes)
@@ -104,9 +106,15 @@ There's also `vcspal.act`, a palette file for authoring software for VCS. Use th
 
 ## API
 
-### Lambda Functions
+### Lua Extensions
+
+#### Lambda Functions
 
 Since anonymous functions are core to l65, the extension syntax such as `\a,b(a+b)` is available to define them: it expands to `function(a,b) return a+b end`.
+
+#### Binary Numbers
+
+A simple parsing of number literals in the form of `0b11011` converts this base-2 / binary number into a decimal number after the l65 pass. There is no support for them in other places though - no format type for `string.format` or anything else.
 
 ### Instruction List
 
