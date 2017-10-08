@@ -213,7 +213,7 @@ M.link = function()
 
         -- fixed position sections
         for section_ix,section in ipairs(sections) do if section.org then
-            if section.org < location.start or section.org > location.finish then
+            if section.org < location.start or section.org > (location.finish or math.huge) then
                 error("ORG section " .. section.label .. " starts outside container location")
             end
             for chunk_ix,chunk in ipairs(location.chunks) do
@@ -323,7 +323,7 @@ M.genbin = function(filler)
     local fill
     for _,location in ipairs(locations) do
         if location.start < #bin then
-            error(string.format("location [%04x,%04x] overlaps another", location.start, location.finish))
+            error(string.format("location [%04x,%04x] overlaps another", location.start, location.finish or location.stops_at))
         end
         if fill then for i=#bin+of0,location.start-1 do ins(bin, filler) end end
         M.size=0 M.cycles=0
