@@ -80,6 +80,44 @@ static int writer(lua_State* L, const void* p, size_t size, void* f)
     return 0;
 }
 
+// use custom version so that filename is not used for debug info
+LUALIB_API int luaL_loadfilex2 (lua_State *L, const char *filename,
+                                             const char *mode, const char *chunkname) {
+  luai_LoadF lf;
+  int status, readstatus;
+  int c;
+  int fnameindex = lua_gettop(L) + 1;  /* index of filename on the stack */
+  if (filename == NULL) {
+    lua_pushliteral(L, "=stdin");
+    lf.f = stdin;
+  }
+  else {
+    lua_pushfstring(L, "@%s", filename);
+    lf.f = fopen(filename, "r");
+    if (lf.f == NULL) return luai_errfile(L, "open", fnameindex);
+  }
+  if (luai_skipcomment(&lf, &c))  /* read initial portion */
+    lf.buff[lf.n++] = '\n';  /* add line to correct line numbers */
+  if (c == LUA_SIGNATURE[0] && filename) {  /* binary file? */
+    lf.f = freopen(filename, "rb", lf.f);  /* reopen in binary mode */
+    if (lf.f == NULL) return luai_errfile(L, "reopen", fnameindex);
+    luai_skipcomment(&lf, &c);  /* re-read initial portion */
+  }
+  if (c != EOF)
+    lf.buff[lf.n++] = c;  /* 'c' is the first character of the stream */
+  lua_pop(L, 1);
+  lua_pushstring(L, chunkname);
+  status = lua_load(L, luai_getF, &lf, lua_tostring(L, -1), mode);
+  readstatus = ferror(lf.f);
+  if (filename) fclose(lf.f);  /* close file (even in case of errors) */
+  if (readstatus) {
+    lua_settop(L, fnameindex);  /* ignore results from 'lua_load' */
+    return luai_errfile(L, "read", fnameindex);
+  }
+  lua_remove(L, fnameindex);
+  return status;
+}
+
 static int pmain(lua_State* L)
 {
     int argc = (int)lua_tointeger(L, 1);
@@ -102,7 +140,17 @@ static int pmain(lua_State* L)
         compile = fnl > 4 && !strcmp(".lua", filename + fnl - 4);
         if (compile)
         {
-            if (luaL_loadfile(L, filename) != LUA_OK) fatal(lua_tostring(L, -1));
+            // do no use luaL_loadfile so that the filename is not used for error printing
+            char *p = strdup(filename), *n = p;
+            for (p = p + strlen(p); p != n && *p != '/' && *p != '\\'; --p) ;
+            if (p != n) ++p;
+            char *chunkname = malloc(strlen(p) + 16);
+            strcpy(chunkname, "=(");
+            strcat(chunkname, p);
+            strcat(chunkname, ")");
+            free(n);
+            if (luaL_loadfilex2(L, filename, 0, chunkname) != LUA_OK) fatal(lua_tostring(L, -1));
+            free(chunkname);
             fprintf(f, "static const char %s[] = {", name);
             w_o = 0;
             lua_dump(L, writer, f, 0);

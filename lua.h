@@ -6353,7 +6353,7 @@ static int luaB_rawset (lua_State *L) {
 
 static int luaB_collectgarbage (lua_State *L) {
   static const char *const opts[] = {"stop", "restart", "collect",
-    "count", "step", "luai_setpause", "setstepmul",
+    "count", "step", "setpause", "setstepmul",
     "isrunning", NULL};
   static const int optsnum[] = {LUA_GCSTOP, LUA_GCRESTART, LUA_GCCOLLECT,
     LUA_GCCOUNT, LUA_GCSTEP, LUA_GCSETPAUSE, LUA_GCSETSTEPMUL,
@@ -6643,7 +6643,7 @@ static const luaL_Reg luai_base_funcs[] = {
 #if defined(LUA_COMPAT_LOADSTRING)
   {"loadstring", luaB_load},
 #endif
-  {"luai_next", luaB_next},
+  {"next", luaB_next},
   {"pairs", luaB_pairs},
   {"pcall", luaB_pcall},
   {"print", luaB_print},
@@ -6653,7 +6653,7 @@ static const luaL_Reg luai_base_funcs[] = {
   {"rawset", luaB_rawset},
   {"select", luaB_select},
   {"setmetatable", luaB_setmetatable},
-  {"luai_tonumber", luaB_tonumber},
+  {"tonumber", luaB_tonumber},
   {"tostring", luaB_tostring},
   {"type", luaB_type},
   {"xpcall", luaB_xpcall},
@@ -6831,7 +6831,7 @@ static int lua_b_rrot (lua_State *L) {
 static int lua_fieldargs (lua_State *L, int farg, int *width) {
   lua_Integer f = luaL_checkinteger(L, farg);
   lua_Integer w = luaL_optinteger(L, farg + 1, 1);
-  luaL_argcheck(L, 0 <= f, farg, "luai_field cannot be negative");
+  luaL_argcheck(L, 0 <= f, farg, "field cannot be negative");
   luaL_argcheck(L, 0 < w, farg + 1, "width must be positive");
   if (f + w > LUA_NBITS)
     luaL_error(L, "trying to access non-existent bits");
@@ -8066,7 +8066,7 @@ void luaK_setlist (luai_FuncState *fs, int base, int nelems, int tostore) {
     luai_codeextraarg(fs, c);
   }
   else
-    luaX_syntaxerror(fs->ls, "luai_constructor too long");
+    luaX_syntaxerror(fs->ls, "constructor too long");
   fs->luai_freereg = base + 1;  /* free registers with list values */
 }
 
@@ -8204,7 +8204,7 @@ static int luaB_corunning (lua_State *L) {
 
 static const luaL_Reg luai_co_funcs[] = {
   {"create", luaB_cocreate},
-  {"luai_resume", luaB_coresume},
+  {"resume", luaB_coresume},
   {"running", luaB_corunning},
   {"status", luaB_costatus},
   {"wrap", luaB_cowrap},
@@ -8416,7 +8416,7 @@ static int luai_db_getinfo (lua_State *L) {
     luai_settabss(L, "what", ar.what);
   }
   if (strchr(options, 'l'))
-    luai_settabsi(L, "luai_currentline", ar.luai_currentline);
+    luai_settabsi(L, "currentline", ar.luai_currentline);
   if (strchr(options, 'u')) {
     luai_settabsi(L, "nups", ar.nups);
     luai_settabsi(L, "nparams", ar.nparams);
@@ -8676,7 +8676,7 @@ static int luai_db_traceback (lua_State *L) {
 
 static const luaL_Reg luai_dblib[] = {
   {"debug", luai_db_debug},
-  {"luai_getuservalue", luai_db_getuservalue},
+  {"getuservalue", luai_db_getuservalue},
   {"gethook", luai_db_gethook},
   {"getinfo", luai_db_getinfo},
   {"getlocal", luai_db_getlocal},
@@ -8685,7 +8685,7 @@ static const luaL_Reg luai_dblib[] = {
   {"getupvalue", luai_db_getupvalue},
   {"upvaluejoin", luai_db_upvaluejoin},
   {"upvalueid", luai_db_upvalueid},
-  {"luai_setuservalue", luai_db_setuservalue},
+  {"setuservalue", luai_db_setuservalue},
   {"sethook", luai_db_sethook},
   {"setlocal", luai_db_setlocal},
   {"setmetatable", luai_db_setmetatable},
@@ -9125,7 +9125,7 @@ static const char *luai_getobjname (luai_Proto *p, int lastpc, int reg,
                          ? luaF_getlocalname(p, t + 1, pc)
                          : luai_upvalname(p, t);
         luai_kname(p, pc, k, name);
-        return (vn && strcmp(vn, LUA_ENV) == 0) ? "global" : "luai_field";
+        return (vn && strcmp(vn, LUA_ENV) == 0) ? "global" : "field";
       }
       case luai_OP_GETUPVAL: {
         *name = luai_upvalname(p, luai_GETARG_B(i));
@@ -9894,7 +9894,7 @@ static void luai_unroll (lua_State *L, void *ud) {
 
 
 /*
-** Try to find a suspended protected call (a "luai_recover point") for the
+** Try to find a suspended protected call (a "recover point") for the
 ** given thread.
 */
 static luai_CallInfo *luai_findpcall (lua_State *L) {
@@ -13264,7 +13264,7 @@ static const luaL_Reg luai_mathlib[] = {
   {"cos",   luai_math_cos},
   {"deg",   luai_math_deg},
   {"exp",   luai_math_exp},
-  {"luai_tointeger", luai_math_toint},
+  {"tointeger", luai_math_toint},
   {"floor", luai_math_floor},
   {"fmod",   luai_math_fmod},
   {"ult",   luai_math_ult},
@@ -14979,14 +14979,14 @@ static int luai_getfield (lua_State *L, const char *key, int d, int delta) {
   lua_Integer res = lua_tointegerx(L, -1, &isnum);
   if (!isnum) {  /* luai_field is not an integer? */
     if (t != LUA_TNIL)  /* some other value? */
-      return luaL_error(L, "luai_field '%s' is not an integer", key);
+      return luaL_error(L, "field '%s' is not an integer", key);
     else if (d < 0)  /* absent luai_field; no default? */
-      return luaL_error(L, "luai_field '%s' missing in date table", key);
+      return luaL_error(L, "field '%s' missing in date table", key);
     res = d;
   }
   else {
     if (!(-LUAI_L_MAXDATEFIELD <= res && res <= LUAI_L_MAXDATEFIELD))
-      return luaL_error(L, "luai_field '%s' is out-of-bound", key);
+      return luaL_error(L, "field '%s' is out-of-bound", key);
     res -= delta;
   }
   lua_pop(L, 1);
@@ -19958,7 +19958,7 @@ void luaT_init (lua_State *L) {
 
 
 /*
-** function to be used with macro "luai_fasttm": optimized for absence of
+** function to be used with macro "fasttm": optimized for absence of
 ** tag methods
 */
 const luai_TValue *luaT_gettm (luai_Table *events, luai_TMS event, luai_TString *ename) {

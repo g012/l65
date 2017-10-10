@@ -139,10 +139,16 @@ static int luaopen_l65(lua_State *L)
     return 1;
 }
 
+#define SRC_LUA(name) { #name, 0, script_ ## name ## _lua, sizeof(script_ ## name ## _lua) }
+#define SRC_L65(name) { #name, 1, script_ ## name ## _l65, sizeof(script_ ## name ## _l65) }
 static struct script { const char *name; int t;  const char *data; size_t sz; } embedded[] = {
-    { "l65cfg", 0, script_l65cfg_lua, sizeof(script_l65cfg_lua) },
-    { "vcs", 1, script_vcs_l65, sizeof(script_vcs_l65) },
+    SRC_LUA(dkjson),
+    SRC_LUA(l65cfg),
+    SRC_LUA(re),
+    SRC_L65(vcs),
 };
+#undef SRC_LUA
+#undef SRC_L65
 
 static int getembedded(lua_State *L)
 {

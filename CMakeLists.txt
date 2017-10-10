@@ -8,7 +8,7 @@ set(L65_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 set(L65_BINARY_DIR ${PROJECT_BINARY_DIR})
 
 set(L65_VERSION_MAJOR "1")
-set(L65_VERSION_MINOR "0")
+set(L65_VERSION_MINOR "1")
 set(L65_VERSION_REVISION "0")
 set(L65_VERSION "${L65_VERSION_MAJOR}.${L65_VERSION_MINOR}.${L65_VERSION_REVISION}")
 configure_file("${L65_SOURCE_DIR}/l65cfg.lua.in" "${L65_BINARY_DIR}/l65cfg.lua")
@@ -77,18 +77,14 @@ set(L65_HEADERS
         ${L65_BINARY_DIR}/scripts.h
         ${L65_SOURCE_DIR}/stb_image.h
     )
-set(L65_RESOURCES
-        ${L65_SOURCE_DIR}/6502.lua
-        ${L65_SOURCE_DIR}/l65.lua
-        ${L65_BINARY_DIR}/l65cfg.lua
-        ${L65_SOURCE_DIR}/vcs.l65
-    )
 
 file(GLOB L65_FILES ${L65_SOURCE_DIR}/*.l65)
 set(L65_SCRIPTS
         ${L65_SOURCE_DIR}/6502.lua
+        ${L65_SOURCE_DIR}/dkjson.lua
         ${L65_SOURCE_DIR}/l65.lua
         ${L65_BINARY_DIR}/l65cfg.lua
+        ${L65_SOURCE_DIR}/re.lua
         ${L65_FILES}
     )
 
@@ -100,7 +96,7 @@ add_custom_command(
     DEPENDS embed ${L65_SCRIPTS}
 )
 add_custom_target(prereq DEPENDS ${L65_BINARY_DIR}/scripts.h)
-add_executable(${PROJECT_NAME} ${L65_SOURCES} ${L65_HEADERS} ${L65_RESOURCES})
+add_executable(${PROJECT_NAME} ${L65_SOURCES} ${L65_HEADERS} ${L65_FILES})
 add_dependencies(${PROJECT_NAME} prereq)
 set_property(TARGET ${PROJECT_NAME} PROPERTY C_STANDARD 99)
 target_include_directories(${PROJECT_NAME} PRIVATE "${L65_SOURCE_DIR}" "${L65_BINARY_DIR}")

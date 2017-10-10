@@ -617,19 +617,19 @@ Note that the syntax file includes some highlighting for features only activated
 
  * [k65](http://devkk.net/wiki/index.php?title=K65) style syntax
  * helpers to inter-operate with cc/ca65 and dasm
+ * import TIATracker \*.ttt files directly
 
 ## Credits
 
 Developed by g012, using:
  * [Lua 5.3.4](https://www.lua.org)
  * [LuaMinify](https://github.com/stravant/LuaMinify)
- * Lua syntax file shipping with [vim](http://www.vim.org)
- * Lua indent file from [vim-lua](https://github.com/tbastos/vim-lua)
- * [stb_image](https://github.com/nothings/stb)
-
-Not using, but integrated for end-user convenience:
  * [LuaFileSystem](https://keplerproject.github.io/luafilesystem)
  * [LPeg](http://www.inf.puc-rio.br/~roberto/lpeg)
+ * [stb_image](https://github.com/nothings/stb)
+ * [dkjson](http://dkolf.de/src/dkjson-lua.fsl)
+ * Lua syntax file shipping with [vim](http://www.vim.org)
+ * Lua indent file from [vim-lua](https://github.com/tbastos/vim-lua)
 
 Projects which inspired l65:
  * [nimble65](https://bitbucket.org/kylearan/nimble65)
