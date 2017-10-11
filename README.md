@@ -101,6 +101,7 @@ Have a look at these files in the `samples` folder to get started with l65:
  * `vcs_banks.l65`: demonstrates 2 methods to call functions across banks.
  * `vcs_flush.l65`: a port of flewww's famous flush logo from the demo [.bin](http://www.pouet.net/prod.php?which=69666)
  * `vcs_spr48.l65`: a port of [.bin](http://www.pouet.net/prod.php?which=69666) title 48 pixels sprite animation.
+ * `vcs_music.l65`: imports and plays back a TIATracker .ttt file directly.
 
 There's also `vcspal.act`, a palette file for authoring software for VCS. Use this palette or a similar one to create 8b PNG for `l65.image` and helper loaders depending on it. You can generate such a palette, or a GPL one for GIMP using [vcsconv](https://github.com/g012/vcsconv) `authpalette` command.
 
@@ -617,7 +618,6 @@ Note that the syntax file includes some highlighting for features only activated
 
  * [k65](http://devkk.net/wiki/index.php?title=K65) style syntax
  * helpers to inter-operate with cc/ca65 and dasm
- * import TIATracker \*.ttt files directly
 
 ## Credits
 

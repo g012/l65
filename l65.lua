@@ -128,7 +128,7 @@ local opcode_absolute_x = lookupify{
 }
 local opcode_absolute_y = lookupify{
     'adc', 'and', 'cmp', 'eor', 'lda', 'ldx', 'ora', 'sbc',
-    'sta', 'stx',
+    'sta',
     -- illegal opcodes
     'dcp', 'isb', 'jam', 'las', 'lax', 'rla', 'rra', 'sax',
     'sha', 'shx', 'slo', 'shs', 'sre',
@@ -1618,6 +1618,7 @@ local function ParseLua(src, src_name)
                     else
                         tok:Commit()
                         if not tok:ConsumeSymbol(',', tokenList) then
+                            if not opcode_absolute[op] and not opcode_zeropage[op] then return false, expr end
                             suffix = suffix=='b' and "zpg" or suffix=='w' and "abs" or "zab"
                             if suffix == 'zab' then
                                 if not opcode_zeropage[op] then suffix='abs'
@@ -1628,6 +1629,7 @@ local function ParseLua(src, src_name)
                             stat = emit_call{name=op .. suffix, args={expr}, inverse_encapsulate=inverse_encapsulate} break
                         end
                         if tok:Peek().Data == 'x' then
+                            if not opcode_absolute_x[op] and not opcode_zeropage_x[op] then return false, expr end
                             tok:Get(tokenList)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
@@ -1642,7 +1644,7 @@ local function ParseLua(src, src_name)
                             stat = emit_call{name=op .. suffix, args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
-                            if not opcode_absolute_y[op] then return false, expr end
+                            if not opcode_absolute_y[op] and not opcode_zeropage_y[op] then return false, expr end
                             tok:Get(tokenList)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
@@ -1660,6 +1662,7 @@ local function ParseLua(src, src_name)
                         local mod_st, mod_expr = ParseExpr(scope)
                         if not mod_st then return false, mod_expr end
                         if not tok:ConsumeSymbol(',', tokenList) then
+                            if not opcode_absolute[op] and not opcode_zeropage[op] then return false, expr end
                             suffix = suffix=='b' and "zpg" or suffix=='w' and "abs" or "zab"
                             if suffix == 'zab' then
                                 if not opcode_zeropage[op] then suffix='abs'
@@ -1670,6 +1673,7 @@ local function ParseLua(src, src_name)
                             stat = emit_call{name=op .. suffix, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate} break
                         end
                         if tok:Peek().Data == 'x' then
+                            if not opcode_absolute_x[op] and not opcode_zeropage_x[op] then return false, expr end
                             tok:Get(tokenList)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
@@ -1684,7 +1688,7 @@ local function ParseLua(src, src_name)
                             stat = emit_call{name=op .. suffix, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                         end
                         if tok:Peek().Data == 'y' then
-                            if not opcode_absolute_y[op] then return false, expr end
+                            if not opcode_absolute_y[op] and not opcode_zeropage_y[op] then return false, expr end
                             tok:Get(tokenList)
                             local paren_close_whites = {}
                             for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
@@ -2546,7 +2550,7 @@ l65_def = {
 if not l65 then l65 = l65_def else for k,v in pairs(l65_def) do l65[k]=v end end
 l65.report = function(success, ...)
     if success then return success,... end
-    local message=... io.stderr:write(message..'\n')
+    local message=... io.stderr:write(tostring(message)..'\n')
     os.exit(-1)
 end
 l65.msghandler = function(msg)

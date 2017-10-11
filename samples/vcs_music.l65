@@ -1,0 +1,310 @@
+require'vcs'
+mappers['2K']()
+
+local AUDC0s = 0x90
+local AUDC1s, AUDF0s, AUDF1s, AUDV0s, AUDV1s = AUDC0s+1, AUDC0s+2, AUDC0s+3, AUDC0s+4, AUDC0s+5
+local vubars = 0xA0
+local tmp = 0xF0
+
+local zic_filename = 'Ishtar.ttt'
+local zic = ttt(zic_filename)
+print(string.format('Using file %s (ttt version %d)\n  Name:   %s\n  Author: %s\n%s', zic_filename, zic.version, zic.name, zic.author, zic.comment))
+
+-- debug printing of zic data
+--[[
+local printbytetable = function(v)
+    local s = '  '
+    for kk,vv in ipairs(v) do
+        s = s .. string.format('%02x, ', vv)
+        if #s >= 34 then print(s) s = '  ' end
+    end
+    if #s > 0 then print(s) end
+end
+for k,v in pairs(zic) do
+    if type(v) ~= 'table' then
+        print(k,v)
+    elseif type(v[1]) == 'number' then
+        print(k) printbytetable(v)
+    elseif type(v[1]) == 'table' then
+        for ek, e in ipairs(v) do
+            print(k, ek, e.name) printbytetable(e)
+        end
+    end
+end
+]]
+
+@@tt_InsCtrlTable byte(zic.insctrltable)
+@@tt_InsADIndexes byte(zic.insadindexes)
+@@tt_InsSustainIndexes byte(zic.inssustainindexes)
+@@tt_InsReleaseIndexes byte(zic.insreleaseindexes)
+@@tt_InsFreqVolTable byte(zic.insfreqvoltable)
+@@tt_PercIndexes byte(zic.percindexes)
+@@tt_PercFreqTable byte(zic.percfreqtable)
+@@tt_PercCtrlVolTable byte(zic.percctrlvoltable)
+local patterns = {}
+for i,pattern in ipairs(zic.patterns) do
+    table.insert(patterns, section("pattern"..i)) byte(pattern)
+end
+@@tt_PatternSpeeds byte(zic.patternspeeds)
+@@tt_PatternPtrLo byte_lo(patterns)
+@@tt_PatternPtrHi byte_hi(patterns)
+@@tt_SequenceTable byte(zic.sequence[1]) byte(zic.sequence[2])
+
+local tt = {
+-- =====================================================================
+-- Permanent variables. These are states needed by the player.
+-- =====================================================================
+    'timer',              -- current music timer value
+    'cur_pat_index_c0',   -- current pattern index into tt_SequenceTable
+    'cur_pat_index_c1',
+    'cur_note_index_c0',  -- note index into current pattern
+    'cur_note_index_c1',
+    'envelope_index_c0',  -- index into ADSR envelope
+    'envelope_index_c1',
+    'cur_ins_c0',         -- current instrument
+    'cur_ins_c1',
+-- =====================================================================
+-- Temporary variables. These will be overwritten during a call to the
+-- player routine, but can be used between calls for other things.
+-- =====================================================================
+    'ptr', -- 2 bytes
+}
+for k,v in ipairs(tt) do tt[v] = k + 0x7F end
+
+tt.FREQ_MASK    = 0b00011111
+tt.INS_HOLD     = 8
+tt.INS_PAUSE    = 16
+tt.FIRST_PERC   = 17
+
+tt.fetchCurrentNoteImpl = function()
+@_constructPatPtr
+        ldy tt.cur_pat_index_c0,x lda tt_SequenceTable,y
+    if zic.usegoto then
+        bpl _noPatternGoto
+       ;and #0b01111111 sta tt.cur_pat_index_c0,x bpl _constructPatPtr
+@_noPatternGoto
+    end
+        tay lda tt_PatternPtrLo,y sta tt.ptr lda tt_PatternPtrHi,y sta tt.ptr+1
+    if zic.overlay then
+        clv
+        lda tt.cur_note_index_c0,x bpl _notPrefetched
+       ;and #0b01111111 sta tt.cur_note_index_c0,x
+        bit tt_Bit6Set
+@_notPrefetched
+        tay
+    else
+        ldy tt.cur_note_index_c0,x
+    end
+        lda (tt.ptr),y bne _noEndOfPattern
+        sta tt.cur_note_index_c0,x
+        inc tt.cur_pat_index_c0,x
+        bne _constructPatPtr
+@_noEndOfPattern
+end
+if zic.useoverlay then
+    @@tt_fetchCurrentNoteSection tt.fetchCurrentNoteImpl() rts
+    tt.fetchCurrentNote = function() jsr tt_fetchCurrentNoteSection end
+else
+    tt.fetchCurrentNote = tt.fetchCurrentNoteImpl
+end
+
+@@tt_CalcInsIndex
+        lsr lsr lsr lsr lsr
+        tay
+@tt_Bit6Set
+        rts
+
+local function zic_tick()
+        dec tt.timer bpl _noNewNote
+        ldx #1
+@_advanceLoop
+        tt.fetchCurrentNote()
+        cmp #tt.INS_PAUSE
+    if zic.useslide then
+        beq _pause
+        bcs _newNote
+        adc tt.cur_ins_c0,x sec sbc #8 sta tt.cur_ins_c0,x
+        bcs _finishedNewNote
+    else
+        bcc _finishedNewNote	
+        bne _newNote
+    end
+@_pause
+        lda tt.cur_ins_c0,x jsr tt_CalcInsIndex
+        lda tt_InsReleaseIndexes-1,y
+        clc adc #1 bcc _storeADIndex
+@_newNote
+        sta tt.cur_ins_c0,x
+        cmp #tt.FREQ_MASK+1 bcs _startInstrument
+        tay
+        lda tt_PercIndexes-tt.FIRST_PERC,y
+        bne _storeADIndex
+@_startInstrument
+    if zic.useoverlay then
+        bvs _finishedNewNote
+    end
+        jsr tt_CalcInsIndex
+        lda tt_InsADIndexes-1,y
+@_storeADIndex
+        sta tt.envelope_index_c0,x      
+@_finishedNewNote
+        inc tt.cur_note_index_c0,x
+@_sequencerNextChannel
+        dex
+        bpl _advanceLoop
+    if zic.globalspeed then
+        ldx #zic.speed-1
+      if zic.usefunktempo then
+        lda tt.cur_note_index_c0 lsr bcc _noOddFrame ldx #zic.oddspeed-1 @_noOddFrame
+      end
+        stx tt.timer
+    else
+        ldx tt.cur_pat_index_c0 ldy tt_SequenceTable,x
+      if zic.usefunktempo then
+        lda tt.cur_note_index_c0 lsr
+        lda tt_PatternSpeeds,y
+        bcc _evenFrame
+       ;and #0x0f
+        bcs _storeFunkTempo        
+@_evenFrame
+        lsr lsr lsr lsr
+@_storeFunkTempo
+        sta tt.timer
+      else
+        lda tt_PatternSpeeds,y sta tt.timer
+      end
+    end
+@_noNewNote
+        ldx #1
+@_updateLoop
+        lda tt.cur_ins_c0,x
+    if not zic.startswithnotes then
+        beq _afterAudioUpdate
+    end
+        cmp #tt.FREQ_MASK+1 bcs _instrument
+        ldy tt.envelope_index_c0,x
+        lda tt_PercCtrlVolTable-1,y beq _endOfPercussion inc tt.envelope_index_c0,x @_endOfPercussion
+        sta AUDV0,x lsr lsr lsr lsr sta AUDC0,x
+        lda tt_PercFreqTable-1,y
+        sta AUDF0,x
+        sta AUDF0s,x -- EXTRA for vumeter rendering
+    if zic.useoverlay then
+        bpl _afterAudioUpdate
+        tt.fetchCurrentNote()
+        cmp #tt.FREQ_MASK+1
+        bcc _afterAudioUpdate
+        sta tt.cur_ins_c0,x
+        jsr tt_CalcInsIndex
+        lda tt_InsSustainIndexes-1,y sta tt.envelope_index_c0,x      
+        asl tt.cur_note_index_c0,x sec ror tt.cur_note_index_c0,x
+        bmi _afterAudioUpdate
+    else  
+        jmp _afterAudioUpdate
+    end
+@_instrument
+        jsr tt_CalcInsIndex
+        lda tt_InsCtrlTable-1,y sta AUDC0,x
+        sta AUDC0s,x -- EXTRA for vumeter rendering
+        lda tt.envelope_index_c0,x cmp tt_InsReleaseIndexes-1,y bne _noEndOfSustain lda tt_InsSustainIndexes-1,y @_noEndOfSustain
+        tay
+        lda tt_InsFreqVolTable,y beq _endOfEnvelope iny @_endOfEnvelope
+        sty tt.envelope_index_c0,x
+        sta AUDV0,x
+        sta AUDV0s,x -- EXTRA for vumeter rendering
+        lsr lsr lsr lsr clc adc tt.cur_ins_c0,x sec sbc #8
+        sta AUDF0,x
+        sta AUDF0s,x -- EXTRA for vumeter rendering
+@_afterAudioUpdate
+        dex
+        bpl _updateLoop
+end
+
+local function zic_init()
+    if zic.c0init ~= 0 then lda#zic.c0init sta tt.cur_pat_index_c0 end
+    if zic.c1init ~= 0 then lda#zic.c1init sta tt.cur_pat_index_c1 end
+end
+
+
+----------------------------------------------------------------------
+-- equalizer anim
+----------------------------------------------------------------------
+
+-- convert to freq: http://atariage.com/forums/topic/257526-musicsound-programming-question-atari-2600/
+-- maps AUDCi to 0-7 3 bits (<<5) value for wave length of: 1, 2, 6, 15, 31, 93, 465, 511
+@@wavlen samepage
+dc.b 0x00,0x60,0xC0,0xC0,0x20,0x20,0x80,0x80,
+     0xF0,0x80,0x80,0x00,0x40,0x40,0xA0,0xA0
+end
+local wavelen_map = { 1, 2, 6, 15, 31, 93, 465, 511 }
+local freq_ranges = { 30, 60, 120, 240, 480, 960, 1920, 9999999 }
+local t = {}
+for i=0,255 do
+    local wavelen = wavelen_map[(i>>5)+1]
+    local note = (i&31)+1
+    local freq = 3546894 / 114 / wavelen / note
+    for x=1,9 do
+        if freq <= freq_ranges[x] then
+            t[#t+1] = x-1
+            break
+        end
+    end
+end
+section{'regfreq', align=256} byte(t)
+@@vm_pf2 samepage
+dc.b 0x00,0x80,0xC0,0xE0,0xF0,0xF8,0xFC,0xFE,
+     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF
+end
+@@vm_pf1 samepage
+dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+     0x00,0x01,0x03,0x07,0x0F,0x1F,0x3F,0x7F
+end
+@@vm_col samepage
+dc.b 0x3C,0x7C,0x9C,0xDC,0x2C,0x4C,0x6C,0xAC
+end
+local vumeter_tick = function()
+    lda #0 ldy #15 @_vudec ldx vubars,y dex bmi _vudecskip stx vubars,y @_vudecskip dey bpl _vudec
+    lda AUDF0s ldy AUDC0s ora wavlen,y tax ldy regfreq,x
+    lda AUDV0s cmp vubars,y bmi _vuless0 sta vubars,y @_vuless0
+    lda AUDF1s ldy AUDC1s ora wavlen,y tax ldy regfreq,x
+    lda AUDV1s cmp vubars+8,y bmi _vuless1 sta vubars+8,y @_vuless1
+end
+local vumeter_draw = function()
+    lda #ctrlpf.PF_MIRRORED sta CTRLPF
+    ldy #7
+@_vudraw
+    samepage
+        lda #21 sta tmp
+@_vudraw1
+        sta WSYNC
+        lda vm_col,y sta COLUPF sleep(4)
+        ldx vubars,y
+        lda vm_pf1,x sta PF1
+        lda vm_pf2,x sta PF2
+        sleep(8)
+        ldx vubars+8,y
+        lda vm_pf2,x sta PF2
+        lda vm_pf1,x sta PF1
+        dec tmp bpl _vudraw1
+        sta WSYNC lda #0 sta PF2 sta PF1
+        sta WSYNC
+        dey bpl _vudraw
+    end
+    lda #0 sta CTRLPF
+    sta WSYNC sta WSYNC
+end
+
+local tick = function()
+    zic_tick()
+    vumeter_tick()
+end
+
+@@main
+    init()
+    zic_init()
+@_frame
+    overscan() vblank(tick) screen(vumeter_draw) jmp _frame
+
+; -- needed if last instruction is implied
+writebin(filename..'.bin')
+writesym(filename..'.sym')
+print(stats)
