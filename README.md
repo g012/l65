@@ -125,7 +125,8 @@ A simple parsing of number literals in the form of `0b11011` converts this base-
 #### getopt(optstring, ...)
 
 Taken from [Posix Get Opt](http://lua-users.org/wiki/PosixGetOpt).
-Parse args in `...` using optstring, the same way as `getopt` from Posix.
+Parse args in `...` using `optstring`, the same way as `getopt` from Posix.
+
 Usage:
 
 ```lua

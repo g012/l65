@@ -6,7 +6,7 @@ local AUDC1s, AUDF0s, AUDF1s, AUDV0s, AUDV1s = AUDC0s+1, AUDC0s+2, AUDC0s+3, AUD
 local vubars = 0xA0
 local tmp = 0xB0
 
-local zic_filename = 'Ishtar.ttt'
+local zic_filename = ... or 'Ishtar.ttt'
 local zic = ttt(zic_filename)
 print(string.format('Using file %s (ttt version %d)\n  Name:   %s\n  Author: %s\n%s', zic_filename, zic.version, zic.name, zic.author, zic.comment))
 
