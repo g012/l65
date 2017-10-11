@@ -4,7 +4,7 @@ mappers['2K']()
 local AUDC0s = 0x90
 local AUDC1s, AUDF0s, AUDF1s, AUDV0s, AUDV1s = AUDC0s+1, AUDC0s+2, AUDC0s+3, AUDC0s+4, AUDC0s+5
 local vubars = 0xA0
-local tmp = 0xF0
+local tmp = 0xB0
 
 local zic_filename = 'Ishtar.ttt'
 local zic = ttt(zic_filename)
@@ -224,6 +224,97 @@ local function zic_init()
     if zic.c1init ~= 0 then lda#zic.c1init sta tt.cur_pat_index_c1 end
 end
 
+----------------------------------------------------------------------
+-- display song name and author
+----------------------------------------------------------------------
+
+section{ "font", align=256 } dc.b
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,-- <SPC>
+    0x18,0x3c,0x66,0x7e,0x66,0x66,0x66,0x00,-- A
+    0x7c,0x66,0x66,0x7c,0x66,0x66,0x7c,0x00,-- B
+    0x3c,0x66,0x60,0x60,0x60,0x66,0x3c,0x00,-- C
+    0x78,0x6c,0x66,0x66,0x66,0x6c,0x78,0x00,-- D
+    0x7e,0x60,0x60,0x78,0x60,0x60,0x7e,0x00,-- E
+    0x7e,0x60,0x60,0x78,0x60,0x60,0x60,0x00,-- F
+    0x3c,0x66,0x60,0x6e,0x66,0x66,0x3c,0x00,-- G
+    0x66,0x66,0x66,0x7e,0x66,0x66,0x66,0x00,-- H
+    0x3c,0x18,0x18,0x18,0x18,0x18,0x3c,0x00,-- I
+    0x1e,0x0c,0x0c,0x0c,0x0c,0x6c,0x38,0x00,-- J
+    0x66,0x6c,0x78,0x70,0x78,0x6c,0x66,0x00,-- K
+    0x60,0x60,0x60,0x60,0x60,0x60,0x7e,0x00,-- L
+    0x63,0x77,0x7f,0x6b,0x63,0x63,0x63,0x00,-- M
+    0x66,0x76,0x7e,0x7e,0x6e,0x66,0x66,0x00,-- N
+    0x3c,0x66,0x66,0x66,0x66,0x66,0x3c,0x00,-- O
+    0x7c,0x66,0x66,0x7c,0x60,0x60,0x60,0x00,-- P
+    0x3c,0x66,0x66,0x66,0x66,0x3c,0x0e,0x00,-- Q
+    0x7c,0x66,0x66,0x7c,0x78,0x6c,0x66,0x00,-- R
+    0x3c,0x66,0x60,0x3c,0x06,0x66,0x3c,0x00,-- S
+    0x7e,0x18,0x18,0x18,0x18,0x18,0x18,0x00,-- T
+    0x66,0x66,0x66,0x66,0x66,0x66,0x3c,0x00,-- U
+    0x66,0x66,0x66,0x66,0x66,0x3c,0x18,0x00,-- V
+    0x63,0x63,0x63,0x6b,0x7f,0x77,0x63,0x00,-- W
+    0x66,0x66,0x3c,0x18,0x3c,0x66,0x66,0x00,-- X
+    0x66,0x66,0x66,0x3c,0x18,0x18,0x18,0x00,-- Y
+    0x7e,0x06,0x0c,0x18,0x30,0x60,0x7e,0x00 -- Z
+
+charset(" abcdefghijklmnopqrstuvwxyz", \x(x*8))
+local normtxt = function(txt)
+    txt = txt:lower()
+    local out = {}
+    for i=1,#txt do
+        local c = string.byte(txt:sub(i,i))
+        if c < string.byte('a') or c > string.byte('z') then c = string.byte(' ') end
+        table.insert(out, string.char(c))
+    end
+    local ex = 12 - #out
+    for i=1,ex do
+        if i&1 ~= 0 then table.insert(out, 1, ' ')
+        else table.insert(out, ' ')
+        end
+    end
+    return table.concat(out)
+end
+@@song_name byte(normtxt(zic.name))
+@@song_author byte(normtxt(zic.author))
+
+local print_txt = tmp+1 -- text pointer, can cross
+local print_line_count=tmp -- number of lines to print
+local print_ptr = tmp+3 -- array of pointers to the characters
+-- a = line count
+@@print12
+    sta print_line_count
+    lda#6 sta NUSIZ0 sta NUSIZ1
+    -- set MSB of font character addresses
+    lda#font>>8 ldx#23 @_loadfont sta print_ptr,x dex dex bpl _loadfont
+    -- position sprites
+    samepage
+        sta WSYNC
+        ldx#6 @_delay dex bne _delay
+        sta RESP0 nop sta RESP1 lda#0x70 sta HMP0 lda#0x60 sta HMP1 sta WSYNC sta HMOVE
+    end
+    @_loop
+        -- load text line
+        ldx#0 ldy#0 @_loadline lda (print_txt),y sta print_ptr,x inx inx iny cpy#12 bne _loadline
+        lda#0x80 sta HMP0 sta HMP1
+        ldy#0 samepage @_printline
+            sta WSYNC sta HMOVE
+            -- first scanline
+            lda (print_ptr+2),y sta GRP0 lda (print_ptr+6),y sta GRP1
+            lda (print_ptr+22),y tax sleep(6)
+            lda (print_ptr+10),y sta GRP0 lda (print_ptr+14),y sta GRP1 lda (print_ptr+18),y sta GRP0 stx GRP1
+            sta HMCLR sleep(8) sta HMOVE
+            -- second scanline
+            lda (print_ptr),y sta GRP0 lda (print_ptr+4),y sta GRP1
+            lda (print_ptr+20),y tax lda#0x80 sta HMP0 sta HMP1 nop
+            lda (print_ptr+8),y sta GRP0 lda (print_ptr+12),y sta GRP1 lda (print_ptr+16),y sta GRP0 stx GRP1
+            iny cpy#8 bne _printline
+        end
+        dec print_line_count beq _end
+        lda print_txt clc adc#12 sta print_txt lda print_txt+1 adc#0 sta print_txt+1
+    jmp _loop
+@_end
+    lda#0 sta GRP0 sta GRP1
+    rts
 
 ----------------------------------------------------------------------
 -- equalizer anim
@@ -264,16 +355,16 @@ end
 local vumeter_tick = function()
     lda #0 ldy #15 @_vudec ldx vubars,y dex bmi _vudecskip stx vubars,y @_vudecskip dey bpl _vudec
     lda AUDF0s ldy AUDC0s ora wavlen,y tax ldy regfreq,x
-    lda AUDV0s cmp vubars,y bmi _vuless0 sta vubars,y @_vuless0
+    lda AUDV0s cmp vubars,y bcc _vuless0 sta vubars,y @_vuless0
     lda AUDF1s ldy AUDC1s ora wavlen,y tax ldy regfreq,x
-    lda AUDV1s cmp vubars+8,y bmi _vuless1 sta vubars+8,y @_vuless1
+    lda AUDV1s cmp vubars+8,y bcc _vuless1 sta vubars+8,y @_vuless1
 end
 local vumeter_draw = function()
     lda #ctrlpf.PF_MIRRORED sta CTRLPF
     ldy #7
 @_vudraw
     samepage
-        lda #21 sta tmp
+        lda #16 sta tmp
 @_vudraw1
         sta WSYNC
         lda vm_col,y sta COLUPF sleep(4)
@@ -295,14 +386,26 @@ end
 
 local tick = function()
     zic_tick()
+    -- clamp to valid TIA range
+    lda AUDC0s ;and #0x0f sta AUDC0s lda AUDC1s ;and #0x0f sta AUDC1s
+    lda AUDF0s ;and #0x1f sta AUDF0s lda AUDF1s ;and #0x1f sta AUDF1s
+    lda AUDV0s ;and #0x0f sta AUDV0s lda AUDV1s ;and #0x0f sta AUDV1s
     vumeter_tick()
+end
+
+local kernel = function()
+    lda#0x8a sta COLUP0 sta COLUP1
+    setptr(song_author,print_txt) lda#1 jsr print12
+    vumeter_draw()
+    lda#0xaa sta COLUP0 sta COLUP1
+    setptr(song_name,print_txt) lda#1 jsr print12
 end
 
 @@main
     init()
     zic_init()
 @_frame
-    overscan() vblank(tick) screen(vumeter_draw) jmp _frame
+    overscan() vblank(tick) screen(kernel) jmp _frame
 
 ; -- needed if last instruction is implied
 writebin(filename..'.bin')
