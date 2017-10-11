@@ -325,6 +325,7 @@ local function LexLua(src)
                                 foundEnd = false
                             end
                         else
+                            --[[
                             if peek() == '[' then
                                 -- is there an embedded long string?
                                 local embedded = true
@@ -342,6 +343,7 @@ local function LexLua(src)
                                     end
                                 end
                             end
+                            ]]
                             foundEnd = false
                         end
                         --
