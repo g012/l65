@@ -13,6 +13,8 @@ Table of Contents
      * [Lua Extensions](#lua-extensions)
         * [Lambda Functions](#lambda-functions)
         * [Binary Numbers](#binary-numbers)
+     * [Globals](#globals)
+        * [getopt(optstring, ...)](#getoptoptstring-)
      * [Instruction List](#instruction-list)
         * [Regular Opcodes](#regular-opcodes)
         * [Undocumented Opcodes](#undocumented-opcodes)
@@ -48,7 +50,7 @@ Table of Contents
         * [writesym(filename)](#writesymfilename)
      * [Parser Functions](#parser-functions)
         * [Pragmas](#pragmas)
-           * [syntax6502 oo|off](#syntax6502-oooff)
+           * [syntax6502 on|off](#syntax6502-onoff)
            * [encapsulate on|off](#encapsulate-onoff)
            * [encapsulate opcode funcname](#encapsulate-opcode-funcname)
            * [add_opcode opcode addressing](#add_opcode-opcode-addressing)
@@ -73,7 +75,6 @@ Table of Contents
   * [Credits](#credits)
   * [License](#license)
 
-
 ## Concept - How It Works
 
 l65 hooks into Lua `require` and related functionalities to add a parsing pass before Lua compilation. This pass transforms 6502 statements into regular Lua function calls. It applies only to files with extension '.l65', not '.lua'.
@@ -85,12 +86,14 @@ Spatial arrangement follows [nimble65](https://bitbucket.org/kylearan/nimble65) 
 ## Command Line Usage
 
 ```
-Usage: l65 [options] file
+Usage: l65 [options] file [args]
 Options:
   -d <file>        Dump the Lua code after l65 parsing into file
   -h               Display this information
   -v               Display the release version
 ```
+
+`args` are passed as arguments to the l65 script in `file`. The global function [getopt](#getoptoptstring-) is available to parse them.
 
 ## Samples - Getting Started
 
@@ -116,6 +119,31 @@ Since anonymous functions are core to l65, the extension syntax such as `\a,b(a+
 #### Binary Numbers
 
 A simple parsing of number literals in the form of `0b11011` converts this base-2 / binary number into a decimal number after the l65 pass. There is no support for them in other places though - no format type for `string.format` or anything else.
+
+### Globals
+
+#### getopt(optstring, ...)
+
+Taken from [Posix Get Opt](http://lua-users.org/wiki/PosixGetOpt).
+Parse args in `...` using optstring, the same way as `getopt` from Posix.
+Usage:
+
+```lua
+--
+-- opt is either the option character, "?", or ":".
+--
+-- If opt is the option character, arg is either a string or false--if optstring
+-- did not specify a required argument.
+--
+-- If opt is either "?" or ":", then arg is the unknown option or the option
+-- lacking the required argument. Like the standard says, there's really only
+-- one scenario for ":" to ever be returned. And per the standard, unless
+-- optstring begins with a colon, "?" is returned instead.
+--
+for opt, arg in getopt(":a:b", ...) do
+        print("opt:", opt, "arg:", arg)
+end
+```
 
 ### Instruction List
 
