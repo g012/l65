@@ -184,7 +184,7 @@ local function zic_tick()
         cmp #tt.FREQ_MASK+1 bcs _instrument
         ldy tt.envelope_index_c0,x
         lda tt_PercCtrlVolTable-1,y beq _endOfPercussion inc tt.envelope_index_c0,x @_endOfPercussion
-        sta AUDV0,x lsr lsr lsr lsr sta AUDC0,x
+        sta AUDV0,x sta AUDV0s,x lsr lsr lsr lsr sta AUDC0,x sta AUDC0s,x
         lda tt_PercFreqTable-1,y
         sta AUDF0,x
         sta AUDF0s,x -- EXTRA for vumeter rendering
