@@ -308,6 +308,8 @@ Check if `v` is within long range, call `error` if it is not, or convert negativ
 
 `strip`: defaults to `true`. Set to `false` to disable dead stripping of relocatable sections.
 
+`strip_empty`: defaults to `false`. Set to `true` to enable stripping of empty sections; otherwise, they are positioned at the start of the container location.
+
 `pcall`: defaults to system's `pcall`. Set to an empty function returning `false` to disable early evaluation of expressions during link phase for computing the size of each section. This will force all opcodes without an explicit size to default to the largest possible size...
 
 `pcall_za`: ...unless this field is set to system's `pcall`. Defaults to module's `pcall`. This field is used only by the `za*` (`zab`, `zax`, `zay`) virtual addressing modes, to discriminate between zeropage and absolute addressing.
@@ -373,7 +375,7 @@ If `opt.org` is set, the section is fixed and must start at this address in ROM;
 
 `opt.align` requests the section starts on an address multiple of `opt.align`. If `opt.offset` is specified, then it is the reference point from the start of the section which must be aligned, instead of the start of the section itself.
 
-If `opt.strong` resolves to `true`, the section will not be stripped even if it has no reference and stripping is active.
+If `opt.strong` resolves to `true`, the section will not be stripped even if it has no reference and stripping is active. If `opt.weak` resolves to `true`, the section is stripped if its size is 0, and the references to it will fail to resolve.
 
 When using the `opt` version, `opt` is first set as the actual section table, so custom properties are preserved.
 

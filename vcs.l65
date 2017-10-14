@@ -193,6 +193,7 @@ farcall = function(dst)
     local loc_src = location_current
     local create_stubs = function()
         if type(dst) == 'function' then dst = dst() end
+        if type(dst) == 'table' and dst.type == 'section' then dst = dst.instructions[1] end -- put labels only
         local stub,loc_dst = far_stubs[dst],dst.section.location
         if not (stub and stub[loc_src]) then
             location(loc_src)

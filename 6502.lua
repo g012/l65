@@ -9,6 +9,7 @@ local stats={} M.stats=stats setmetatable(stats, stats)
 local before_link={} M.before_link=before_link
 
 M.strip = true  -- set to false to disable dead stripping of relocatable sections
+M.strip_empty = false -- set to true to strip empty sections: their label will then not resolve
 M.pcall = pcall -- set to empty function returning false to disable eval during compute_size()
 -- set to pcall directly if you want to keep ldazab/x/y eval during compute_size() even if
 -- disabled for other parts (required to distinguish automatically between zp/abs addressing)
@@ -124,7 +125,7 @@ M.link = function()
     local position_section = function(section, constrain)
         local location = section.location
         local chunks,rorg = location.chunks,location.rorg
-        table.sort(chunks, function(a,b) return a.size==b.size and a.id<b.id or a.size<b.size end)
+        table.sort(chunks, function(a,b) if a.size==b.size then return a.id<b.id end return a.size<b.size end)
         for chunk_ix,chunk in ipairs(chunks) do if chunk.size >= section.size then
             local waste,cross,lsb,position = math.maxinteger,math.maxinteger,math.maxinteger
             local usage_lowest = function(start, finish)
@@ -190,8 +191,12 @@ M.link = function()
             location.cycles = location.cycles + section.cycles
             location.used = location.used + section.size
             if section.size == 0 then
-                sections[ix]=nil
-                if not section.org then table.insert(symbols_to_remove, section.label) end
+                if M.strip_empty or section.weak then
+                    sections[ix]=nil
+                    if not section.org then table.insert(symbols_to_remove, section.label) end
+                else
+                    section.org = location.start
+                end
             elseif not section.org then
                 if M.strip and not section.refcount and not section.strong then 
                     sections[ix]=nil
@@ -228,7 +233,7 @@ M.link = function()
         end end
     end
 
-    table.sort(related_sections, function(a,b) return a.size==b.size and a.id<b.id or a.size>b.size end)
+    table.sort(related_sections, function(a,b) if a.size==b.size then return a.id<b.id end return a.size>b.size end)
     for _,section in ipairs(related_sections) do if not section.org then
         local related,ins = {},table.insert
         local function collect(section_parent, offset)
@@ -268,7 +273,7 @@ M.link = function()
 
     for _,location in ipairs(locations) do
         local position_independent_sections = location.position_independent_sections
-        table.sort(position_independent_sections, function(a,b) return a.size==b.size and a.label>b.label or a.size>b.size end)
+        table.sort(position_independent_sections, function(a,b) if a.size==b.size then return a.label>b.label end return a.size>b.size end)
         for _,section in ipairs(position_independent_sections) do
             if not position_section(section) then
                 error("unable to find space for section " .. section.label)
@@ -369,7 +374,7 @@ M.writesym = function(filename)
     local ins,fmt,rep = table.insert,string.format,string.rep
     local s,sym_rev = {'--- Symbol List'},{}
     for k,v in pairs(symbols) do if type(v) == 'number' then ins(sym_rev,k) end end
-    table.sort(sym_rev, function(a,b) local x,y=symbols[a],symbols[b] return x==y and a<b or x<y end)
+    table.sort(sym_rev, function(a,b) local x,y=symbols[a],symbols[b] if x==y then return a<b end return x<y end)
     for _,v in ipairs(sym_rev) do
         local k=symbols[v]
         local u=v:match'.*()_' if u then -- change _ to . in local labels
@@ -437,7 +442,7 @@ end
 M.section = function(t)
     local section = {}
     local name = t or 'S'..id()
-    if (type(name) ~= 'string') then
+    if type(name) ~= 'string' then
         assert(type(t) == 'table', "invalid arguments for section")
         if t.type == 'section' then
             for _,v in ipairs(sections) do if v == t then
