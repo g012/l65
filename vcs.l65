@@ -167,7 +167,7 @@ PAL = {
 }
 TV = PAL
 
-init = function() cld ldx#0 txa local l=label() dex tsx pha bne l end
+init = function() cld ldx#0 txa local l=label() dex txs pha bne l end
 wait = function() local l=label() lda INTIM bne l end
 overscan_begin = function() sta WSYNC lda#2 sta VBLANK lda#TV.TIM_OVERSCAN sta TIM64T end
 overscan_end = wait
