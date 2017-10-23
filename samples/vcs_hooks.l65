@@ -25,7 +25,7 @@ local wait = function() local l=label() lda INTIM bne l end
 
 @@start
     -- clear zeropage
-    cld ldx#0 txa @_clear dex tsx pha bne _clear
+    cld ldx#0 txa @_clear dex txs pha bne _clear
 @main
     -- overscan
     sta WSYNC lda#2 sta VBLANK lda#TIM_OVERSCAN sta TIM64T wait()
