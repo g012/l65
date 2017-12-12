@@ -1,0 +1,582 @@
+require'vcs'
+
+-- change this if for some reason it fails to link
+-- space for 10 song pointers
+local FREESPACE = 3759-10*2
+
+#pragma encapsulate far farcall
+#pragma alias and dna
+
+mappers.F4()
+rom0.name = "core"
+
+do
+    local ram = {
+        { tt_timer=1 },
+        { tt_cur_pat_index=2 },
+        { tt_cur_note_index=2 },
+        { tt_envelope_index=2 },
+        { tt_cur_ins=2 },
+        { tt_ptr = \(tmp) },
+        { tt_song = \(tmp+2) },
+        { tt_ptrtab = \(tmp+4) },
+
+        { tt_song_ix=1 },           -- index into song_table
+        { tt_song_ix_next=1 },      -- queued song to play after fade out
+        { song_delay=1 },           -- fade out timer
+        { cur_song_ix=1 },          -- current song index, cached
+        { input_prev=1 },           -- previous SWCHA 4 MSB (player 0) value >> 1 | INPT4 MSB (fire player 0)
+
+        { AUDC0s=1 }, { AUDC1s=1 }, { AUDF0s=1 }, { AUDF1s=1 }, { AUDV0s=1 }, { AUDV1s=1 },
+        { vubars=16 },
+
+        { tmp=30 },
+
+        { print_txt = \(tmp+1) },         -- text pointer, can cross
+        { print_line_count = \(tmp) },    -- number of lines to print
+        { print_ptr = \(tmp+3) },         -- array of pointers to the characters
+    }
+
+    local ad = 0x80
+    for k,v in ipairs(ram) do
+        local f,t = pairs(v)
+        k,v = f(t)
+        if type(v) ~= 'function' then
+            _ENV[k] = ad
+            ad = ad + v
+        end
+    end
+    assert(ad <= 0x100)
+    for k,v in ipairs(ram) do
+        local f,t = pairs(v)
+        k,v = f(t)
+        if type(v) == 'function' then _ENV[k] = v() end
+        symbols[k] = _ENV[k]
+    end
+end
+
+-- 30 bytes fixed per song
+TT_INSCTRLTABLE         = 0
+TT_INSADINDEXES         = 2
+TT_INSSUSTAININDEXES    = 4
+TT_INSRELEASEINDEXES    = 6
+TT_INSFREQVOLTABLE      = 8
+TT_PERCINDEXES          = 10
+TT_PERCFREQTABLE        = 12
+TT_PERCCTRLVOLTABLE     = 14
+TT_PATTERNSPEEDS        = 16
+TT_SEQUENCETABLE        = 18
+TT_PATTERNPTRLO         = 20
+TT_PATTERNPTRHI         = 22
+TT_PTR_SZ               = 24
+TT_GLOBAL_SPEED         = 0+TT_PTR_SZ
+TT_SPEED                = 1+TT_PTR_SZ
+TT_ODD_SPEED            = 2+TT_PTR_SZ
+TT_USE_FUNKTEMPO        = 3+TT_PTR_SZ
+TT_C0INIT               = 4+TT_PTR_SZ
+TT_C1INIT               = 5+TT_PTR_SZ
+
+TT_FREQ_MASK    = 0b00011111
+TT_INS_HOLD     = 8
+TT_INS_PAUSE    = 16
+TT_FIRST_PERC   = 17
+
+-- far calls to players to generate the stubs - the section will be stripped as it's unreferenced
+location(rom0)
+local sec_farstubgen = section("farstubsgen")
+
+-- full ttt player with all possible options active, one for each rom bank but 0
+for i=1,7 do
+    local loc = location(_ENV['rom'..i])
+    loc.songs_lo,loc.songs_hi = section("songs_lo"..i), section("songs_hi"..i)
+    local tt_fetchCurrentNote = section("tt_fetchCurrentNote"..i)
+    @_constructPatPtr
+            ldy tt_cur_pat_index,x lda (tt_ptrtab+TT_SEQUENCETABLE),y
+            bpl _noPatternGoto
+            dna #0b01111111 sta tt_cur_pat_index,x bpl _constructPatPtr
+    @_noPatternGoto
+            tay lda (tt_ptrtab+TT_PATTERNPTRLO),y sta tt_ptr lda (tt_ptrtab+TT_PATTERNPTRHI),y sta tt_ptr+1
+            clv
+            lda tt_cur_note_index,x bpl _notPrefetched
+            dna #0b01111111 sta tt_cur_note_index,x
+            bit "bit6Set"..i
+    @_notPrefetched
+            tay
+            lda (tt_ptr),y bne _noEndOfPattern
+            sta tt_cur_note_index,x
+            inc tt_cur_pat_index,x
+            bne _constructPatPtr
+    @_noEndOfPattern
+            rts
+
+    local tt_CalcInsIndex = section("tt_CalcInsIndex"..i)
+            lsr lsr lsr lsr lsr
+            tay
+    label("bit6Set"..i)
+            rts
+
+    loc.tt_tick = section("tt_tick"..i).instructions[1] -- get label table, used as index for far stubs
+            lda loc.songs_lo,y sta tt_song lda loc.songs_hi,y sta tt_song+1
+            bit tt_timer bpl _nosonginit
+            lda #0 sta tt_timer
+            ldy #TT_C0INIT lda (tt_song),y sta tt_cur_pat_index iny lda (tt_song),y sta tt_cur_pat_index+1
+    @_nosonginit
+            ldy #TT_PTR_SZ-1 @_setptrs lda (tt_song),y sta tt_ptrtab,y dey bpl _setptrs
+            dec tt_timer bpl _noNewNote
+            ldx #1
+    @_advanceLoop
+            jsr tt_fetchCurrentNote
+            cmp #TT_INS_PAUSE
+            beq _pause
+            bcs _newNote
+            adc tt_cur_ins,x sec sbc #8 sta tt_cur_ins,x
+            bcs _finishedNewNote
+    @_pause
+            lda tt_cur_ins,x jsr tt_CalcInsIndex
+            lda (tt_ptrtab+TT_INSRELEASEINDEXES),y
+            clc adc #1 bcc _storeADIndex
+    @_newNote
+            sta tt_cur_ins,x
+            cmp #TT_FREQ_MASK+1 bcs _startInstrument
+            tay
+            lda (tt_ptrtab+TT_PERCINDEXES),y
+            bne _storeADIndex
+    @_startInstrument
+            bvs _finishedNewNote
+            jsr tt_CalcInsIndex
+            lda (tt_ptrtab+TT_INSADINDEXES),y
+    @_storeADIndex
+            sta tt_envelope_index,x
+    @_finishedNewNote
+            inc tt_cur_note_index,x
+    @_sequencerNextChannel
+            dex
+            bpl _advanceLoop
+            ldy #TT_GLOBAL_SPEED lda (tt_song),y beq _localspeed
+            iny lax (tt_song),y
+            ldy #TT_USE_FUNKTEMPO lda (tt_song),y beq _globalnofunktempo
+            lda tt_cur_note_index lsr bcc _noOddFrame ldy #TT_ODD_SPEED lax (tt_song),y @_noOddFrame
+    @_globalnofunktempo
+            stx tt_timer
+            jmp _speeddone
+    @_localspeed
+            ldy tt_cur_pat_index lda (tt_ptrtab+TT_SEQUENCETABLE),y tay
+            sty tt_ptr ldy #TT_USE_FUNKTEMPO lda (tt_song),y ldy tt_ptr cmp #0 beq _localnofunktempo
+            lda tt_cur_note_index lsr
+            lda (tt_ptrtab+TT_PATTERNSPEEDS),y
+            bcc _evenFrame
+            dna #0x0f
+            bcs _storeFunkTempo
+    @_evenFrame
+            lsr lsr lsr lsr
+    @_storeFunkTempo
+            sta tt_timer
+            jmp _speeddone
+    @_localnofunktempo
+            lda (tt_ptrtab+TT_PATTERNSPEEDS),y sta tt_timer
+    @_speeddone
+    @_noNewNote
+            ldx #1
+    @_updateLoop
+            lda tt_cur_ins,x
+            beq _afterAudioUpdate
+            cmp #TT_FREQ_MASK+1 bcs _instrument
+            ldy tt_envelope_index,x
+            lda (tt_ptrtab+TT_PERCCTRLVOLTABLE),y beq _endOfPercussion inc tt_envelope_index,x @_endOfPercussion
+            sta AUDV0s,x lsr lsr lsr lsr sta AUDC0s,x
+            lda (tt_ptrtab+TT_PERCFREQTABLE),y
+            sta AUDF0s,x
+            bpl _afterAudioUpdate
+            jsr tt_fetchCurrentNote
+            cmp #TT_FREQ_MASK+1
+            bcc _afterAudioUpdate
+            sta tt_cur_ins,x
+            jsr tt_CalcInsIndex
+            lda (tt_ptrtab+TT_INSSUSTAININDEXES),y sta tt_envelope_index,x
+            asl tt_cur_note_index,x sec ror tt_cur_note_index,x
+            bmi _afterAudioUpdate
+    @_instrument
+            jsr tt_CalcInsIndex
+            lda (tt_ptrtab+TT_INSCTRLTABLE),y sta AUDC0s,x
+            lda tt_envelope_index,x cmp (tt_ptrtab+TT_INSRELEASEINDEXES),y bne _noEndOfSustain lda (tt_ptrtab+TT_INSSUSTAININDEXES),y @_noEndOfSustain
+            tay
+            lda (tt_ptrtab+TT_INSFREQVOLTABLE),y beq _endOfEnvelope iny @_endOfEnvelope
+            sty tt_envelope_index,x
+            sta AUDV0s,x
+            lsr lsr lsr lsr clc adc tt_cur_ins,x sec sbc #8
+            sta AUDF0s,x
+    @_afterAudioUpdate
+            dex
+            bpl _updateLoop
+            rts
+
+    section(sec_farstubgen) far loc.tt_tick
+
+end
+
+-- set free size in each location
+location(rom0)
+local songs_meta_lo,songs_meta_hi = section("songs_meta_lo"),section("songs_meta_hi")
+local locsz = {}
+for lix,loc in ipairs(locations) do
+    if loc ~= rom0 then 
+        location(rom0)
+        local secmeta = section("songs"..lix.."_meta")
+        section(songs_meta_lo) byte_lo(secmeta)
+        section(songs_meta_hi) byte_hi(secmeta)
+        table.insert(locsz, { lix=lix, secmeta=secmeta, space=FREESPACE })
+    end
+end
+
+-- load all songs
+local songs = {}
+do
+    local lfs = require'lfs'
+    local dir = ... or lfs.currentdir()
+    for file in lfs.dir(dir) do
+        if file:sub(-4) == '.ttt' then
+            local song = ttt(dir .. '/' .. file)
+            table.insert(songs, song)
+            local size = 0
+            for _,v in pairs(song) do
+                if type(v) == 'table' then
+                    if type(v[1]) == 'table' then
+                        for _,vv in ipairs(v) do size = size + #vv end
+                    else
+                        size = size + #v
+                    end
+                end
+            end
+            size = size + 2*#song.patterns -- pattern pointers
+            song.size = size + 30
+            song.filename = file:sub(1,-5)
+        end
+    end
+end
+
+-- place all songs
+charset(" abcdefghijklmnopqrstuvwxyz", \x(x*8))
+local meta = function(txt)
+    txt = txt:lower()
+    local out = {}
+    for i=1,#txt do
+        local c = string.byte(txt:sub(i,i))
+        if c < string.byte('a') or c > string.byte('z') then c = string.byte(' ') end
+        table.insert(out, string.char(c))
+    end
+    for i = 1, 12-#out do
+        if i&1 ~= 0 then table.insert(out, 1, ' ')
+        else table.insert(out, ' ')
+        end
+    end
+    return table.concat(out):sub(1,12)
+end
+local song_ids = {} -- 4 LSB: song index, 4 MSB: bank index
+table.sort(songs, \a,b(a.size > b.size))
+for _,song in ipairs(songs) do
+    table.sort(locsz, function(a,b)
+        if a.space == b.space then return locations[a.lix].start < locations[b.lix].start end
+        return a.space < b.space
+    end)
+    for _,locinfo in ipairs(locsz) do
+        if locinfo.space >= song.size then
+            locinfo.space = locinfo.space - song.size
+            local loc = location(locations[locinfo.lix])
+            local n = song.filename
+            song_ids[n] = locinfo.lix-2 << 4 | #loc.songs_lo.instructions-1
+            local s = function(str) return section(str..n) end
+            s("tt_InsCtrlTable") byte(song.insctrltable)
+            s("tt_InsADIndexes") byte(song.insadindexes)
+            s("tt_InsSustainIndexes") byte(song.inssustainindexes)
+            s("tt_InsReleaseIndexes") byte(song.insreleaseindexes)
+            s("tt_InsFreqVolTable") byte(song.insfreqvoltable)
+            s("tt_PercIndexes") byte(song.percindexes)
+            s("tt_PercFreqTable") byte(song.percfreqtable)
+            s("tt_PercCtrlVolTable") byte(song.percctrlvoltable)
+            local patterns = {}
+            for i,pattern in ipairs(song.patterns) do
+                table.insert(patterns, section("pattern"..n..i)) byte(pattern)
+            end
+            s("tt_PatternSpeeds") byte(song.patternspeeds)
+            s("tt_PatternPtrLo") byte_lo(patterns)
+            s("tt_PatternPtrHi") byte_hi(patterns)
+            s("tt_SequenceTable") byte(song.sequence[1]) byte(song.sequence[2])
+            s("tt_song")
+                local function ptr(t, v) t=t..n v=v or 0 byte_lo(\(symbols[t]-v)) byte_hi(\(symbols[t]-v)) end
+                ptr("tt_InsCtrlTable", 1)
+                ptr("tt_InsADIndexes", 1) 
+                ptr("tt_InsSustainIndexes", 1) 
+                ptr("tt_InsReleaseIndexes", 1) 
+                ptr("tt_InsFreqVolTable") 
+                ptr("tt_PercIndexes", 17) 
+                ptr("tt_PercFreqTable", 1) 
+                ptr("tt_PercCtrlVolTable", 1) 
+                ptr("tt_PatternSpeeds") 
+                ptr("tt_SequenceTable") 
+                ptr("tt_PatternPtrLo") 
+                ptr("tt_PatternPtrHi") 
+                dc.b song.globalspeed and 1 or 0, song.speed-1, song.oddspeed-1, song.usefunktempo and 1 or 0
+                dc.b song.c0init, song.c1init
+            -- append song pointer to pointer table
+            section(loc.songs_lo) byte_lo("tt_song"..n)
+            section(loc.songs_hi) byte_hi("tt_song"..n)
+            -- rom0 data
+            section(locinfo.secmeta)
+                byte(meta(song.author))
+                byte(meta(song.name and #song.name>0 and song.name or song.filename))
+            break
+        end
+    end
+end
+
+----------------------------------------------------------------------
+-- songs data
+----------------------------------------------------------------------
+
+-- sort songs by alphabetic order
+local song_ixs = {}
+for k in pairs(song_ids) do song_ixs[#song_ixs+1] = k end
+table.sort(song_ixs)
+for k,v in ipairs(song_ixs) do song_ixs[k] = song_ids[v] end
+location(rom0)
+@@song_table byte(song_ixs)
+
+-- player pointers table
+local song_players = {}
+for i=1,7 do
+    table.insert(song_players, \(op_resolve(far_stubs[location(_ENV['rom'..i]).tt_tick][rom0])-1))
+end
+location(rom0)
+@@song_players_lo byte_lo(song_players)
+@@song_players_hi byte_hi(song_players)
+
+@@song_tick
+    lda cur_song_ix
+    tax lsr lsr lsr lsr tay
+    lda song_players_hi,y pha lda song_players_lo,y pha
+    txa dna #0xf tay
+    rts
+
+@@song_switch
+    ldy tt_song_ix_next sty tt_song_ix lda song_table,y sta cur_song_ix
+    lda #0x80 sta tt_timer -- request song reset from player
+    lda #0 ldx #8 @_resettt sta tt_timer,x dex bne _resettt
+    ldx #5 @_resetaud sta AUDC0s,x dex bpl _resetaud
+    rts
+
+local song_norm = function()
+    -- clamp to valid TIA range
+    lda AUDC0s dna #0x0f sta AUDC0s lda AUDC1s dna #0x0f sta AUDC1s
+    lda AUDF0s dna #0x1f sta AUDF0s lda AUDF1s dna #0x1f sta AUDF1s
+    lda AUDV0s dna #0x0f sta AUDV0s lda AUDV1s dna #0x0f sta AUDV1s
+end
+
+@volmul for x=0,255 do dc.b math.floor(15*(((x/16)/16)*((x%16)/15))) end
+
+local song_transition = function()
+    lda song_delay beq _transdone bpl _transapply
+    inc song_delay bne _noswitch
+    jsr song_switch jmp _transdone
+@_noswitch
+    lda song_delay eor #0xff sec adc #0
+@_transapply
+    asl asl asl dna #0xf0 ora AUDV0s tay ldx volmul,y stx AUDV0s
+    dna #0xf0 ora AUDV1s tay ldx volmul,y stx AUDV1s
+@_transdone
+    -- set result
+    ldx #5 @_setaud lda AUDC0s,x sta AUDC0,x dex bpl _setaud
+end
+
+----------------------------------------------------------------------
+-- display song name and author
+----------------------------------------------------------------------
+
+section{ "font", align=256 } dc.b
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,-- <SPC>
+    0x18,0x3c,0x66,0x7e,0x66,0x66,0x66,0x00,-- A
+    0x7c,0x66,0x66,0x7c,0x66,0x66,0x7c,0x00,-- B
+    0x3c,0x66,0x60,0x60,0x60,0x66,0x3c,0x00,-- C
+    0x78,0x6c,0x66,0x66,0x66,0x6c,0x78,0x00,-- D
+    0x7e,0x60,0x60,0x78,0x60,0x60,0x7e,0x00,-- E
+    0x7e,0x60,0x60,0x78,0x60,0x60,0x60,0x00,-- F
+    0x3c,0x66,0x60,0x6e,0x66,0x66,0x3c,0x00,-- G
+    0x66,0x66,0x66,0x7e,0x66,0x66,0x66,0x00,-- H
+    0x3c,0x18,0x18,0x18,0x18,0x18,0x3c,0x00,-- I
+    0x1e,0x0c,0x0c,0x0c,0x0c,0x6c,0x38,0x00,-- J
+    0x66,0x6c,0x78,0x70,0x78,0x6c,0x66,0x00,-- K
+    0x60,0x60,0x60,0x60,0x60,0x60,0x7e,0x00,-- L
+    0x63,0x77,0x7f,0x6b,0x63,0x63,0x63,0x00,-- M
+    0x66,0x76,0x7e,0x7e,0x6e,0x66,0x66,0x00,-- N
+    0x3c,0x66,0x66,0x66,0x66,0x66,0x3c,0x00,-- O
+    0x7c,0x66,0x66,0x7c,0x60,0x60,0x60,0x00,-- P
+    0x3c,0x66,0x66,0x66,0x66,0x3c,0x0e,0x00,-- Q
+    0x7c,0x66,0x66,0x7c,0x78,0x6c,0x66,0x00,-- R
+    0x3c,0x66,0x60,0x3c,0x06,0x66,0x3c,0x00,-- S
+    0x7e,0x18,0x18,0x18,0x18,0x18,0x18,0x00,-- T
+    0x66,0x66,0x66,0x66,0x66,0x66,0x3c,0x00,-- U
+    0x66,0x66,0x66,0x66,0x66,0x3c,0x18,0x00,-- V
+    0x63,0x63,0x63,0x6b,0x7f,0x77,0x63,0x00,-- W
+    0x66,0x66,0x3c,0x18,0x3c,0x66,0x66,0x00,-- X
+    0x66,0x66,0x66,0x3c,0x18,0x18,0x18,0x00,-- Y
+    0x7e,0x06,0x0c,0x18,0x30,0x60,0x7e,0x00 -- Z
+
+-- a = line count
+@@print12
+    sta print_line_count
+    lda#6 sta NUSIZ0 sta NUSIZ1
+    -- set MSB of font character addresses
+    lda#font>>8 ldx#23 @_loadfont sta print_ptr,x dex dex bpl _loadfont
+    -- position sprites
+    samepage
+        sta WSYNC
+        ldx#6 @_delay dex bne _delay
+        sta RESP0 nop sta RESP1 lda#0x70 sta HMP0 lda#0x60 sta HMP1 sta WSYNC sta HMOVE
+    end
+    @_loop
+        -- load text line
+        ldx#0 ldy#0 @_loadline lda (print_txt),y sta print_ptr,x inx inx iny cpy#12 bne _loadline
+        lda#0x80 sta HMP0 sta HMP1
+        ldy#0 samepage @_printline
+            sta WSYNC sta HMOVE
+            -- first scanline
+            lda (print_ptr+2),y sta GRP0 lda (print_ptr+6),y sta GRP1
+            lda (print_ptr+22),y tax sleep(6)
+            lda (print_ptr+10),y sta GRP0 lda (print_ptr+14),y sta GRP1 lda (print_ptr+18),y sta GRP0 stx GRP1
+            sta HMCLR sleep(8) sta HMOVE
+            -- second scanline
+            lda (print_ptr),y sta GRP0 lda (print_ptr+4),y sta GRP1
+            lda (print_ptr+20),y tax lda#0x80 sta HMP0 sta HMP1 nop
+            lda (print_ptr+8),y sta GRP0 lda (print_ptr+12),y sta GRP1 lda (print_ptr+16),y sta GRP0 stx GRP1
+            iny cpy#8 bne _printline
+        end
+        dec print_line_count beq _end
+        lda print_txt clc adc#12 sta print_txt lda print_txt+1 adc#0 sta print_txt+1
+    jmp _loop
+@_end
+    lda#0 sta GRP0 sta GRP1
+    rts
+
+----------------------------------------------------------------------
+-- equalizer anim
+----------------------------------------------------------------------
+
+-- convert to freq: http://atariage.com/forums/topic/257526-musicsound-programming-question-atari-2600/
+-- maps AUDCi to 0-7 3 bits (<<5) value for wave length of: 1, 2, 6, 15, 31, 93, 465, 511
+@@wavlen samepage
+dc.b 0x00,0x60,0xC0,0xC0,0x20,0x20,0x80,0x80,
+     0xF0,0x80,0x80,0x00,0x40,0x40,0xA0,0xA0
+end
+local wavelen_map = { 1, 2, 6, 15, 31, 93, 465, 511 }
+local freq_ranges = { 30, 60, 120, 240, 480, 960, 1920, 9999999 }
+local t = {}
+for i=0,255 do
+    local wavelen = wavelen_map[(i>>5)+1]
+    local note = (i&31)+1
+    local freq = 3546894 / 114 / wavelen / note
+    for x=1,9 do
+        if freq <= freq_ranges[x] then
+            t[#t+1] = x-1
+            break
+        end
+    end
+end
+section{'regfreq', align=256} byte(t)
+@@vm_pf2 samepage
+dc.b 0x00,0x80,0xC0,0xE0,0xF0,0xF8,0xFC,0xFE,
+     0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF
+end
+@@vm_pf1 samepage
+dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+     0x00,0x01,0x03,0x07,0x0F,0x1F,0x3F,0x7F
+end
+@@vm_col samepage
+dc.b 0x3C,0x7C,0x9C,0xDC,0x2C,0x4C,0x6C,0xAC
+end
+local vumeter_tick = function()
+    lda #0 ldy #15 @_vudec ldx vubars,y dex bmi _vudecskip stx vubars,y @_vudecskip dey bpl _vudec
+    lda AUDF0s ldy AUDC0s ora wavlen,y tax ldy regfreq,x
+    lda AUDV0s cmp vubars,y bcc _vuless0 sta vubars,y @_vuless0
+    lda AUDF1s ldy AUDC1s ora wavlen,y tax ldy regfreq,x
+    lda AUDV1s cmp vubars+8,y bcc _vuless1 sta vubars+8,y @_vuless1
+end
+local vumeter_draw = function()
+    lda #ctrlpf.PF_MIRRORED sta CTRLPF
+    ldy #7
+@_vudraw
+    samepage
+        lda #16 sta tmp
+@_vudraw1
+        sta WSYNC
+        lda vm_col,y sta COLUPF sleep(4)
+        ldx vubars,y
+        lda vm_pf1,x sta PF1
+        lda vm_pf2,x sta PF2
+        sleep(8)
+        ldx vubars+8,y
+        lda vm_pf2,x sta PF2
+        lda vm_pf1,x sta PF1
+        dec tmp bpl _vudraw1
+        sta WSYNC lda #0 sta PF2 sta PF1
+        sta WSYNC
+        dey bpl _vudraw
+    end
+    lda #0 sta CTRLPF
+    sta WSYNC sta WSYNC
+end
+
+@@song_count dc.b #songs
+
+local next_song = function()
+    inc tt_song_ix_next lda song_count cmp tt_song_ix_next bne _nextsongdone lda#0 sta tt_song_ix_next @_nextsongdone
+end
+
+local prev_song = function()
+    dec tt_song_ix_next bpl _prevsongdone lda song_count sta tt_song_ix_next dec tt_song_ix_next @_prevsongdone
+end
+
+local check_input = function()
+    local JOYSTICK_RIGHT= 0x80
+    local JOYSTICK_LEFT = 0x40
+    lda SWCHA cmp input_prev beq _inputend
+    sta input_prev
+    lda #JOYSTICK_RIGHT bit input_prev bne _noright next_song() jmp _inputdone @_noright
+    lda #JOYSTICK_LEFT  bit input_prev bne _inputdone prev_song()
+@_inputdone
+    lda #0xe0 sta song_delay
+@_inputend
+end
+
+local tick = function()
+    jsr song_tick
+    song_norm()
+    song_transition()
+    vumeter_tick()
+end
+
+@@mul24 for x=0,9 do byte(x*24) end
+
+local kernel = function()
+    lda#0x8a sta COLUP0 sta COLUP1
+    lda cur_song_ix tax lsr lsr lsr lsr tay
+    lda songs_meta_lo,y sta print_txt lda songs_meta_hi,y sta print_txt+1
+    txa dna #0xf tay lda mul24,y clc adc print_txt sta print_txt lda print_txt+1 adc #0 sta print_txt+1
+    lda#1 jsr print12
+
+    vumeter_draw()
+
+    lda#0xaa sta COLUP0 sta COLUP1
+    lda print_txt clc adc #12 sta print_txt lda print_txt+1 adc #0 sta print_txt+1
+    lda#1 jsr print12
+end
+
+@@main
+    init()
+    lda SWCHA sta input_prev
+    jsr song_switch
+@_frame
+    overscan(check_input) vblank(tick) screen(kernel) jmp _frame
+
+; -- needed if last instruction is implied
+writebin(filename..'.bin')
+writesym(filename..'.sym')
+print(stats)

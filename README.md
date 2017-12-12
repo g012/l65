@@ -105,6 +105,7 @@ Have a look at these files in the `samples` folder to get started with l65:
  * `vcs_flush.l65`: a port of flewww's famous flush logo from the demo [.bin](http://www.pouet.net/prod.php?which=69666)
  * `vcs_spr48.l65`: a port of [.bin](http://www.pouet.net/prod.php?which=69666) title 48 pixels sprite animation.
  * `vcs_music.l65`: imports and plays back a TIATracker .ttt file directly.
+ * `vcs_mcart.l65`: imports all TIATracker .ttt files in the folder supplied as arg, or current directory, and builds a music cart.
 
 There's also `vcspal.act`, a palette file for authoring software for VCS. Use this palette or a similar one to create 8b PNG for `l65.image` and helper loaders depending on it. You can generate such a palette, or a GPL one for GIMP using [vcsconv](https://github.com/g012/vcsconv) `authpalette` command.
 
