@@ -1,0 +1,181 @@
+-- set cpu to 6502
+cpu = require "6502"
+setmetatable(_ENV, cpu)
+
+nes = {
+    OAM         = 0x200, -- 0x100 bytes
+    RAM         = 0x300, -- 0x500 bytes + ZP 0x100 bytes + Stack 0x100 bytes + OAM 0x100 bytes = 0x800 bytes
+
+    -- 2C02 PPU
+    PPUCNT0     = 0x2000,
+    PPUCNT1     = 0x2001,
+    PPUSTAT     = 0x2002,
+    SPRADDR     = 0x2003,
+    SPRIO       = 0x2004,
+    BGSCROL     = 0x2005,
+    PPUADDR     = 0x2006,
+    PPUIO       = 0x2007,
+
+    -- 2A03 / 2A07 CPU+APU
+    SQ1VOL      = 0x4000,
+    SQ1SWEEP    = 0x4001,
+    SQ1LO       = 0x4002,
+    SQ1HI       = 0x4003,
+    SQ2VOL      = 0x4004,
+    SQ2SWEEP    = 0x4005,
+    SQ2LO       = 0x4006,
+    SQ2HI       = 0x4007,
+    TRILINEAR   = 0x4008,
+    TRILO       = 0x400A,
+    TRIHI       = 0x400B,
+    NOISEVOL    = 0x400C,
+    NOISELO     = 0x400E,
+    NOISEHI     = 0x400F,
+    DMCFREQ     = 0x4010,
+    DMCRAW      = 0x4011,
+    DMCSTART    = 0x4012,
+    DMCLEN      = 0x4013,
+    SPRDMA      = 0x4014,
+    SNDCNT      = 0x4015,
+    SPECIO1     = 0x4016,
+    SPECIO2     = 0x4017,
+
+    SRAM        = 0x6000, -- 0x2000 bytes
+    ROM         = 0x8000, -- 0x8000 bytes
+
+    -- PPU Memory declarations
+    CHAR0       = 0x0000, -- 0x1000 bytes
+    CHAR1       = 0x1000, -- 0x1000 bytes
+    SCREEN0     = 0x2000, -- 0x400 bytes
+    SCREEN1     = 0x2400, -- 0x400 bytes
+    SCREEN2     = 0x2800, -- 0x400 bytes
+    SCREEN3     = 0x2C00, -- 0x400 bytes
+    BGPAL       = 0x3F00, -- 0x10 bytes
+    OBJPAL      = 0x3F10, -- 0x10 bytes
+}
+do
+    local symbols = cpu.symbols
+    for k,v in pairs(nes) do symbols[k] = v end
+end
+
+vblank_waitend = function()
+    local l=label() lda PPUSTAT bpl l
+end
+
+ppu_addr = function(addr)
+    lda #addr>>8 sta PPUADDR
+    if addr&0xff ~= addr>>8 then lda #addr&0xff end
+    sta PPUADDR
+end
+
+oam_clear = function()
+    ldx #0 lda #0xf8
+    local l=label() sta OAM,x inx inx inx inx bne l
+end
+
+oam_flush = function()
+    lda #0 sta SPRADDR lda #2 sta SPRDMA
+end
+
+init = function()
+    sei cld
+    ldx #0x40 stx SPECIO2
+    ldx #0xff txs inx stx PPUCNT0 stx PPUCNT1 stx DMCFREQ vblank_waitend()
+    -- stop APU channels
+    lda #0 sta SNDCNT
+    -- clear CPU RAM
+@_zeroram
+    sta 0x00,x
+    sta 0x0100,x sta 0x0200,x sta 0x0300,x sta 0x0400,x
+    sta 0x0500,x sta 0x0600,x sta 0x0700,x
+    inx bne _zeroram
+    vblank_waitend()
+    -- clear OAM
+    oam_clear() oam_flush()
+    -- clear PPU RAM
+    lda PPUSTAT ppu_addr(0x2000) tax ldy #0x10
+@_zeroppu
+    sta PPUIO dex bne _zeroppu dey bne _zeroppu
+    -- reset latch
+    lda PPUSTAT
+end
+
+-- NES 2.0 (backward compatible with iNES)
+-- https://wiki.nesdev.com/w/index.php/NES_2.0
+header = function(t)
+    if not t then t = {} end
+    local logsz = function(sz)
+        assert(sz >= 0 and sz <= 1048576, "invalid size: " .. sz .. ", expected [0, 1048576]")
+        if sz < 1 then return 0 end
+        if sz <= 128 then return 1 end
+        return math.ceil(math.log(sz/64, 2))
+    end
+    -- mapper
+    local mi1 = t.mapperid or 0
+    assert(mi1 >= 0 and mi1 < 4096, "invalid mapper id: " .. mi1 .. ", expected [0, 4095]")
+    local ms1 = t.submapperid or 0
+    assert(ms1 >= 0 and ms1 < 16, "invalid submapper id: " .. ms1 .. ", expected [0, 15]")
+    local mapper6 = (mi1 & 0xf) << 4
+    local mapper7 = mi1 & 0xf0
+    local mapper8 = (mi1 >> 8) | (ms1 << 4)
+    -- prgsize
+    local prgsize = math.tointeger((t.prgsize or 16384) / 16384)
+    assert(prgsize, "prgsize must be a multiple of 16384")
+    -- chrsize
+    local chrsize = math.tointeger((t.chrsize or 8192) / 8192)
+    assert(chrsize, "chrsize must be a multiple of 8192")
+    -- wramsize (not battery-backed)
+    local wramsize = logsz(t.wramsize or 0)
+    -- bramsize (battery-backed)
+    local bramsize = logsz(t.bramsize or 0)
+    -- chrbramsize (battery-backed)
+    local chrbramsize = logsz(t.chrbramsize or 0)
+    -- chrramsize (not battery-backed)
+    local chrramsize = logsz(t.chrramsize or (chrbramsize==0 and chrsize==0 and 8192 or 0))
+    local battery_bit = bramsize == 0 and chrbramsize == 0 and 0 or 2
+    -- mirror: 'H' for horizontal mirroring, 'V' for vertical mirroring
+    --         '4' for four-screen VRAM, 218 for four-screen and vertical
+    local mirror = (t.mirror or 'h'):lower()
+    mirror = ({ h=0, v=1, ['4']=8, [218]=9 })[mirror]
+    assert(mirror, "invalid mirror mode: " .. mirror .. ", expected 'H', 'V', '4', or 218")
+    -- tv: 'N' for NTSC, 'P' for PAL, 'NP' for both preferring NTSC, 'PN' for both preferring PAL
+    local tv, tvm = 0, (t.tv or 'n'):lower()
+    assert(tvm=='n' or tvm=='p' or tvm=='np' or tvm=='pn', "invalid tv mode: " .. tostring(t.tv) .. ", expected 'N', 'P', 'NP' or 'PN'")
+    if tvm[1] == 'p' then tv = 1 end 
+    if #tvm > 1 then tv = tv + 2 end
+
+    @@header -- size: 16 bytes
+    dc.b 0x4e, 0x45, 0x53 -- 'NES'
+    dc.b 0x1a
+    dc.b prgsize, chrsize
+    dc.b mapper6 | mirror | battery_bit
+    dc.b mapper7 | 8
+    dc.b mapper8
+    dc.b ((chrsize >> 4) & 0xF0) | ((prgsize >> 8) & 0x0F)
+    dc.b (bramsize << 4) | wramsize
+    dc.b (chrbramsize << 4) | chrramsize
+    dc.b tv, 0, 0, 0
+
+    -- update table with defaulted values
+    t.prgsize = prgsize
+    t.chrsize = chrsize
+    t.wramsize = wramsize
+    t.bramsize = bramsize
+    t.chrbramsize = chrbramsize
+    t.chrramsize = chrramsize
+end
+
+mappers = {}
+
+mappers.NROM = function(prgsize)
+    if not prgsize then prgsize = 16384 end
+    if not chrsize then chrsize = 8192 end
+    assert(prgsize == 16384 or prgsize == 32768)
+    local prgstart = 0x10000 - prgsize
+    hdrrom = location{prgstart - 16, prgstart - 1, name='header'}
+    header{ prgsize = prgsize }
+    prgrom = location{prgstart, 0xffff, name='prgrom'}
+    section{"vectors", org=0xfffa} dc.w nmi, main, irq
+    chrrom = location{0x10000, 0x10000 + chrsize-1, name='chrrom'}
+end
+mappers[0] = mappers.NROM

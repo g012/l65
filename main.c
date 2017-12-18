@@ -145,6 +145,7 @@ static struct script { const char *name; int t;  const char *data; size_t sz; } 
     SRC_LUA(dkjson),
     SRC_LUA(l65cfg),
     SRC_LUA(re),
+    SRC_L65(nes),
     SRC_L65(vcs),
 };
 #undef SRC_LUA

@@ -1,0 +1,38 @@
+require'nes'
+
+mappers.NROM()
+
+location(chrrom)
+
+do
+    -- nes_ascii.chr: MIT License Copyright (c) 2016 Doug Fraker, www.nesdoug.com
+    local f = assert(io.open('nes_ascii.chr', 'rb'))
+    local d = f:read('*a') f:close()
+    @@chrdata byte(d)
+end
+
+location(prgrom)
+@@nmi rti
+@@irq rti
+
+local hello = "Hello World!"
+@@text byte(hello)
+
+@@main
+    init()
+    --lda#0x80 sta PPUSTAT -- enable VBlank IRQ on NMI vector
+    -- load BG palette in PPU RAM
+    ppu_addr(BGPAL)
+    for _,v in ipairs{ 0x1f, 0x00, 0x10, 0x20 } do lda #v sta PPUIO end
+    -- load screen text in PPU RAM 0x21CA
+    ppu_addr(0x21ca)
+    ldy #0 @_loadtxt lda text,y sta PPUIO iny cpy ##hello bne _loadtxt
+    -- reset scroll position
+    ppu_addr(0) sta BGSCROL sta BGSCROL
+    -- turn screen on
+    lda #0x90 sta PPUCNT0 lda #0x1e sta PPUCNT1
+    -- idle
+    @_loop jmp _loop
+
+writebin(filename..'.nes')
+print(stats)
