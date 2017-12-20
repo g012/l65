@@ -396,7 +396,7 @@ M.getsym_as = {
     dasm = function() -- .sym
         local fmt,rep = string.format,string.rep
         local s = M.getsym(function(a,l) return fmt("%s%s %04x", l, rep(' ',24-#l), a) end)
-        table.insert(s, 1, {'--- Symbol List'})
+        table.insert(s, 1, '--- Symbol List')
         s[#s+1] = '--- End of Symbol List.'
         return table.concat(s, '\n')
     end,
