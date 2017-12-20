@@ -1,6 +1,6 @@
 local M = {}
 
-local symbols={} M.symbols=symbols
+local symbols,symbolsorg={},{} M.symbols,M.symbolsorg=symbols,symbolsorg
 local locations={} M.locations=locations
 local sections={} M.sections=sections
 local relations={} M.relations=relations
@@ -167,6 +167,7 @@ M.link = function()
             if position then
                 section.org = position
                 chunk_reserve(section, chunk_ix)
+                symbolsorg[section.label] = position
                 symbols[section.label] = rorg(position)
                 --print(section.label, string.format("%04X\t%d", position, section.size))
                 --for k,v in ipairs(location.chunks) do print(string.format("  %04X  %04X  %d", v.start, v.size+v.start-1, v.size)) end
@@ -224,6 +225,7 @@ M.link = function()
             for chunk_ix,chunk in ipairs(location.chunks) do
                 if chunk.start <= section.org and chunk.size - (section.org - chunk.start) >= section.size then
                     chunk_reserve(section, chunk_ix)
+                    symbolsorg[section.label] = section.org
                     symbols[section.label] = rorg(section.org)
                     goto chunk_located
                 end
@@ -267,6 +269,7 @@ M.link = function()
             section.org = position + (section.location.start - location_start) + offset
             local chunk,chunk_ix = chunk_from_address(section, section.org)
             chunk_reserve(section, chunk_ix)
+            symbolsorg[section.label] = section.org
             symbols[section.label] = section.location.rorg(section.org)
         end
     end end
@@ -366,13 +369,10 @@ M.writebin = function(filename, bin)
     f:close()
 end
 
--- write a DASM symbol file for debuggers
-M.writesym = function(filename)
-    if not filename then filename = 'main.sym' end
-    local f = assert(io.open(filename, "wb"), "failed to open " .. filename .. " for writing")
-    table.sort(symbols)
-    local ins,fmt,rep = table.insert,string.format,string.rep
-    local s,sym_rev = {'--- Symbol List'},{}
+-- return a table of entry(address, label)
+M.getsym = function(entry)
+    local ins = table.insert
+    local s,sym_rev = {},{}
     for k,v in pairs(symbols) do if type(v) == 'number' then ins(sym_rev,k) end end
     table.sort(sym_rev, function(a,b) local x,y=symbols[a],symbols[b] if x==y then return a<b end return x<y end)
     for _,v in ipairs(sym_rev) do
@@ -380,11 +380,35 @@ M.writesym = function(filename)
         local u=v:match'.*()_' if u then -- change _ to . in local labels
             local parent=v:sub(1,u-1) if symbols[parent] then v = parent..'.'..v:sub(u+1) end
         end
-        ins(s, fmt("%s%s %04x", v, rep(' ',24-#v), k))
+        local e = entry(k,v) if e then
+            if type(e) == 'table' then for _,ev in ipairs(e) do ins(s, ev) end
+            else ins(s, e) end
+        end
     end
-    s[#s+1] = '--- End of Symbol List.'
-    f:write(table.concat(s, '\n'))
-    f:close()
+    return s
+end
+M.getsym_as = {
+    lua = function() -- .lua
+        local fmt,rep = string.format,string.rep
+        local s = M.getsym(function(a,l) return fmt("%s = 0x%04x", l, a) end)
+        return table.concat(s, '\n')
+    end,
+    dasm = function() -- .sym
+        local fmt,rep = string.format,string.rep
+        local s = M.getsym(function(a,l) return fmt("%s%s %04x", l, rep(' ',24-#l), a) end)
+        table.insert(s, 1, {'--- Symbol List'})
+        s[#s+1] = '--- End of Symbol List.'
+        return table.concat(s, '\n')
+    end,
+}
+-- write a symbol file for debuggers, using specified format (defaults to DASM)
+M.writesym = function(filename, format)
+    assert(filename)
+    local s = M.getsym_as[format or 'dasm'](filename)
+    if s then
+        local f = assert(io.open(filename, "wb"), "failed to open " .. filename .. " for writing")
+        f:write(s) f:close()
+    end
 end
 
 stats.__tostring = function()

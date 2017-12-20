@@ -15,7 +15,9 @@ script:
     - ../l65 vcs_hello.l65
     - ../l65 vcs_hooks.l65
     - ../l65 vcs_music.l65
+    - ../l65 vcs_mcart.l65
     - ../l65 vcs_spr48.l65
+    - ../l65 nes_hello.l65
     - cd ..
     - cp l65 l65-$TRAVIS_TAG-$TRAVIS_OS_NAME
 deploy:

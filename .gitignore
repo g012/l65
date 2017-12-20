@@ -1,4 +1,7 @@
 /build
 /tmp
 *.bin
+*.nes
 *.sym
+*.mlb
+*.nl

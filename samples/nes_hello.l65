@@ -20,19 +20,21 @@ local hello = "Hello World!"
 
 @@main
     init()
-    --lda#0x80 sta PPUSTAT -- enable VBlank IRQ on NMI vector
+    vblank_waitbegin()
     -- load BG palette in PPU RAM
     ppu_addr(BGPAL)
-    for _,v in ipairs{ 0x1f, 0x00, 0x10, 0x20 } do lda #v sta PPUIO end
+    for _,v in ipairs{ 0x1f, 0x00, 0x10, 0x20 } do lda #v sta PPUDATA end
     -- load screen text in PPU RAM 0x21CA
     ppu_addr(0x21ca)
-    ldy #0 @_loadtxt lda text,y sta PPUIO iny cpy ##hello bne _loadtxt
+    ldy #0 @_loadtxt lda text,y sta PPUDATA iny cpy ##hello bne _loadtxt
     -- reset scroll position
     ppu_addr(0) sta BGSCROL sta BGSCROL
     -- turn screen on
-    lda #0x90 sta PPUCNT0 lda #0x1e sta PPUCNT1
+    lda #0x90 sta PPUCTRL lda #0x1e sta PPUMASK
     -- idle
     @_loop jmp _loop
 
 writebin(filename..'.nes')
+writesym(filename..'.mlb', 'mesen')
+writesym(filename..'.nes', 'fceux')
 print(stats)

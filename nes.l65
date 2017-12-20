@@ -6,15 +6,15 @@ nes = {
     OAM         = 0x200, -- 0x100 bytes
     RAM         = 0x300, -- 0x500 bytes + ZP 0x100 bytes + Stack 0x100 bytes + OAM 0x100 bytes = 0x800 bytes
 
-    -- 2C02 PPU
-    PPUCNT0     = 0x2000,
-    PPUCNT1     = 0x2001,
+    -- 2C02 / 2C07 PPU
+    PPUCTRL     = 0x2000,
+    PPUMASK     = 0x2001,
     PPUSTAT     = 0x2002,
-    SPRADDR     = 0x2003,
-    SPRIO       = 0x2004,
+    OAMADDR     = 0x2003,
+    OAMDATA     = 0x2004,
     BGSCROL     = 0x2005,
     PPUADDR     = 0x2006,
-    PPUIO       = 0x2007,
+    PPUDATA     = 0x2007,
 
     -- 2A03 / 2A07 CPU+APU
     SQ1VOL      = 0x4000,
@@ -35,7 +35,7 @@ nes = {
     DMCRAW      = 0x4011,
     DMCSTART    = 0x4012,
     DMCLEN      = 0x4013,
-    SPRDMA      = 0x4014,
+    OAMDMA      = 0x4014,
     SNDCNT      = 0x4015,
     SPECIO1     = 0x4016,
     SPECIO2     = 0x4017,
@@ -58,8 +58,51 @@ do
     for k,v in pairs(nes) do symbols[k] = v end
 end
 
-vblank_waitend = function()
+-- add some symbol file formats for NES debuggers
+cpu.getsym_as.mesen = function() -- .mlb
+    local ins,fmt = table.insert,string.format
+    local s = getsym(function(a,l)
+        local prefix = {}
+        if a < 0x2000 then prefix[1]='R'
+        elseif a >= 0x6000 and a < 0x8000 then prefix[1]='S' prefix[2]='W' a=a-0x6000
+        elseif a >= 0x8000 and a < 0x10000 then prefix[1]='P' a=a-0x8000
+        else prefix[1]='G' end
+        local s = {}
+        for _,p in ipairs(prefix) do ins(s, fmt("%s:%04x:%s", p, a, l)) end
+        return s
+    end)
+    return table.concat(s, '\n')
+end
+cpu.getsym_as.fceux = function(filename) -- .nl, multiple files
+    local ins,fmt = table.insert,string.format
+    local ram,rom = {},{}
+    local s = getsym(function(a,l)
+        local s = fmt("$%04x#%s#", a, l)
+        if a < 0x8000 then ins(ram, s)
+        else
+            local a_org = symbolsorg[l] or a
+            local bank = math.floor((a_org - 0x8000) / 0x4000)
+            if not rom[bank] then rom[bank] = {} end
+            ins(rom[bank], s)
+        end
+    end)
+    local fn = filename
+    if not fn:find('%.') then fn = fn .. '.nes' end
+    local fni = fn .. '.ram.nl'
+    local f = assert(io.open(fni, "wb"), "failed to open " .. fni .. " for writing")
+    f:write(table.concat(ram, '\n')) f:close()
+    for k,v in pairs(rom) do
+        fni = fn .. '.' .. k .. '.nl'
+        f = assert(io.open(fni, "wb"), "failed to open " .. fni .. " for writing")
+        f:write(table.concat(v, '\n')) f:close()
+    end
+end
+
+vblank_waitbegin = function()
     local l=label() lda PPUSTAT bpl l
+end
+vblank_waitend = function()
+    local l=label() lda PPUSTAT bmi l
 end
 
 ppu_addr = function(addr)
@@ -68,34 +111,93 @@ ppu_addr = function(addr)
     sta PPUADDR
 end
 
-oam_clear = function()
-    ldx #0 lda #0xf8
-    local l=label() sta OAM,x inx inx inx inx bne l
+oam_bytes = function(t)
+    return {
+        t.y - 1,
+        t.tile,
+        (t.palette or 0)&3 | ((t.behind or t.priority==1) and 0x20 or 0) | (t.flipx and 0x40 or 0) | (t.flipy and 0x80 or 0),
+        t.x
+    }
+end
+oam_set = function(t)
+    local b = oam_bytes(t)
+    lda #t[1]*4 sta OAMADDR
+    for _,v in ipairs(b) do lda #v sta OAMDATA end
 end
 
-oam_flush = function()
-    lda #0 sta SPRADDR lda #2 sta SPRDMA
+oamcache = OAM -- change it to set other location
+oamcache_clear = function()
+    local oam = oamcache
+    ldx #0 lda #0xff
+    local l=label() sta oam,x inx inx inx inx bne l
+end
+oamcache_flush = function()
+    local oam = oamcache
+    lda #0 sta OAMADDR lda #oam>>8 sta OAMDMA
+end
+oamcache_set = function(t)
+    local oam = oamcache
+    local b = oam_bytes(t)
+    ldx #t[1]*4 lda #b[1] sta oam,x
+    inx lda #b[2] sta oam,x
+    inx lda #b[3] sta oam,x
+    inx lda #b[4] sta oam,x
+end
+
+--[[ button state:
+    bit:   	 7     6     5     4     3     2     1     0
+    button:	 A     B  Select Start  Up   Down  Left  Right
+    https://wiki.nesdev.com/w/index.php/Controller_Reading
+]]
+-- fast reading of just the A button
+-- return C if A is pressed, c otherwise
+read_joy_a = function(joy_index)
+    local joy = joy_index == 2 and SPECIO2 or SPECIO1
+    lda #1 sta joy lsr sta joy lda joy lsr
+end
+-- read one joypad state into dst
+read_joy = function(dst, joy_index)
+    local joy = joy_index == 2 and SPECIO2 or SPECIO1
+    lda #1 sta joy sta dst lsr sta joy
+    @_readbutton lda joy lsr rol dst bcc _readbutton
+end
+-- read both joypad states and Famicom's DA15 expansion port
+read_joys = function(dst1, dst2)
+    lda #1 sta SPECIO1 sta dst2 lsr sta SPECIO1
+@_readbuttons
+    lda SPECIO1 and #3 cmp #1 rol dst1
+    lda SPECIO2 and #3 cmp #1 rol dst2
+    bcc _readbuttons
+end
+-- read both joypad states on even cycles only, to safely work with DPCM
+-- must be called right after oamcache_flush or any other sta OAMDMA
+read_joys_even = function(dst1, dst2)
+    ldx #1 stx dst1 stx SPECIO1 dex stx SPECIO1
+@_readbuttons
+    lda SPECIO2 and #3 cmp #1 rol dst2,x
+    lda SPECIO1 and #3 cmp #1 rol dst1
+    bcc _readbuttons
 end
 
 init = function()
     sei cld
     ldx #0x40 stx SPECIO2
-    ldx #0xff txs inx stx PPUCNT0 stx PPUCNT1 stx DMCFREQ vblank_waitend()
+    ldx #0xff txs inx stx PPUCTRL stx PPUMASK stx DMCFREQ
+    vblank_waitbegin()
     -- stop APU channels
     lda #0 sta SNDCNT
     -- clear CPU RAM
 @_zeroram
-    sta 0x00,x
-    sta 0x0100,x sta 0x0200,x sta 0x0300,x sta 0x0400,x
-    sta 0x0500,x sta 0x0600,x sta 0x0700,x
+    sta 0x0000,x sta 0x0100,x sta 0x0200,x sta 0x0300,x
+    sta 0x0400,x sta 0x0500,x sta 0x0600,x sta 0x0700,x
     inx bne _zeroram
-    vblank_waitend()
+    vblank_waitbegin()
     -- clear OAM
-    oam_clear() oam_flush()
+    oamcache_clear() oamcache_flush()
     -- clear PPU RAM
     lda PPUSTAT ppu_addr(0x2000) tax ldy #0x10
 @_zeroppu
-    sta PPUIO dex bne _zeroppu dey bne _zeroppu
+    sta PPUDATA dex bne _zeroppu dey bne _zeroppu
     -- reset latch
     lda PPUSTAT
 end
@@ -122,7 +224,7 @@ header = function(t)
     local prgsize = math.tointeger((t.prgsize or 16384) / 16384)
     assert(prgsize, "prgsize must be a multiple of 16384")
     -- chrsize
-    local chrsize = math.tointeger((t.chrsize or 8192) / 8192)
+    local chrsize = math.tointeger((t.chrsize or 0) / 8192)
     assert(chrsize, "chrsize must be a multiple of 8192")
     -- wramsize (not battery-backed)
     local wramsize = logsz(t.wramsize or 0)
@@ -167,15 +269,29 @@ end
 
 mappers = {}
 
-mappers.NROM = function(prgsize)
-    if not prgsize then prgsize = 16384 end
-    if not chrsize then chrsize = 8192 end
-    assert(prgsize == 16384 or prgsize == 32768)
-    local prgstart = 0x10000 - prgsize
+local n0ne = function(x) return not x or x == 0 end
+local val0 = function(x) return x and x or 0 end
+
+mappers.NROM = function(t)
+    if not t then t = {} end
+    if not t.prgsize then t.prgsize = 16384 end
+    assert(t.prgsize == 16384 or t.prgsize == 32768, "prgrom must be 16 or 32kB")
+    if n0ne(t.chrsize) and n0ne(t.chrramsize) and n0ne(t.chrbramsize) then t.chrsize = 8192 end
+    assert(val0(t.chrsize) + val0(t.chrramsize) + val0(t.chrbramsize) == 8192, "chrrom/ram must be 8kB")
+    assert(not t.mirror or ({ h=1, v=1 })[t.mirror:lower()], "only H and V mirroring are supported")
+    local prgstart = 0x10000 - t.prgsize
     hdrrom = location{prgstart - 16, prgstart - 1, name='header'}
-    header{ prgsize = prgsize }
+    header(t)
     prgrom = location{prgstart, 0xffff, name='prgrom'}
     section{"vectors", org=0xfffa} dc.w nmi, main, irq
-    chrrom = location{0x10000, 0x10000 + chrsize-1, name='chrrom'}
+    if (t.chrsize > 0) then chrrom = location{0x10000, 0x10000 + 0x1fff, name='chrrom'} end
 end
 mappers[0] = mappers.NROM
+
+mappers.MMC1 = function(t)
+end
+mappers[1] = mappers.MMC1
+
+mappers.MMC3 = function(t)
+end
+mappers[4] = mappers.MMC3
