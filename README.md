@@ -47,7 +47,7 @@ Table of Contents
         * [resolve()](#resolve)
         * [genbin([filler])](#genbinfiller)
         * [writebin(filename)](#writebinfilename)
-        * [writesym(filename)](#writesymfilename)
+        * [writesym(filename [, format])](#writesymfilename--format)
      * [Parser Functions](#parser-functions)
         * [Pragmas](#pragmas)
            * [syntax6502 on|off](#syntax6502-onoff)
@@ -466,9 +466,13 @@ Return a table, where each entry is a byte.
 
 Write the final binary into `filename`.
 
-#### writesym(filename)
+#### writesym(filename [, format])
 
-Write a DASM symbol file into `filename` for debuggers. The last `_` in a label is turned into a `.`, to get stripping of the prefixed global label working in Stella. As such, it's best to avoid using `_` in local label names, after the initial one.
+Write one or more symbol files into `filename` (prefix in case of multiple outputs) for debuggers. The last `_` in a label is turned into a `.`, to get stripping of the prefixed global label working in Stella. As such, it's best to avoid using `_` in local label names, after the initial one.
+
+`format` defaults to 'dasm'.
+All platforms: 'dasm', 'lua'.
+NES: 'mesen', 'fceux'.
 
 ### Parser Functions
 

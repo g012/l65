@@ -62,10 +62,11 @@ end
 cpu.getsym_as.mesen = function() -- .mlb
     local ins,fmt = table.insert,string.format
     local s = getsym(function(a,l)
+        if a >= 0x10000 then return end
         local prefix = {}
         if a < 0x2000 then prefix[1]='R'
         elseif a >= 0x6000 and a < 0x8000 then prefix[1]='S' prefix[2]='W' a=a-0x6000
-        elseif a >= 0x8000 and a < 0x10000 then prefix[1]='P' a=a-0x8000
+        elseif a >= 0x8000 then prefix[1]='P' a=a-0x8000
         else prefix[1]='G' end
         local s = {}
         for _,p in ipairs(prefix) do ins(s, fmt("%s:%04x:%s", p, a, l)) end
@@ -79,7 +80,7 @@ cpu.getsym_as.fceux = function(filename) -- .nl, multiple files
     local s = getsym(function(a,l)
         local s = fmt("$%04x#%s#", a, l)
         if a < 0x8000 then ins(ram, s)
-        else
+        elseif a < 0x10000 then
             local a_org = symbolsorg[l] or a
             local bank = math.floor((a_org - 0x8000) / 0x4000)
             if not rom[bank] then rom[bank] = {} end
@@ -98,11 +99,13 @@ cpu.getsym_as.fceux = function(filename) -- .nl, multiple files
     end
 end
 
+mappers = {}
+
 vblank_waitbegin = function()
-    local l=label() lda PPUSTAT bpl l
+    local l=label() bit PPUSTAT bpl l
 end
 vblank_waitend = function()
-    local l=label() lda PPUSTAT bmi l
+    local l=label() bit PPUSTAT bmi l
 end
 
 ppu_addr = function(addr)
@@ -180,12 +183,12 @@ read_joys_even = function(dst1, dst2)
 end
 
 init = function()
-    sei cld
-    ldx #0x40 stx SPECIO2
-    ldx #0xff txs inx stx PPUCTRL stx PPUMASK stx DMCFREQ
+    sei -- cld not needed, no BCD support
+    ldx #0x40 stx SPECIO2 -- disable APU frame IRQ
+    ldx #0xff txs inx stx PPUCTRL stx PPUMASK stx DMCFREQ -- disable NMI, rendering, DMC IRQs
+    bit PPUSTAT -- clear remnant VBlank PPU status flag on reset
     vblank_waitbegin()
-    -- stop APU channels
-    lda #0 sta SNDCNT
+    lda #0 sta SNDCNT -- stop APU channels
     -- clear CPU RAM
 @_zeroram
     sta 0x0000,x sta 0x0100,x sta 0x0200,x sta 0x0300,x
@@ -195,11 +198,11 @@ init = function()
     -- clear OAM
     oamcache_clear() oamcache_flush()
     -- clear PPU RAM
-    lda PPUSTAT ppu_addr(0x2000) tax ldy #0x10
+    bit PPUSTAT ppu_addr(0x2000) tax ldy #0x10
 @_zeroppu
     sta PPUDATA dex bne _zeroppu dey bne _zeroppu
-    -- reset latch
-    lda PPUSTAT
+    bit PPUSTAT -- reset latch
+    if mappers.init then mappers.init() end
 end
 
 -- NES 2.0 (backward compatible with iNES)
@@ -259,15 +262,14 @@ header = function(t)
     dc.b tv, 0, 0, 0
 
     -- update table with defaulted values
-    t.prgsize = prgsize
-    t.chrsize = chrsize
-    t.wramsize = wramsize
-    t.bramsize = bramsize
-    t.chrbramsize = chrbramsize
-    t.chrramsize = chrramsize
+    t.prgsize = prgsize * 16384
+    t.chrsize = chrsize * 8192
+    t.wramsize = math.tointeger(2^wramsize*64)
+    t.bramsize = math.tointeger(2^bramsize*64)
+    t.chrbramsize = math.tointeger(2^chrbramsize*64)
+    t.chrramsize = math.tointeger(2^chrramsize*64)
+    mappers.header=t
 end
-
-mappers = {}
 
 local n0ne = function(x) return not x or x == 0 end
 local val0 = function(x) return x and x or 0 end
@@ -275,9 +277,9 @@ local val0 = function(x) return x and x or 0 end
 mappers.NROM = function(t)
     if not t then t = {} end
     if not t.prgsize then t.prgsize = 16384 end
-    assert(t.prgsize == 16384 or t.prgsize == 32768, "prgrom must be 16 or 32kB")
+    assert(t.prgsize == 16384 or t.prgsize == 32768, "prgsize must be 16 or 32kB")
     if n0ne(t.chrsize) and n0ne(t.chrramsize) and n0ne(t.chrbramsize) then t.chrsize = 8192 end
-    assert(val0(t.chrsize) + val0(t.chrramsize) + val0(t.chrbramsize) == 8192, "chrrom/ram must be 8kB")
+    assert(val0(t.chrsize) + val0(t.chrramsize) + val0(t.chrbramsize) == 8192, "combined chrrom size must be 8kB")
     assert(not t.mirror or ({ h=1, v=1 })[t.mirror:lower()], "only H and V mirroring are supported")
     local prgstart = 0x10000 - t.prgsize
     hdrrom = location{prgstart - 16, prgstart - 1, name='header'}
@@ -292,6 +294,87 @@ mappers.MMC1 = function(t)
 end
 mappers[1] = mappers.MMC1
 
+--[[
+    prgroms are numbered from last (0) to first (#-1), so that adding more does not change
+    prgrom0, which must contain the reset vector (main).
+    Last 2 prg banks are merged into 1 16kB bank, to allow linker optimization - hence, 0 must
+    always be set on bit 6 of bank select, even; also, there is no prgrom1 as a consequence.
+    t.prgmap is an optional function taking a prgrom bank index and returning its rorg value.
+    Default is to map even banks to 0x8000, and odd to 0xa000.
+
+    chrroms are all 1kB, so they can work with chr A12 inversion enabled or not.
+
+    With default submapper id of 0, this defaults to revision MM3C, which generates a scanline
+    interrupt at each scanline when counter is loaded with 0.
+]]
 mappers.MMC3 = function(t)
+    if not t then t = {} end
+    t.mapperid = 4
+    if not t.bramsize then t.bramsize = 8192 end
+    assert(t.bramsize == 8192, "bramsize must be 8kB")
+    if not t.prgsize then t.prgsize = 32768 end
+    assert(t.prgsize >= 0x8000 and t.prgsize <= 0x80000, "prgsize must be at least 32kB and at most 512kB")
+    if not t.chrsize then t.chrsize = 8192 end
+    assert(t.chrsize >= 0x2000 and t.chrsize <= 0x40000, "chrsize must be at least 8kB and at most 256kB")
+    hdrrom = location{0x7FF0, 0x7FFF, name='header'}
+    header(t)
+    local prgmap = t.prgmap or function(bi, bc) return 0x8000+(bi&1)*0x2000 end
+    local bc = t.prgsize//0x2000
+    for bi=0,bc-3 do
+        local o,ix = 0x8000 + bi*0x2000, bc-bi-1
+        _ENV['prgrom'..ix] = location{o, o+0x1fff, rorg=prgmap(ix,bc), name='prgrom'..ix}
+    end
+    do
+        local o = 0x8000 + (bc-2)*0x2000
+        prgrom0 = location{o, o+0x3fff, rorg=0xc000, name='prgrom0'}
+        section{"vectors", org=o+0x3ffa} dc.w nmi, main, irq
+    end
+    local chrstart = 0x8000 + bc*0x2000
+    local cc = t.chrsize//0x400
+    for ci=0,cc-1 do
+        local o = chrstart + ci*0x400
+        _ENV['chrrom'..ci] = location{o, o+0x3ff, name='chrrom'..ci}
+    end
+    function switchprgrom(slot, bankix)
+        assert(slot<2)
+        lda #6+slot sta 0x8000
+        assert(bankix < bc)
+        bankix = bc-1-bankix -- reverse index order, since we set 0 as last
+        lda #bankix sta 0x8001
+    end
+    local a12inv = false
+    function seta12inv(enabled) a12inv = enabled end
+    -- slot [0, 7], each slot is 1kB counting in order, regardless of a12inv state
+    function switchchrrom(slot, bankix)
+        assert(slot<8)
+        if a12inv then 
+            assert(slot ~= 5 and slot ~= 7)
+            if slot == 6 then slot = 1
+            elseif slot == 4 then slot = 0
+            else slot = slot + 2 end
+            slot = slot | 0x80
+        else
+            assert(slot ~= 1 and slot ~= 3)
+            if slot == 2 then slot = 1
+            elseif slot > 3 then slot = slot - 2 end
+        end
+        lda #slot sta 0x8000
+        assert(bankix < cc)
+        lda #bankix sta 0x8001
+    end
+    function setmirror(mirror)
+        mirror = assert(({ h=1, v=0 })[mirror:lower()])
+        lda #mirror sta 0xa000
+    end
+    function protectsram() lda 0x40 sta 0xa001 end
+    function scanlineirq(count) ldx #1 stx 0xe000 lda #count-1 sta 0xc000 sta 0xc001 stx 0xe001 end
+    mappers.init = function()
+        switchprgrom(0, 2) switchprgrom(1, 3)
+        switchchrrom(0, 0) switchchrrom(2, 2)
+        switchchrrom(4, 4) switchchrrom(5, 5) switchchrrom(6, 6) switchchrrom(7, 7)
+        local mirror = mappers.header.mirror
+        if mirror==0 or mirror==1 then lda #mirror~1 sta 0xa000 end
+        lda #0x80 sta 0xa001
+    end
 end
 mappers[4] = mappers.MMC3
