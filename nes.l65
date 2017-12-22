@@ -274,6 +274,7 @@ end
 local n0ne = function(x) return not x or x == 0 end
 local val0 = function(x) return x and x or 0 end
 
+-- https://wiki.nesdev.com/w/index.php/NROM
 mappers.NROM = function(t)
     if not t then t = {} end
     if not t.prgsize then t.prgsize = 16384 end
@@ -290,11 +291,249 @@ mappers.NROM = function(t)
 end
 mappers[0] = mappers.NROM
 
+-- https://wiki.nesdev.com/w/index.php/UxROM
+-- Has bus conflicts.
+mappers.UxROM = function(t)
+    if not t then t = {} end
+    t.mapperid = 2
+    if not t.prgsize then t.prgsize = 32768 end
+    assert(t.prgsize >= 0x8000 and t.prgsize <= 0x40000, "prgsize must be at least 32kB and at most 256kB")
+    if not t.chrsize then t.chrsize = 8192 end
+    assert(t.chrsize == 0x2000, "chrsize must be 8kB")
+    assert(not t.mirror or ({ h=1, v=1 })[t.mirror:lower()], "only H and V mirroring are supported")
+    local bc = t.prgsize//0x4000
+    for bi=0,bc-2 do
+        local o,ix = 0x8000 + bi*0x4000, bc-1-bi
+        _ENV['prgrom'..ix] = location{o, o+0x3fff, rorg=0x8000, name='prgrom'..ix}
+    end
+    local prglast = 0x8000 + (bc-1)*0x4000
+    prgrom0 = location{prglast, prglast+0x3fff, rorg=0xc000, name='prgrom0'}
+    prgrom = prgrom0
+    section{"vectors", org=prglast+0x3ffa} dc.w nmi, main, irq
+    @@bankbytes -- for handling bus conflicts
+        for i=0,bc-2 do byte(i) end
+    local chrstart = 0x8000 + bc*0x4000
+    chrrom = location{chrstart, chrstart + 0x1fff, name='chrrom'}
+    function switchprgrom(bankix)
+        assert(bankix < bc-1)
+        lda #bankix tax sta bankbytes,x
+    end
+    mappers.init = function()
+        switchprgrom(1)
+    end
+end
+mappers[2] = mappers.UxROM
+
+--[[
+    https://wiki.nesdev.com/w/index.php/CNROM
+    Has bus conflicts.
+    8kB chrroms are created, unless t.onechrrom is set, in which case only one big chrrom
+    location is created instead.
+]]
+mappers.CNROM = function(t)
+    if not t then t = {} end
+    t.mapperid = 3
+    if not t.prgsize then t.prgsize = 16384 end
+    assert(t.prgsize == 16384 or t.prgsize == 32768, "prgsize must be 16 or 32kB")
+    if not t.chrsize then t.chrsize = 8192 end
+    assert(t.chrsize >= 0x2000 and t.chrsize <= 0x8000, "chrsize must be at least 8kB and at most 32kB")
+    assert(not t.mirror or ({ h=1, v=1 })[t.mirror:lower()], "only H and V mirroring are supported")
+    local prgstart = 0x10000 - t.prgsize
+    hdrrom = location{prgstart - 16, prgstart - 1, name='header'}
+    header(t)
+    prgrom = location{prgstart, 0xffff, name='prgrom'}
+    section{"vectors", org=0xfffa} dc.w nmi, main, irq
+    @@bankbytes -- for handling bus conflicts
+        dc.b 0x00, 0x01, 0x02, 0x03
+        dc.b 0x10, 0x11, 0x12, 0x13
+        dc.b 0x20, 0x21, 0x22, 0x23
+        dc.b 0x30, 0x31, 0x32, 0x33
+    local cc = t.chrsize//0x2000
+    if t.onechrrom then
+        chrrom0 = location{chrstart, chrstart + cc*0x2000 - 1, name='chrrom'}
+    else
+        for ci=0,cc-1 do
+            local o = chrstart + ci*0x2000
+            _ENV['chrrom'..ci] = location{o, o+0x2000-1, name='chrrom'..ci}
+        end
+    end
+    chrrom = chrrom0
+    securitydiodes = 0 -- set to actual value, eg 0x20
+    function switchchrrom(bankix)
+        assert(bankix < cc)
+        assert(securitydiodes < 0x40)
+        ldx #bankix|securitydiodes>>2 lda #bankix|securitydiodes sta bankbytes,x
+    end
+    mappers.init = function()
+        switchchrrom(0)
+    end
+end
+mappers[3] = mappers.CNROM
+
+--[[
+    https://wiki.nesdev.com/w/index.php/GxROM
+    Has bus conflicts.
+
+    prgroms are numbered from last (0) to first (#-1), so that adding more does not change
+    prgrom0, which must contain the reset vector (main).
+
+    8kB chrroms are created, unless t.onechrrom is set, in which case only one big chrrom
+    location is created instead.
+]]
+mappers.GxROM = function(t)
+    if not t then t = {} end
+    t.mapperid = 66
+    if not t.prgsize then t.prgsize = 32768 end
+    assert(t.prgsize >= 0x8000 and t.prgsize <= 0x20000, "prgsize must be at least 32kB and at most 128kB")
+    if not t.chrsize then t.chrsize = 8192 end
+    assert(t.chrsize >= 0x2000 and t.chrsize <= 0x8000, "chrsize must be at least 8kB and at most 32kB")
+    assert(not t.mirror or ({ h=1, v=1 })[t.mirror:lower()], "only H and V mirroring are supported")
+    hdrrom = location{0x7ff0, 0x7fff, name='header'}
+    header(t)
+    local bc = t.prgsize//0x8000
+    for bi=0,bc-1 do
+        local o,ix = 0x8000 + bi*0x8000, bc-1-bi
+        _ENV['prgrom'..ix] = location{o, o+0x7fff, rorg=0x8000, name='prgrom'..ix}
+        section("bankbytes"..ix) -- for handling bus conflicts
+            dc.b 0x00, 0x01, 0x02, 0x03
+            dc.b 0x10, 0x11, 0x12, 0x13
+            dc.b 0x20, 0x21, 0x22, 0x23
+            dc.b 0x30, 0x31, 0x32, 0x33
+    end
+    section{"vectors", org=0x8000+bc*0x8000-6} dc.w nmi, main, irq
+    prgrom = prgrom0
+    local cc = t.chrsize//0x2000
+    if t.onechrrom then
+        chrrom0 = location{chrstart, chrstart + cc*0x2000 - 1, name='chrrom'}
+    else
+        for ci=0,cc-1 do
+            local o = chrstart + ci*0x2000
+            _ENV['chrrom'..ci] = location{o, o+0x2000-1, name='chrrom'..ci}
+        end
+    end
+    chrrom = chrrom0
+    bankregister = 0
+    function switchprgrom(bankix)
+        assert(bankix < bc)
+        bankregister = (bankregister & ~0x30) | (bankix << 4)
+        ldx #bankregister&3|bankregister>>2 lda #bankregister sta bankbytes0,x
+    end
+    function switchchrrom(bankix)
+        assert(bankix < cc)
+        bankregister = (bankregister & ~3) | bankix
+        ldx #bankregister&3|bankregister>>2 lda #bankregister sta bankbytes0,x
+    end
+    mappers.init = function()
+        switchchrrom(0)
+    end
+end
+mappers[66] = mappers.GxROM
+
+--[[
+    https://wiki.nesdev.com/w/index.php/MMC1
+
+    prgroms are numbered from last (0) to first (#-1), so that adding more does not change
+    prgrom0, which must contain the reset vector (main).
+    t.prgmap is an optional function taking a prgrom bank index and returning its rorg value.
+    Default is to create 16kB banks if prgswitchmode is not all, 32kB otherwise, and rorg them
+    accordingly.
+    Same goes for chrrom sizes.
+    If t.onechrrom is set, only one big chrrom location is created instead.
+
+    t.prgswitchmode:
+      'first' makes 0x8000-0xbfff switchable (default)
+      'last' makes 0xc000-0xffff switchable
+      'all' makes 0x8000-0xffff switchable
+    t.chrswitchmode:
+      'all' switches whole 8kB at a time (default)
+      'half' switches 2 separate 4kB banks
+]]
 mappers.MMC1 = function(t)
+    if not t then t = {} end
+    t.mapperid = 1
+    if not t.prgswitchmode then t.prgswitchmode = 'first' end
+    if not t.chrswitchmode then t.chrswitchmode = 'all' end
+    if not t.wramsize then t.wramsize = 0 end
+    if not t.bramsize and t.wramsize == 0 then t.bramsize = 8192 end
+    local prgram = t.bramsize + t.wramsize
+    assert(prgram >= 0x2000 and prgram <= 0x8000, "bramsize or wramsize must be at least 8kB and at most 32kB")
+    if not t.prgsize then t.prgsize = 32768 end
+    assert(t.prgsize >= 0x8000 and t.prgsize <= 0x80000, "prgsize must be at least 32kB and at most 512kB")
+    if not t.chrsize then t.chrsize = 8192 end
+    assert(t.chrsize >= 0x2000 and t.chrsize <= 0x20000, "chrsize must be at least 8kB and at most 128kB")
+    hdrrom = location{0x7FF0, 0x7FFF, name='header'}
+    header(t)
+    local bsz = t.prgswitchmode=='all' and 0x8000 or 0x4000
+    local prgmap = t.prgmap or function(bi, bc) return t.prgswitchmode=='last' and 0xc000 or 0x8000 end
+    local bc = t.prgsize//bsz
+    for bi=0,bc-1 do
+        local o,ix = 0x8000 + bi*bsz, bc-1-bi
+        _ENV['prgrom'..ix] = location{o, o+bsz-1, rorg=prgmap(ix,bc), name='prgrom'..ix}
+    end
+    section{"vectors", org=0x8000+bc*bsz-6} dc.w nmi, main, irq
+    prgrom = prgrom0
+    local chrstart = 0x8000 + bc*bsz
+    local csz = t.chrswitchmode=='all' and 0x2000 or 0x1000
+    local cc = t.chrsize//csz
+    if t.onechrrom then
+        chrrom0 = location{chrstart, chrstart + cc*csz - 1, name='chrrom'}
+    else
+        for ci=0,cc-1 do
+            local o = chrstart + ci*csz
+            _ENV['chrrom'..ci] = location{o, o+csz-1, name='chrrom'..ci}
+        end
+    end
+    chrrom = chrrom0
+
+    local prgswitchmodemap = { all=0, first=3<<2, last=2<<2 }
+    local chrswitchmodemap = { all=0, half=1<<4 }
+    mmc1ctrl = (mappers.header.mirror==1 and 2 or 3) | prgswitchmodemap[t.prgswitchmode] | chrswitchmodemap[t.chrswitchmode]
+    function mmc1write(reg)
+        sta reg lsr sta reg lsr sta reg lsr sta reg lsr sta reg
+    end
+    -- Can be turned into a function, A must contain the bank index.
+    -- eg:
+    --   @@switchprgrom_func switchprgrom_f()
+    --   switchprgrom_f = function() jsr switchprgrom_func rts end
+    function switchprgrom_f() mmc1write(0xe000) end
+    function switchprgrom(bankix)
+        assert(bankix < t.prgsize//0x4000)
+        lda #bankix
+        switchprgrom_f()
+    end
+    function switchchrrom_f(slot) assert(slot<2) mmc1write(slot==0 and 0xa000 or 0xc000) end
+    function switchchrrom(bankix, slot)
+        assert(bankix < t.chrsize//0x1000)
+        lda #bankix
+        switchchrrom_f(slot or 0)
+    end
+    function setmirror(mirror)
+        mirror = assert(({ h=3, v=2, hi=1, lo=0 })[mirror:lower()])
+        mmc1ctrl = (mmc1ctrl & ~3) | mirror
+        lda #mmc1ctrl mmc1write(0x8000)
+    end
+    function setprgswitchmode(mode)
+        mode = assert(prgswitchmodemap[mode])
+        mmc1ctrl = (mmc1ctrl & ~0xc) | mode
+        lda #mmc1ctrl mmc1write(0x8000)
+    end
+    function setchrswitchmode(mode)
+        mode = assert(chrswitchmodemap[mode])
+        mmc1ctrl = (mmc1ctrl & ~0x10) | mode
+        lda #mmc1ctrl mmc1write(0x8000)
+    end
+    mappers.init = function()
+        lda #0x80 sta 0x8000
+        lda #mmc1ctrl mmc1write(0x8000)
+        if t.prgswitchmode ~= 'all' then switchprgrom(1) end
+        switchchrrom(0) if t.chrswitchmode ~= 'all' then switchchrrom(1,1) end
+    end
 end
 mappers[1] = mappers.MMC1
 
 --[[
+    https://wiki.nesdev.com/w/index.php/MMC3
+
     prgroms are numbered from last (0) to first (#-1), so that adding more does not change
     prgrom0, which must contain the reset vector (main).
     Last 2 prg banks are merged into 1 16kB bank, to allow linker optimization - hence, 0 must
@@ -303,6 +542,7 @@ mappers[1] = mappers.MMC1
     Default is to map even banks to 0x8000, and odd to 0xa000.
 
     chrroms are all 1kB, so they can work with chr A12 inversion enabled or not.
+    If t.onechrrom is set, only one big chrrom location is created instead.
 
     With default submapper id of 0, this defaults to revision MM3C, which generates a scanline
     interrupt at each scanline when counter is loaded with 0.
@@ -329,23 +569,31 @@ mappers.MMC3 = function(t)
         prgrom0 = location{o, o+0x3fff, rorg=0xc000, name='prgrom0'}
         section{"vectors", org=o+0x3ffa} dc.w nmi, main, irq
     end
+    prgrom = prgrom0
     local chrstart = 0x8000 + bc*0x2000
     local cc = t.chrsize//0x400
-    for ci=0,cc-1 do
-        local o = chrstart + ci*0x400
-        _ENV['chrrom'..ci] = location{o, o+0x3ff, name='chrrom'..ci}
+    if t.onechrrom then
+        chrrom0 = location{chrstart, chrstart + cc*0x400 - 1, name='chrrom'}
+    else
+        for ci=0,cc-1 do
+            local o = chrstart + ci*0x400
+            _ENV['chrrom'..ci] = location{o, o+0x3ff, name='chrrom'..ci}
+        end
     end
-    function switchprgrom(slot, bankix)
+    chrrom = chrrom0
+    local a12inv = false
+    function seta12inv(enabled) a12inv = enabled end
+    function switchprgrom(bankix, slot)
         assert(slot<2)
-        lda #6+slot sta 0x8000
+        slot = slot + 6
+        if a12inv then slot = slot | 0x80 end
+        lda #slot sta 0x8000
         assert(bankix < bc)
         bankix = bc-1-bankix -- reverse index order, since we set 0 as last
         lda #bankix sta 0x8001
     end
-    local a12inv = false
-    function seta12inv(enabled) a12inv = enabled end
     -- slot [0, 7], each slot is 1kB counting in order, regardless of a12inv state
-    function switchchrrom(slot, bankix)
+    function switchchrrom(bankix, slot)
         assert(slot<8)
         if a12inv then 
             assert(slot ~= 5 and slot ~= 7)
@@ -369,7 +617,7 @@ mappers.MMC3 = function(t)
     function protectsram() lda 0x40 sta 0xa001 end
     function scanlineirq(count) ldx #1 stx 0xe000 lda #count-1 sta 0xc000 sta 0xc001 stx 0xe001 end
     mappers.init = function()
-        switchprgrom(0, 2) switchprgrom(1, 3)
+        switchprgrom(2, 0) switchprgrom(3, 1)
         switchchrrom(0, 0) switchchrrom(2, 2)
         switchchrrom(4, 4) switchchrrom(5, 5) switchchrrom(6, 6) switchchrrom(7, 7)
         local mirror = mappers.header.mirror
