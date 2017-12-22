@@ -350,11 +350,11 @@ mappers.CNROM = function(t)
         dc.b 0x30, 0x31, 0x32, 0x33
     local cc = t.chrsize//0x2000
     if t.onechrrom then
-        chrrom0 = location{chrstart, chrstart + cc*0x2000 - 1, name='chrrom'}
+        chrrom0 = location{chrstart, chrstart + cc*0x2000 - 1, rorg=0, name='chrrom'}
     else
         for ci=0,cc-1 do
             local o = chrstart + ci*0x2000
-            _ENV['chrrom'..ci] = location{o, o+0x2000-1, name='chrrom'..ci}
+            _ENV['chrrom'..ci] = location{o, o+0x2000-1, rorg=0, name='chrrom'..ci}
         end
     end
     chrrom = chrrom0
@@ -404,11 +404,11 @@ mappers.GxROM = function(t)
     prgrom = prgrom0
     local cc = t.chrsize//0x2000
     if t.onechrrom then
-        chrrom0 = location{chrstart, chrstart + cc*0x2000 - 1, name='chrrom'}
+        chrrom0 = location{chrstart, chrstart + cc*0x2000 - 1, rorg=0, name='chrrom'}
     else
         for ci=0,cc-1 do
             local o = chrstart + ci*0x2000
-            _ENV['chrrom'..ci] = location{o, o+0x2000-1, name='chrrom'..ci}
+            _ENV['chrrom'..ci] = location{o, o+0x2000-1, rorg=0, name='chrrom'..ci}
         end
     end
     chrrom = chrrom0
@@ -475,12 +475,13 @@ mappers.MMC1 = function(t)
     local chrstart = 0x8000 + bc*bsz
     local csz = t.chrswitchmode=='all' and 0x2000 or 0x1000
     local cc = t.chrsize//csz
+    local chrmap = t.chrmap or function(ci, cc) if csz==0x2000 then return 0 else return (ci&1)*csz end end
     if t.onechrrom then
-        chrrom0 = location{chrstart, chrstart + cc*csz - 1, name='chrrom'}
+        chrrom0 = location{chrstart, chrstart + cc*csz - 1, rorg=0, name='chrrom'}
     else
         for ci=0,cc-1 do
             local o = chrstart + ci*csz
-            _ENV['chrrom'..ci] = location{o, o+csz-1, name='chrrom'..ci}
+            _ENV['chrrom'..ci] = location{o, o+csz-1, rorg=chrmap(ci,cc), name='chrrom'..ci}
         end
     end
     chrrom = chrrom0
@@ -570,14 +571,15 @@ mappers.MMC3 = function(t)
         section{"vectors", org=o+0x3ffa} dc.w nmi, main, irq
     end
     prgrom = prgrom0
+    local chrmap = t.chrmap or function(ci, cc) return (ci&7)*0x400 end
     local chrstart = 0x8000 + bc*0x2000
     local cc = t.chrsize//0x400
     if t.onechrrom then
-        chrrom0 = location{chrstart, chrstart + cc*0x400 - 1, name='chrrom'}
+        chrrom0 = location{chrstart, chrstart + cc*0x400 - 1, rorg=0, name='chrrom'}
     else
         for ci=0,cc-1 do
             local o = chrstart + ci*0x400
-            _ENV['chrrom'..ci] = location{o, o+0x3ff, name='chrrom'..ci}
+            _ENV['chrrom'..ci] = location{o, o+0x3ff, rorg=chrmap(ci,cc), name='chrrom'..ci}
         end
     end
     chrrom = chrrom0
@@ -626,3 +628,108 @@ mappers.MMC3 = function(t)
     end
 end
 mappers[4] = mappers.MMC3
+
+--[[
+    https://wiki.nesdev.com/w/index.php/MMC5
+    https://forums.nesdev.com/viewtopic.php?f=9&t=16789
+
+    main MUST be in 0xe000-0xfff9 of last prgrom.
+    prgroms are numbered from last (0) to first (#-1), so that adding more does not change
+    prgrom0, which must contain the reset vector (main).
+    t.prgmap is an optional function taking a prgrom bank index and returning its rorg value.
+    Default is to map banks in sequence to 0x8000, 0xa000, 0xc000, and 0xe000.
+
+    chrroms are all 1kB. Provide t.chrmap if needed, same as t.prgmap.
+    If t.onechrrom is set, only one big chrrom location is created instead.
+]]
+mappers.MMC5 = function(t)
+    if not t then t = {} end
+    t.mapperid = 5
+    assert(val0(t.bramsize) + val0(t.wramsize) <= 0x10000, "bramsize + wramsize must be at most 64kB")
+    if not t.prgsize then t.prgsize = 8192 end
+    assert(t.prgsize <= 0x100000, "prgsize must be at most 1MB")
+    if not t.chrsize then t.chrsize = 8192 end
+    assert(t.chrsize <= 0x100000, "chrsize must be at most 1MB")
+    hdrrom = location{0x7FF0, 0x7FFF, name='header'}
+    header(t)
+    local prgmap = t.prgmap or function(bi, bc) return 0x8000+(bi&3)*0x2000 end
+    local bc = t.prgsize//0x2000
+    for bi=0,bc-2 do
+        local o,ix = 0x8000 + bi*0x2000, bc-bi-1
+        _ENV['prgrom'..ix] = location{o, o+0x1fff, rorg=prgmap(ix,bc), name='prgrom'..ix}
+    end
+    do
+        local o = 0x8000 + (bc-1)*0x2000
+        prgrom0 = location{o, o+0x1fff, rorg=0xe000, name='prgrom0'}
+        section{"vectors", org=o+0x1ffa} dc.w nmi, main, irq
+        section{"main", org=o} -- enforce entry point in last bank
+    end
+    prgrom = prgrom0
+    local chrmap = t.chrmap or function(ci, cc) return (ci&7)*0x400 end
+    local chrstart = 0x8000 + bc*0x2000
+    local cc = t.chrsize//0x400
+    if t.onechrrom then
+        chrrom0 = location{chrstart, chrstart + cc*0x400 - 1, rorg=0, name='chrrom'}
+    else
+        for ci=0,cc-1 do
+            local o = chrstart + ci*0x400
+            _ENV['chrrom'..ci] = location{o, o+0x3ff, rorg=chrmap(ci,cc), name='chrrom'..ci}
+        end
+    end
+    chrrom = chrrom0
+    function prgbankmode(mode) if mode then lda #mode end sta 0x5100 end
+    function chrbankmode(mode) if mode then lda #mode end sta 0x5101 end
+    function wrammode(mode) if mode then lda #mode end sta 0x5104 end
+    function protectsram() lda #0 sta 0x5102 sta 0x5103 end
+    function screenmap(map) if map then lda #map end sta 0x5105 end
+    function filltile(tile) if tile then lda #tile end sta 0x5106 end
+    function fillcolor(col) if col then lda #col end sta 0x5107 end
+    function switchprgram(chip, bank)
+        assert(chip == 0 or chip == 1)
+        assert(bank < 4)
+        lda #chip<<2|bank sta 0x5113
+    end
+    function switchprgrom0(bank, isram) lda #bank|(isram and 0 or 0x80) sta 0x5114 end
+    function switchprgrom1(bank, isram) lda #bank|(isram and 0 or 0x80) sta 0x5115 end
+    function switchprgrom2(bank, isram) lda #bank|(isram and 0 or 0x80) sta 0x5116 end
+    function switchprgrom3(bank, isram) lda #bank|(isram and 0 or 0x80) sta 0x5117 end
+    function switchchrrom(bank, slot) -- 1kB mode
+        assert(slot < 12)
+        assert(bank < cc)
+        lda #bank>>7 sta 0x5130
+        lda #bank sta slot+0x5120
+    end
+    vsplitmode = 0
+    function vsplitstart(starttile)
+        assert(starttile < 32)
+        vsplitmode = (vsplitmode & ~31) | starttile
+        lda #vsplitmode sta 0x5200
+    end
+    function vsplitside(side)
+        assert(side == 'left' or side == 'right')
+        vsplitmode = (vsplitmode & ~0x40) | (side == 'right' and 1 or 0)
+        lda #vsplitmode sta 0x5200
+    end
+    function vsplitenable(enabled)
+        vsplitmode = (vsplitmode & ~0x80) | (enabled and 1 or 0)
+        lda #vsplitmode sta 0x5200
+    end
+    function vsplitscroll(vscroll) if vscroll then lda #vscroll end sta 0x5201 end
+    function vsplitbank(chrbank) if chrbank then lda #chrbank end sta 0x5202 end
+    function scanlineirq(atscanline) lda #0 sta 0x5204 lda #atscanline sta 0x5203 lda #0x80 sta 0x5204 end
+    function irqenable(enabled) lda #enabled and 0x80 or 0 sta 0x5204 end
+    -- 0x40 set: PPU is rendering visible scanlines
+    -- 0x80 set: a scanlineirq is pending (internal counter reach atscanline value set with scanlineirq())
+    function irqstatus() lda 0x5204 end
+    -- multiplies a*x = x:a (x hi, a lo)
+    function mul() sta 0x5205 stx 0x5206 lda 0x5205 ldx 0x5206 end
+    mappers.init = function()
+        ldx #2 stx 0x5102 dex stx 0x5103
+        lda #vsplitmode sta 0x5200
+        prgbankmode(2)
+        switchprgrom1(3) -- map prg rom 3, 2, x, 0
+        switchprgrom2(1) -- map prg rom 3, 2, 1, 0
+        chrbankmode(0) switchchrrom(0, 7) chrbankmode(3) -- map chr rom 0 to the 8kB, and set mode to 1kB slices
+    end
+end
+mappers[5] = mappers.MMC5
