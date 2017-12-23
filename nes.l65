@@ -274,7 +274,11 @@ end
 local n0ne = function(x) return not x or x == 0 end
 local val0 = function(x) return x and x or 0 end
 
--- https://wiki.nesdev.com/w/index.php/NROM
+--[[
+    https://wiki.nesdev.com/w/index.php/NROM
+    4kB chrroms are created, unless t.onechrrom is set, in which case only one big chrrom
+    location is created instead.
+]]
 mappers.NROM = function(t)
     if not t then t = {} end
     if not t.prgsize then t.prgsize = 16384 end
@@ -285,14 +289,29 @@ mappers.NROM = function(t)
     local prgstart = 0x10000 - t.prgsize
     hdrrom = location{prgstart - 16, prgstart - 1, name='header'}
     header(t)
-    prgrom = location{prgstart, 0xffff, name='prgrom'}
+    prgrom0 = location{prgstart, 0xffff, name='prgrom'}
+    prgrom = prgrom0
     section{"vectors", org=0xfffa} dc.w nmi, main, irq
-    if (t.chrsize > 0) then chrrom = location{0x10000, 0x10000 + 0x1fff, name='chrrom'} end
+    if (t.chrsize > 0) then
+    if t.onechrrom then
+        chrrom0 = location{0x10000, 0x10000 + 0x1fff, name='chrrom'}
+    else
+        for ci=0,1 do
+            local o = 0x10000 + ci*0x1000
+            _ENV['chrrom'..ci] = location{o, o+0xfff, name='chrrom'..ci}
+        end
+    end
+    chrrom = chrrom0
+    end
 end
 mappers[0] = mappers.NROM
 
--- https://wiki.nesdev.com/w/index.php/UxROM
--- Has bus conflicts.
+--[[
+    https://wiki.nesdev.com/w/index.php/UxROM
+    Has bus conflicts.
+    4kB chrroms are created, unless t.onechrrom is set, in which case only one big chrrom
+    location is created instead.
+]]
 mappers.UxROM = function(t)
     if not t then t = {} end
     t.mapperid = 2
@@ -313,7 +332,15 @@ mappers.UxROM = function(t)
     @@bankbytes -- for handling bus conflicts
         for i=0,bc-2 do byte(i) end
     local chrstart = 0x8000 + bc*0x4000
-    chrrom = location{chrstart, chrstart + 0x1fff, name='chrrom'}
+    if t.onechrrom then
+        chrrom0 = location{chrstart, chrstart + 0x1fff, name='chrrom'}
+    else
+        for ci=0,1 do
+            local o = chrstart + ci*0x1000
+            _ENV['chrrom'..ci] = location{o, o+0xfff, name='chrrom'..ci}
+        end
+    end
+    chrrom = chrrom0
     function switchprgrom(bankix)
         assert(bankix < bc-1)
         lda #bankix tax sta bankbytes,x
