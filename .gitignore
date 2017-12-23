@@ -2,6 +2,7 @@
 /tmp
 *.bin
 *.nes
+*.nes.deb
 *.sym
 *.mlb
 *.nl

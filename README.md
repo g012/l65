@@ -66,7 +66,7 @@ Table of Contents
            * [searcher(name)](#searchername)
            * [load, loadfile, dofile ; installhooks(), uninstallhooks()](#load-loadfile-dofile--installhooks-uninstallhooks)
            * [image(filename)](#imagefilename)
-     * [VCS Module](#vcs-module)
+     * [Platform Modules](#platform-modules)
   * [Building](#building)
      * [Windows](#windows)
      * [Linux](#linux)
@@ -106,6 +106,8 @@ Have a look at these files in the `samples` folder to get started with l65:
  * `vcs_spr48.l65`: a port of [.bin](http://www.pouet.net/prod.php?which=69666) title 48 pixels sprite animation.
  * `vcs_music.l65`: imports and plays back a TIATracker .ttt file directly.
  * `vcs_mcart.l65`: imports all TIATracker .ttt files in the folder supplied as arg, or current directory, and builds a music cart.
+
+ * `nes_hello.l65`: a NES 'Hello World' using BG tiles, and automatic positioned font within a 4kB CHR rom page.
 
 There's also `vcspal.act`, a palette file for authoring software for VCS. Use this palette or a similar one to create 8b PNG for `l65.image` and helper loaders depending on it. You can generate such a palette, or a GPL one for GIMP using [vcsconv](https://github.com/g012/vcsconv) `authpalette` command.
 
@@ -598,9 +600,11 @@ Return `nil` and an error message on failure, or a table with the following fiel
  * `height`: image height, in pixels
  * [1..width\*height]: the pixels, as palette indices (all bytes)
 
-### VCS Module
+### Platform Modules
 
 `vcs.l65` is a helper file for developing on Atari 2600 VCS. It's embedded into the l65 executable. It sets the 6502.lua module as metatable of the current `_ENV`, defines all TIA and PIA symbols, some helper constants and functions, as well as mapper helpers and automatic cross bank call functions. See the samples directory for usage examples, and browse vcs.l65 directly for the list of self-explanatory helpers.
+
+`nes.l65` is for NES/Famicom. It provides templates for some mappers, including 0-NROM, 1-MMC1, 2-UxROM, 3-CNROM, 4-MMC3, 5-MMC5, and 66-GxROM.
 
 ## Building
 

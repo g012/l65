@@ -82,9 +82,12 @@ cpu.getsym_as.fceux = function(filename) -- .nl, multiple files
         if a < 0x8000 then ins(ram, s)
         elseif a < 0x10000 then
             local a_org = symbolsorg[l] or a
-            local bank = math.floor((a_org - 0x8000) / 0x4000)
-            if not rom[bank] then rom[bank] = {} end
-            ins(rom[bank], s)
+            local romstart = locations[2].start -- header location should always be defined first, skip it
+            if a_org >= romstart then
+                local bank = math.floor((a_org - romstart) / 0x4000)
+                if not rom[bank] then rom[bank] = {} end
+                ins(rom[bank], s)
+            end
         end
     end)
     local fn = filename
