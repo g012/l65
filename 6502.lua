@@ -658,7 +658,7 @@ M.charset = function(s, f)
     if not f then f = function(v) return v end
     elseif type(f) == 'number' then f = function(v) return v + f end end
     local t,i={},0
-    for c in s:gmatch'.' do t[c]=f(i) i=i+1 end
+    for c in s:gmatch'.' do local v=i t[c]=function() return f(v) end i=i+1 end
     M.cs=t
     return t
 end
