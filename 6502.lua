@@ -808,6 +808,9 @@ M.long = function(...)
     table.insert(M.section_current.instructions, { data=data, size=size, bin=bin })
 end
 
+-- Return a value in rage [0x00, 0xff] if x is to use zeropage addressing mode. Defaults to range [0x0000-0x00ff].
+M.zeropage = function(x) if x >= -128 and x <= 0xff then return byte_normalize(x) end end
+
 local op,cycles_def,xcross_def
 op = function(code, cycles, extra_on_crosspage)
     return { opc=code, cycles=cycles or cycles_def, xcross=extra_on_crosspage or xcross_def }
@@ -816,7 +819,12 @@ local op_eval = function(late, early)
     local x = early or 0
     return type(late) == 'function' and late(x,op_resolve) or x+op_resolve(late)
 end
-local op_eval_byte = function(late, early) return byte_normalize(op_eval(late, early)) end
+local op_eval_byte = function(late, early, nozp)
+    local v = op_eval(late, early)
+    local zpv = zeropage(v)
+    if not nozp and zpv then return zpv end
+    return byte_normalize(v)
+end
 local op_eval_word = function(late, early) return word_normalize(op_eval(late, early)) end
 cycles_def=2 xcross_def=0 local opimp={
     asl=op(0x0a), brk=op(0x00,7), clc=op(0x18), cld=op(0xd8), cli=op(0x58), clv=op(0xb8), dex=op(0xca), dey=op(0x88),
@@ -839,7 +847,7 @@ for k,v in pairs(opimm) do
     M[k .. 'imm'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = size_op(late,early) return 2 end
-        local bin = function() local l65dbg=l65dbg return { v.opc, op_eval_byte(late,early) } end
+        local bin = function() local l65dbg=l65dbg return { v.opc, op_eval_byte(late,early,true) } end
         table.insert(M.section_current.instructions, { size=size, cycles=2, bin=bin })
     end
 end
@@ -882,7 +890,7 @@ for k,_ in pairs(opzab) do
     M[k .. 'zab'] = function(late, early)
         if type(late) ~= 'function' then
             local x = (early or 0) + late
-            if x >= -128 and x <= 0xff then return M[k .. 'zpg'](late, early) end
+            if zeropage(x) then return M[k .. 'zpg'](late, early) end
             if x >= -32768 and x <= 0xffff then return M[k .. 'abs'](late, early) end
             error("value out of word range: " .. x)
         end
@@ -894,11 +902,11 @@ for k,_ in pairs(opzab) do
             if not r then return 3 end
             size_ref(x)
             x = word_normalize(x)
-            local zpg = opzpg[k]
-            if x <= 0xff and zpg then
+            local zpg,zpv = opzpg[k], zeropage(x)
+            if zpv and zpg then
                 ins.size = 2
                 ins.cycles = zpg.cycles
-                ins.bin = function() return { zpg.opc, x } end
+                ins.bin = function() return { zpg.opc, zpv } end
                 return 2
             end
             ins.size = 3
@@ -908,7 +916,7 @@ for k,_ in pairs(opzab) do
         ins.bin = function() local l65dbg=l65dbg 
             local x = word_normalize(op_eval(late, early))
             -- since we assumed absolute on link phase, we must generate absolute in binary
-            if x <= 0xff and opzpg[k] then io.stderr:write("warning: forcing abs on zpg operand for opcode " .. k .. "\n") end
+            if zeropage(x) and opzpg[k] then io.stderr:write("warning: forcing abs on zpg operand for opcode " .. k .. "\n") end
             return { abs.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
@@ -950,7 +958,7 @@ for k,_ in pairs(opzax) do
     M[k .. 'zax'] = function(late, early)
         if type(late) ~= 'function' then
             local x = (early or 0) + late
-            if x >= -128 and x <= 0xff then return M[k .. 'zpx'](late, early) end
+            if zeropage(x) then return M[k .. 'zpx'](late, early) end
             if x >= -32768 and x <= 0xffff then return M[k .. 'abx'](late, early) end
             error("value out of word range: " .. x)
         end
@@ -962,11 +970,11 @@ for k,_ in pairs(opzax) do
             if not r then return 3 end
             size_ref(x)
             x = word_normalize(x)
-            local zpx = opzpx[k]
-            if x <= 0xff and zpx then
+            local zpx,zpv = opzpx[k], zeropage(x)
+            if zpv and zpx then
                 ins.size = 2
                 ins.cycles = zpx.cycles
-                ins.bin = function() return { zpx.opc, x } end
+                ins.bin = function() return { zpx.opc, zpv } end
                 return 2
             end
             ins.size = 3
@@ -976,7 +984,7 @@ for k,_ in pairs(opzax) do
         ins.bin = function() local l65dbg=l65dbg
             local x = word_normalize(op_eval(late, early))
             -- since we assumed absolute on link phase, we must generate absolute in binary
-            if x <= 0xff and opzpx[k] then io.stderr:write("warning: forcing abx on zpx operand for opcode " .. k .. "\n") end
+            if zeropage(x) and opzpx[k] then io.stderr:write("warning: forcing abx on zpx operand for opcode " .. k .. "\n") end
             return { abx.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)
@@ -1017,7 +1025,7 @@ for k,_ in pairs(opzay) do
     M[k .. 'zay'] = function(late, early)
         if type(late) ~= 'function' then
             local x = (early or 0) + late
-            if x >= -128 and x <= 0xff then return M[k .. 'zpy'](late, early) end
+            if zeropage(x) then return M[k .. 'zpy'](late, early) end
             if x >= -32768 and x <= 0xffff then return M[k .. 'aby'](late, early) end
             error("value out of word range: " .. x)
         end
@@ -1029,11 +1037,11 @@ for k,_ in pairs(opzay) do
             if not r then return 3 end
             size_ref(x)
             x = word_normalize(x)
-            local zpy = opzpy[k]
-            if x <= 0xff and zpy then
+            local zpy,zpv = opzpy[k], zeropage(x)
+            if zpv and zpy then
                 ins.size = 2
                 ins.cycles = zpy.cycles
-                ins.bin = function() return { zpy.opc, x } end
+                ins.bin = function() return { zpy.opc, zpv } end
                 return 2
             end
             ins.size = 3
@@ -1043,7 +1051,7 @@ for k,_ in pairs(opzay) do
         ins.bin = function() local l65dbg=l65dbg
             local x = word_normalize(op_eval(late, early))
             -- since we assumed absolute on link phase, we must generate absolute in binary
-            if x <= 0xff and opzpy[k] then io.stderr:write("warning: forcing aby on zpy operand for opcode " .. k .. "\n") end
+            if zeropage(x) and opzpy[k] then io.stderr:write("warning: forcing aby on zpy operand for opcode " .. k .. "\n") end
             return { aby.opc, x&0xff, x>>8 }
         end
         table.insert(M.section_current.instructions, ins)

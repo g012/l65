@@ -317,6 +317,8 @@ Check if `v` is within long range, call `error` if it is not, or convert negativ
 
 `pcall_za`: ...unless this field is set to system's `pcall`. Defaults to module's `pcall`. This field is used only by the `za*` (`zab`, `zax`, `zay`) virtual addressing modes, to discriminate between zeropage and absolute addressing.
 
+`zeropage`: a function with one number parameter, returning its zeropage byte value if it is within zero/direct page addressing range, nothing otherwise. Set by default to page [0x0000, 0x00ff].
+
 `symbols`: list of symbols, resolved or not. Values can be anything before the resolve phase, but must be numbers after (except for the metatable fields). Set as the metatable of the 6502 module, which itself should be set as the metatable of the current `_ENV` environment.
 
 `locations`:  list of all the registered locations.
@@ -336,7 +338,7 @@ Check if `v` is within long range, call `error` if it is not, or convert negativ
 `id()`: return a new unique numeric identifier.
 
 `stats`: a table of statistics regarding the build:
- * `cycles`: the total 6502 cycle count of the program, considering no branch is taken and no page is crossed.
+ * `cycles`: the total 6502 cycle count of the program, assuming no branch is taken and no page is crossed.
  * `used`: the total ROM bytes actually used by the program.
  * `unused`: total empty ROM space.
  * `resolved_count`: number of symbols resolved during resolve phase.

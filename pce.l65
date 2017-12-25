@@ -1,0 +1,5 @@
+-- set cpu to HuC6280
+cpu = require "6502"
+setmetatable(_ENV, cpu)
+cpu.zeropage = function(x) if x >= 0x2000 and x <= 0x20ff then return x&0xff end end
+
