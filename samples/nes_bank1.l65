@@ -2,8 +2,8 @@ require'nes'
 
 -- Press A to switch between the two PRG banks.
 
--- fixed 16kB for prgrom0, 2 other banks of 16kB each mappable at 0x8000
-mappers.UxROM{ prgsize=(16+16*2)*1024 }
+-- fixed 16kB for prgrom0, 3 other banks of 16kB each mappable at 0x8000
+mappers.UxROM{ prgsize=(16+16*3)*1024 }
 
 location(chrrom0)
 
