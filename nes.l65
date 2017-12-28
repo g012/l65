@@ -322,6 +322,7 @@ mappers.NROM = function(t)
     prgrom = prgrom0
     section{"vectors", org=0xfffa} dc.w nmi, main, irq
     if (t.chrsize > 0) then
+        local ci = 0
         local chrmap = t.chrmap or function(ci) return ci*0x1000, 0x1000, (ci&1)*0x1000 end
         repeat
             local off, sz, rorg = chrmap(ci)
