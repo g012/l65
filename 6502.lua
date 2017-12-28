@@ -167,8 +167,6 @@ M.link = function()
             if position then
                 section.org = position
                 chunk_reserve(section, chunk_ix)
-                symbolsorg[section.label] = position
-                symbols[section.label] = rorg(position)
                 --print(section.label, string.format("%04X\t%d", position, section.size))
                 --for k,v in ipairs(location.chunks) do print(string.format("  %04X  %04X  %d", v.start, v.size+v.start-1, v.size)) end
                 return position
@@ -225,8 +223,6 @@ M.link = function()
             for chunk_ix,chunk in ipairs(location.chunks) do
                 if chunk.start <= section.org and chunk.size - (section.org - chunk.start) >= section.size then
                     chunk_reserve(section, chunk_ix)
-                    symbolsorg[section.label] = section.org
-                    symbols[section.label] = rorg(section.org)
                     goto chunk_located
                 end
             end
@@ -269,8 +265,6 @@ M.link = function()
             section.org = position + (section.location.start - location_start) + offset
             local chunk,chunk_ix = chunk_from_address(section, section.org)
             chunk_reserve(section, chunk_ix)
-            symbolsorg[section.label] = section.org
-            symbols[section.label] = section.location.rorg(section.org)
         end
     end end
 
@@ -307,7 +301,7 @@ M.resolve = function()
     for k,v in pairs(symbols) do if k ~= '__index' then
         local t = type(v)
         if t == 'function' then v=v() t=type(v) symbols[k]=v count=count+1 end
-        if t == 'table' and type(v.resolve) == 'function' then symbols[k]=v.resolve() count=count+1 end
+        if t == 'table' and type(v.resolve) == 'function' then symbols[k],symbolsorg[k]=v.resolve() count=count+1 end
         if t == 'string' and symbols[v] then symbols[k]=symbols[v] count=count+1 end
         stats.resolved_count = stats.resolved_count + count
     end end until count == 0
@@ -376,11 +370,11 @@ M.getsym = function(entry)
     for k,v in pairs(symbols) do if type(v) == 'number' then ins(sym_rev,k) end end
     table.sort(sym_rev, function(a,b) local x,y=symbols[a],symbols[b] if x==y then return a<b end return x<y end)
     for _,v in ipairs(sym_rev) do
-        local k=symbols[v]
+        local k,vorg=symbols[v],v
         local u=v:match'.*()_' if u then -- change _ to . in local labels
             local parent=v:sub(1,u-1) if symbols[parent] then v = parent..'.'..v:sub(u+1) end
         end
-        local e = entry(k,v) if e then
+        local e = entry(k,v,vorg) if e then
             if type(e) == 'table' then for _,ev in ipairs(e) do ins(s, ev) end
             else ins(s, e) end
         end
@@ -550,7 +544,10 @@ M.label = function(name)
         label.size = 0
         return 0
     end
-    label.resolve = function() return rorg(section.org + offset) end
+    label.resolve = function()
+        local o = section.org + offset
+        return rorg(o),o
+    end
     table.insert(section.instructions, label)
     return name,label
 end
