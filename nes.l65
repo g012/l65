@@ -460,14 +460,6 @@ mappers.GxROM = function(t)
     end
     prgrom = prgrom0
     local cc = t.chrsize//0x2000
-    if t.onechrrom then
-        chrrom0 = location{chrstart, chrstart + cc*0x2000 - 1, rorg=0, name='chrrom'}
-    else
-        for ci=0,cc-1 do
-            local o = chrstart + ci*0x2000
-            _ENV['chrrom'..ci] = location{o, o+0x2000-1, rorg=0, name='chrrom'..ci}
-        end
-    end
     local ci, chrstart = 0, 0x8000 + bc*0x8000
     local chrmap = t.chrmap or function(ci) return ci*0x1000, 0x1000, (ci&1)*0x1000 end
     repeat
@@ -490,9 +482,9 @@ mappers.GxROM = function(t)
             ldx #bankregister&3|bankregister>>2 lda #bankregister sta bankbytes0,x
         else
             assert(bankregister_shadow >= 0, "no RAM slot assigned to bankregister_shadow")
-            tay lda bankregister_shadow and #3 sta bankregister_shadow
+            tay lda bankregister_shadow ;and #3 sta bankregister_shadow
             tya asl asl ora bankregister_shadow tax
-            and #0xc asl asl ora bankregister_shadow sta bankregister_shadow
+            ;and #0xc asl asl ora bankregister_shadow sta bankregister_shadow
             sta bankbytes0,x
         end
     end
@@ -504,7 +496,7 @@ mappers.GxROM = function(t)
         else
             assert(bankregister_shadow >= 0, "no RAM slot assigned to bankregister_shadow")
             tay lda bankregister_shadow lsr lsr sta bankregister_shadow
-            tya ora bankregister_shadow tax and #0xc
+            tya ora bankregister_shadow tax ;and #0xc
             asl asl sta bankregister_shadow tya ora bankregister_shadow sta bankregister_shadow
             sta bankbytes0,x
         end
