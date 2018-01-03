@@ -447,18 +447,6 @@ mappers.GxROM = function(t)
     hdrrom = location{0x7ff0, 0x7fff, name='header'}
     header(t)
     local bc = t.prgsize//0x8000
-    for bi=0,bc-1 do
-        local o,ix = 0x8000 + bi*0x8000, bc-1-bi
-        _ENV['prgrom'..ix] = location{o, o+0x7fff, rorg=0x8000, name='prgrom'..ix}
-        section{"vectors"..ix, org=o+0x8000-6} dc.w nmi, main, irq
-        section{"bankbytes"..ix, org=o+0x8000-6-16} samepage -- for handling bus conflicts
-            dc.b 0x00, 0x01, 0x02, 0x03
-            dc.b 0x10, 0x11, 0x12, 0x13
-            dc.b 0x20, 0x21, 0x22, 0x23
-            dc.b 0x30, 0x31, 0x32, 0x33
-        end
-    end
-    prgrom = prgrom0
     local cc = t.chrsize//0x2000
     local ci, chrstart = 0, 0x8000 + bc*0x8000
     local chrmap = t.chrmap or function(ci) return ci*0x1000, 0x1000, (ci&1)*0x1000 end
@@ -471,38 +459,66 @@ mappers.GxROM = function(t)
     until off + sz >= t.chrsize
     chrrom = chrrom0
     -- RAM address of bank register copy, to switch using A instead of immediate
-    bankregister_shadow = -1
     -- if bankregister_shadow is negative, only immediate bankswitching is available
-    bankregister = 0
+    bankregister_shadow = -1
     -- otherwise, just set the value directly: xxPPxxCC in A, xxxxPPCC in X with sta bankbytes0,x
+    function switchroms(prgbankix, chrbankix)
+        if prgbankix then
+            assert(prgbankix < bc) prgbankix = bc-1-prgbankix
+            assert(chrbankix, "GxROM must specify both PRG and CHR roms to switch simultaneously")
+            assert(chrbankix < cc)
+            local br = prgbankix<<4 | chrbankix
+            ldx #br&3|br>>2 lda #br sta bankbytes0,x
+        else -- A contains 00PP00CC
+            if bankregister_shadow >= 0 then
+                sta bankregister_shadow -- bankregister_shadow = 00PP00CC
+                lsr lsr -- A = 0000PP00, c
+                -- compute bc-1-prgbankix (reverse indexing)
+                eor #0xff adc #(bc-1<<2)+1 -- negate and +bc-1 combined, NN = bc-1-PP: A = 0000NN00
+                ora bankregister_shadow ;and #0xf tax -- X = 0000NNCC
+            else -- use stack instead
+                tsx sta 0x100,x lsr lsr -- A = 0000PP00, s[0] = 00PP00CC, c
+                -- compute bc-1-prgbankix (reverse indexing)
+                eor #0xff adc #(bc-1<<2)+1 -- negate and +bc-1 combined, NN = bc-1-PP: A = 0000NN00
+                ora 0x100,x ;and #0xf tax -- X = 0000NNCC
+            end
+            lda bankbytes0,x sta bankbytes0,x -- A = 00NN00CC, from table
+        end
+    end
+    for bi=0,bc-1 do
+        local o,ix = 0x8000 + bi*0x8000, bc-1-bi
+        _ENV['prgrom'..ix] = location{o, o+0x7fff, rorg=0x8000, name='prgrom'..ix}
+        local start=section{"entry"..ix, org=o+0x8000-6-16-10} switchroms(0,0) if ix==0 then jmp main end
+        section{"vectors"..ix, org=o+0x8000-6} dc.w "nmi"..ix, start, "irq"..ix
+        section{"bankbytes"..ix, org=o+0x8000-6-16} samepage -- for handling bus conflicts
+            dc.b 0x00, 0x01, 0x02, 0x03
+            dc.b 0x10, 0x11, 0x12, 0x13
+            dc.b 0x20, 0x21, 0x22, 0x23
+            dc.b 0x30, 0x31, 0x32, 0x33
+        end
+    end
+    prgrom = prgrom0
     function switchprgrom(bankix)
         if bankix then
             assert(bankix < bc)
-            bankregister = (bankregister & ~0x30) | (bankix << 4)
-            ldx #bankregister&3|bankregister>>2 lda #bankregister sta bankbytes0,x
+            lda #bc-1-bankix
         else
-            assert(bankregister_shadow >= 0, "no RAM slot assigned to bankregister_shadow")
-            tay lda bankregister_shadow ;and #3 sta bankregister_shadow
-            tya asl asl ora bankregister_shadow tax
-            ;and #0xc asl asl ora bankregister_shadow sta bankregister_shadow
-            sta bankbytes0,x
+            clc eor #0xff adc #bc -- bc-1 - A
         end
+        assert(bankregister_shadow >= 0, "no RAM slot assigned to bankregister_shadow")
+        tay lda bankregister_shadow ;and #3 sta bankregister_shadow
+        tya asl asl ora bankregister_shadow tax
+        lda bankbytes0,x sta bankregister_shadow sta bankbytes0,x
     end
     function switchchrrom(bankix)
         if bankix then
             assert(bankix < cc)
-            bankregister = (bankregister & ~3) | bankix
-            ldx #bankregister&3|bankregister>>2 lda #bankregister sta bankbytes0,x
-        else
-            assert(bankregister_shadow >= 0, "no RAM slot assigned to bankregister_shadow")
-            tay lda bankregister_shadow lsr lsr sta bankregister_shadow
-            tya ora bankregister_shadow tax ;and #0xc
-            asl asl sta bankregister_shadow tya ora bankregister_shadow sta bankregister_shadow
-            sta bankbytes0,x
+            lda #bankix
         end
-    end
-    mappers.init = function()
-        switchchrrom(0)
+        assert(bankregister_shadow >= 0, "no RAM slot assigned to bankregister_shadow")
+        tay lda bankregister_shadow lsr lsr sta bankregister_shadow
+        tya ora bankregister_shadow tax
+        lda bankbytes0,x sta bankregister_shadow sta bankbytes0,x
     end
 end
 mappers[66] = mappers.GxROM

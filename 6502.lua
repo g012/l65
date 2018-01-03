@@ -515,6 +515,8 @@ end
 -- -ted positon for 'section1'.
 -- If offset1 is omitted, -offset2 is used.
 M.relate = function(section1, section2, offset, offset2)
+    assert(section1.type == 'section', "section1 is not a section")
+    assert(section2.type == 'section', "section2 is not a section")
     local rel1 = relations[section1] or {}
     rel1[section2] = (offset2 or offset) or 0
     relations[section1] = rel1
