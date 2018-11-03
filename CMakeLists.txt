@@ -80,6 +80,7 @@ set(L65_HEADERS
 
 file(GLOB L65_FILES ${L65_SOURCE_DIR}/*.l65)
 set(L65_SCRIPTS
+        ${L65_SOURCE_DIR}/asm.lua
         ${L65_SOURCE_DIR}/6502.lua
         ${L65_SOURCE_DIR}/dkjson.lua
         ${L65_SOURCE_DIR}/l65.lua

@@ -164,7 +164,7 @@ static int getembedded(lua_State *L)
         }
     }
     return 0;
-}
+}   
 
 static int msghandler(lua_State *L)
 {
@@ -189,6 +189,8 @@ int main(int argc, char *argv[])
 
     // preload embedded lua scripts
     luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
+    luaL_loadbufferx(L, script_asm_lua, sizeof(script_asm_lua), "asm.lua", "b");
+    lua_setfield(L, -2, "asm");
     luaL_loadbufferx(L, script_6502_lua, sizeof(script_6502_lua), "6502.lua", "b");
     lua_setfield(L, -2, "6502");
     lua_pop(L, 1);
