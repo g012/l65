@@ -1,6 +1,11 @@
 M = require "asm"
 
-local cycles_def,xcross_def
+local op_eval_byte = function(late, early) return byte_normalize(op_eval(late, early)) end
+M.op_eval_byte = op_eval_byte
+
+local op_eval_word = function(late, early) return word_normalize(op_eval(late, early)) end
+M.op_eval_word = op_eval_word
+
 local opimp={
     block=M.op(0x31,13),
     calb=M.op(0x63,13),
@@ -261,7 +266,7 @@ for i=0x80,0xbf,1 do
 end
 
 
-M['jr'] = function(label)
+M.jr = function(label)
     local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local parent,offset = M.label_current
     local section,rorg = M.section_current,M.location_current.rorg

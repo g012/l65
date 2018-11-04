@@ -3,6 +3,17 @@ M = require "asm"
 -- Return a value in rage [0x00, 0xff] if x is to use zeropage addressing mode. Defaults to range [0x0000-0x00ff].
 M.zeropage = function(x) if x >= -128 and x <= 0xff then return M.byte_normalize(x) end end
 
+local op_eval_byte = function(late, early, nozp)
+    local v = op_eval(late, early)
+    local zpv = zeropage(v)
+    if not nozp and zpv then return zpv end
+    return byte_normalize(v)
+end
+M.op_eval_byte = op_eval_byte
+
+local op_eval_word = function(late, early) return word_normalize(op_eval(late, early)) end
+M.op_eval_word = op_eval_word
+
 local cycles_def,xcross_def
 
 cycles_def=2 xcross_def=0 local opimp={
@@ -31,6 +42,7 @@ for k,v in pairs(opimm) do
         table.insert(M.section_current.instructions, { size=size, cycles=2, bin=bin })
     end
 end
+
 cycles_def=3 xcross_def=0 local opzpg={
     adc=M.op(0x65), ['and']=M.op(0x25), asl=M.op(0x06,5), bit=M.op(0x24), cmp=M.op(0xc5), cpx=M.op(0xe4), cpy=M.op(0xc4), dec=M.op(0xc6,5),
     eor=M.op(0x45), inc=M.op(0xe6,5), lda=M.op(0xa5), ldx=M.op(0xa6), ldy=M.op(0xa4), lsr=M.op(0x46,5), ora=M.op(0x05), rol=M.op(0x26,5),
