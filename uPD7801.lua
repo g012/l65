@@ -1,9 +1,9 @@
 M = require "asm"
 
-local op_eval_byte = function(late, early) return byte_normalize(op_eval(late, early)) end
+local op_eval_byte = function(late, early) return M.byte_normalize(M.op_eval(late, early)) end
 M.op_eval_byte = op_eval_byte
 
-local op_eval_word = function(late, early) return word_normalize(op_eval(late, early)) end
+local op_eval_word = function(late, early) return M.word_normalize(M.op_eval(late, early)) end
 M.op_eval_word = op_eval_word
 
 local opimp={
@@ -61,9 +61,9 @@ end
 
 local opd={
     ldaxm=M.op(0x2e,7),
-    ldaxp=M.op(0x2c 7), 
+    ldaxp=M.op(0x2c,7), 
     staxm=M.op(0x3e,7),
-    staxp=M.op(0x3c,7),
+    staxp=M.op(0x3c,7)
 } M.opd = opd
 for k,v in pairs(opd) do
     M[k .. 'd'] = function()
@@ -83,7 +83,7 @@ for k,v in pairs(oph) do
     end
 end
 
-local opind={
+local oprwind={
     dcxbc=M.op(0x13,7),
     dcxde=M.op(0x23,7),
     dcxhl=M.op(0x33,7),
@@ -260,18 +260,33 @@ for k,v in pairs(opwwww) do
     end
 end
 
-for i=0x80,0xbf,1 do
-    M['calt' .. i]=M.op(i,cycles)
-    table.insert(M.section_current.instructions, { size=1, cycles=19, bin=i})
+M.calt = function(late, early)
+    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+    local op = { cycles=19 }
+    op.size = function() late,early = M.size_op(late,early) return 1 end
+    op.bin = function() 
+        local l65dbg=l65dbg
+        local x = M.op_eval_byte(late,early)
+        if (x%2 == 1) then error("offset should be even : " .. x) end
+        if x < 0x80 or x > 0xfe then error("offset out of range : " .. x) end
+        x = (x>>1) + 0x40
+        return x
+    end
+    table.insert(M.section_current.instructions, op)
 end
-
 
 M.jr = function(label)
     local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local parent,offset = M.label_current
     local section,rorg = M.section_current,M.location_current.rorg
-    local op = { cycles=13, size=1 }
-    op.bin = function() local l65dbg=l65dbg 
+    local op = { cycles=13 }
+    op.size = function()
+        offset = section.size
+        label = M.size_dc(label)
+        return 1
+    end
+    op.bin = function() 
+        local l65dbg=l65dbg 
         local x,l = label,label
         if type(x) == 'function' then x=x() end
         if type(x) == 'string' then
@@ -279,12 +294,13 @@ M.jr = function(label)
             x = symbols[x]
         end
         if type(x) ~= 'number' then error("unresolved branch target: " .. tostring(x)) end
-        x = x - offset - rorg(section.org)
-        if x < -32 or x > 0x32 then error("branch target out of range for " .. l .. ": " .. x) end
+        x = x-1 - offset - rorg(section.org)
+        if x < -32 or x > 0x32 then error("branch target out of range for " .. l .. ": " .. x)
         elseif x >= 0 then
-            return 0xc0 + x
+            x = 0xc0 + x
+            return 
         else
-            return x
+            return x & 0xff
         end
     end
     table.insert(M.section_current.instructions, op)

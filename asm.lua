@@ -823,15 +823,4 @@ local op_eval = function(late, early)
 end
 M.op_eval = op_eval
 
-local op_eval_byte = function(late, early, nozp)
-    local v = op_eval(late, early)
-    local zpv = zeropage(v)
-    if not nozp and zpv then return zpv end
-    return byte_normalize(v)
-end
-M.op_eval_byte = op_eval_byte
-
-local op_eval_word = function(late, early) return word_normalize(op_eval(late, early)) end
-M.op_eval_word = op_eval_word
-
 return M

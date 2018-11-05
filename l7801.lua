@@ -32,43 +32,26 @@ local Keywords = lookupify{
     'return', 'then', 'true', 'until', 'while',
 };
 
--------------------------------------------------------- 6502::begin
 local Keywords_control = {
-    -- control keywords
-    'samepage', 'crosspage',
 }
 local Keywords_data = {
     'dc',
 }
-local Keywords_6502 = {
-    -- opcodes
-    'adc', 'and', 'asl', 'bcc', 'bcs', 'beq', 'bit', 'bmi',
-    'bne', 'bpl', 'brk', 'bvc', 'bvs', 'clc', 'cld', 'cli',
-    'clv', 'cmp', 'cpx', 'cpy', 'dec', 'dex', 'dey', 'eor',
-    'inc', 'inx', 'iny', 'jmp', 'jsr', 'lda', 'ldx', 'ldy',
-    'lsr', 'nop', 'ora', 'pha', 'php', 'pla', 'plp', 'rol',
-    'ror', 'rti', 'rts', 'sbc', 'sec', 'sed', 'sei', 'sta',
-    'stx', 'sty', 'tax', 'tay', 'tsx', 'txa', 'txs', 'tya',
-    -- illegal opcodes
-    'anc', 'ane', 'arr', 'asr', 'dcp', 'isb', 'jam', 'las',
-    'lax', 'rla', 'rra', 'sax', 'sbx', 'sha', 'shs', 'shx',
-    'shy', 'slo', 'sre',
+local Keywords_7801 = {
+    'block', 'calt', 'dcr', 'jr', 'lxi', 'mvi', 'nop'
 }
-local Registers_6502 = { a=8, x=8, y=8, s=8 }
+local Registers_7801 = {
+    a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
+    bc=16,de=16,hl=16,sp=16
+}
 
-local syntax6502_on
-local function syntax6502(on)
-    syntax6502_on = on
+local function syntax7801(on)
+    syntax7801_on = on
     lookupify(Keywords_control, Keywords, not on)
     lookupify(Keywords_data, Keywords, not on)
-    lookupify(Keywords_6502, Keywords, not on)
+    lookupify(Keywords_7801, Keywords, not on)
 end
-syntax6502(true)
-
-local syntax6502k_on
-local function syntax6502k(on)
-    syntax6502k_on = on
-end
+syntax7801(true)
 
 local opcode_arg_encapsulate_on
 local function opcode_arg_encapsulate(on)
@@ -79,96 +62,20 @@ opcode_arg_encapsulate(true)
 local opcode_encapsulate = {} -- additionnal opcode, to have basic encapsulation (function(a) return a end)
 local opcode_alias = {} -- alternate user names for opcodes
 local opcode_implied = lookupify{
-    'asl', 'brk', 'clc', 'cld', 'cli', 'clv', 'dex', 'dey',
-    'inx', 'iny', 'lsr', 'nop', 'pha', 'php', 'pla', 'plp',
-    'rol', 'ror', 'rti', 'rts', 'sec', 'sed', 'sei', 'tax',
-    'tay', 'tsx', 'txa', 'txs', 'tya',
-    -- illegal opcodes
-    'jam',
+    'block', 'dcr', 'nop'
 }
 local opcode_immediate = lookupify{
-    'adc', 'and', 'cmp', 'cpx', 'cpy', 'eor', 'lda', 'ldx',
-    'ldy', 'ora', 'sbc',
-    -- illegal opcodes
-    'anc', 'ane', 'arr', 'asr', 'jam', 'lax', 'nop', 'sbx',
-}
-local opcode_zeropage = lookupify{
-    'adc', 'and', 'asl', 'bit', 'cmp', 'cpy', 'cpx', 'dec',
-    'eor', 'inc', 'lda', 'ldx', 'ldy', 'lsr', 'nop', 'ora',
-    'rol', 'ror', 'sbc', 'sta', 'stx', 'sty',
-    -- illegal opcodes
-    'dcp', 'isb', 'jam', 'lax', 'rla', 'rra', 'sax', 'slo',
-    'sre',
-}
-local opcode_zeropage_x = lookupify{
-    'adc', 'and', 'asl', 'cmp', 'dec', 'eor', 'inc', 'lda',
-    'ldy', 'lsr', 'ora', 'rol', 'ror', 'sbc', 'sta', 'sty',
-    -- illegal opcodes
-    'dcp', 'isb', 'jam', 'nop', 'rla', 'rra', 'slo', 'sre',
-}
-local opcode_zeropage_y = lookupify{
-    'ldx', 'stx',
-    -- illegal opcodes
-    'lax', 'sax',
-}
-local opcode_absolute = lookupify{
-    'adc', 'and', 'asl', 'bit', 'cmp', 'cpy', 'cpx', 'dec',
-    'eor', 'inc', 'jmp', 'jsr', 'lda', 'ldx', 'ldy', 'lsr',
-    'nop', 'ora', 'rol', 'ror', 'sbc', 'sta', 'stx', 'sty',
-    -- illegal opcodes
-    'dcp', 'isb', 'jam', 'lax', 'rla', 'rra', 'sax', 'slo',
-    'sre',
-}
-local opcode_absolute_x = lookupify{
-    'adc', 'and', 'asl', 'cmp', 'dec', 'eor', 'inc', 'lda',
-    'ldy', 'lsr', 'ora', 'rol', 'ror', 'sbc', 'sta',
-    -- illegal opcodes
-    'dcp', 'isb', 'jam', 'nop', 'rla', 'rra', 'shy', 'slo',
-    'sre',
-}
-local opcode_absolute_y = lookupify{
-    'adc', 'and', 'cmp', 'eor', 'lda', 'ldx', 'ora', 'sbc',
-    'sta',
-    -- illegal opcodes
-    'dcp', 'isb', 'jam', 'las', 'lax', 'rla', 'rra', 'sax',
-    'sha', 'shx', 'slo', 'shs', 'sre',
-}
-local opcode_indirect = lookupify{
-    'jmp',
-    -- illegal opcodes
-    'jam',
-}
-local opcode_indirect_x = lookupify{
-    'adc', 'and', 'cmp', 'eor', 'lda', 'ora', 'sbc', 'sta',
-    -- illegal opcodes
-    'dcp', 'isb', 'jam', 'lax', 'rla', 'rra', 'sax', 'slo',
-    'sre',
-}
-local opcode_indirect_y = lookupify{
-    'adc', 'and', 'cmp', 'eor', 'lda', 'ora', 'sbc', 'sta',
-    -- illegal opcodes
-    'dcp', 'isb', 'jam', 'lax', 'rla', 'rra', 'sha', 'slo',
-    'sre',
+    'calt', 'lxi', 'mvi'
 }
 local opcode_relative = lookupify{
-    'bcc', 'bcs', 'beq', 'bmi', 'bne', 'bpl', 'bvc', 'bvs',
+    'jr',
 }
 
 local addressing_map = {
     imp = opcode_implied,
     imm = opcode_immediate,
-    zpg = opcode_zeropage,
-    zpx = opcode_zeropage_x,
-    zpy = opcode_zeropage_y,
-    abs = opcode_absolute,
-    abx = opcode_absolute_x,
-    aby = opcode_absolute_y,
-    ind = opcode_indirect,
-    inx = opcode_indirect_x,
-    iny = opcode_indirect_y,
     rel = opcode_relative,
 }
--------------------------------------------------------- 6502::end
 
 local Scope = {
     new = function(self, parent)
@@ -487,18 +394,12 @@ local function LexLua(src)
                     end
                     return opt
                 end
-                if dat == 'syntax6502' then
-                    onoff(syntax6502)
-                    toEmit = {Type = 'Symbol', Data = ';'}
-                elseif dat == 'syntax6502k' then
-                    onoff(function() end)
-                    toEmit = {Type = 'Keyword', Data = 'syntax6502k_' .. opt}
-                elseif dat == 'encapsulate' then
+                if dat == 'encapsulate' then
                     local opcode = onoff(function() end, true)
                     if opcode then
                         opcode_encapsulate[opcode] = get_word()
-                        table.insert(Keywords_6502, opcode)
-                        Keywords[opcode] = syntax6502_on
+                        table.insert(Keywords_7801, opcode)
+                        Keywords[opcode] = syntax7801_on
                         toEmit = {Type = 'Symbol', Data = ';'}
                     else
                         toEmit = {Type = 'Keyword', Data = 'encapsulate_' .. opt}
@@ -508,14 +409,14 @@ local function LexLua(src)
                     local map = addressing_map[addressing]
                     if not map then generateError("invalid addressing for pragma add_opcode: " .. addressing .. " (opcode: " .. opcode .. ")") end
                     map[opcode] = true
-                    table.insert(Keywords_6502, opcode)
-                    Keywords[opcode] = syntax6502_on
+                    table.insert(Keywords_7801, opcode)
+                    Keywords[opcode] = syntax7801_on
                     toEmit = {Type = 'Symbol', Data = ';'}
                 elseif dat == 'alias' then
                     local org,new = get_word(),get_word()
                     opcode_alias[new] = org
-                    table.insert(Keywords_6502, new)
-                    Keywords[new] = syntax6502_on
+                    table.insert(Keywords_7801, new)
+                    Keywords[new] = syntax7801_on
                     toEmit = {Type = 'Symbol', Data = ';'}
                 else generateError("unknown pragma: " .. dat)
                 end
@@ -631,14 +532,14 @@ local function LexLua(src)
             elseif consume('/') then
                 toEmit = {Type = 'Symbol', Data = consume('/') and '//' or '/'}
 
-            elseif syntax6502_on and consume('@') then
+            elseif syntax7801_on and consume('@') then
                 if consume('@') then
                     toEmit = {Type = 'Symbol', Data = '@@'}
                 else
                     toEmit = {Type = 'Symbol', Data = '@'}
                 end
 
-            elseif syntax6502_on and consume('\\') then
+            elseif syntax7801_on and consume('\\') then
                 toEmit = {Type = 'Symbol', Data = '\\'}
 
             elseif Symbols[c] then
@@ -1271,8 +1172,8 @@ local function ParseLua(src, src_name)
     local pragma_map = {
         encapsulate_on = function() opcode_arg_encapsulate(true) end,
         encapsulate_off = function() opcode_arg_encapsulate(false) end,
-        syntax6502k_on = function() syntax6502k(true) end,
-        syntax6502k_off = function() syntax6502k(false) end,
+        syntax7801k_on = function() syntax7801k(true) end,
+        syntax7801k_off = function() syntax7801k(false) end,
     }
     local function ParseStatement(scope)
         local stat = nil
@@ -1282,7 +1183,7 @@ local function ParseLua(src, src_name)
         local p = function(t,n) return function() return '<' .. t .. string.rep(' ', 7-#t) .. ' ' .. n .. ' >' end end
         local t = function(t,s,w) return { Type=t, Data=s, Print=p(t,s), Char=c(), Line=l(), LeadingWhite=w or {} } end
         local no_encapsulation = { Function=true, NumberExpr=true, StringExpr=true }
-        local reg = function(e) local t=e.Tokens[1] if t then return Registers_6502[t.Data] end end
+        local reg = function(e) local t=e.Tokens[1] if t then return Registers_7801[t.Data] end end
 
         local function emit_call(params)
             local name,args,inverse_encapsulate = params.name, params.args or {}, params.inverse_encapsulate
@@ -1456,104 +1357,19 @@ local function ParseLua(src, src_name)
             stat = emit_call{name=func, args=exprs, inverse_encapsulate=inverse_encapsulate}
         end end
 
-        -- k65 style syntax
-        if not stat and syntax6502k_on then
-            -- *=[a,x,y,s]=?
-            do
-                tok:Save()
-                local exprs = {}
-                while true do
-                    local st, expr = ParseExpr(scope)
-                    if not st then break end
-                    table.insert(exprs, expr)
-                    if not tok:ConsumeSymbol('=', tokenList) then break end
-                end
-                if #exprs < 2 then
-                    tok:Restore()
-                else
-                    local hasreg
-                    for e in exprs do hasreg=reg(e) if hasreg then break end end
-                    if not hasreg then
-                        tok:Restore()
-                    else
-                        tok:Commit()
-                        local skip
-                        for i=#exprs-1,1,-1 do
-                            if skip then
-                                skip = false
-                            else
-                                local src,dst = exprs[i+1],exprs[i]
-                                local src_reg,dst_reg = reg(src),reg(dst)
-                                local op,arg
-                                if src_reg=='s' then
-                                    if dst_reg=='x' then 
-                                        op = 'tsximp'
-                                    end
-                                elseif dst_reg=='s' then
-                                    if src_reg=='x' then
-                                        op = 'txsimp'
-                                    end
-                                elseif src_reg and not dst_reg then
-                                    arg = i
-                                    op = 'st'..src_reg
-                                elseif dst_reg and not src_reg then
-                                    arg = i+1
-                                    if dst_reg=='x' and i > 1 and reg(exprs[i-1])=='a' then
-                                        op='lax' skip=true
-                                    else
-                                        op = 'ld'..src_reg
-                                    end
-                                end
-                                if not op then
-                                    return false, GenerateError("no opcode for assignment")
-                                end
-                                if arg then
-                                    arg = exprs[arg]
-                                end
-                            end
-                        end
-                    end
-
-                    local t,r,rexpr,rexpr_ix
-                    rexpr_ix=#exprs rexpr=exprs[rexprs_ix] t=#rexpr.Tokens[1] if t then r=Registers_6502[t.Data] end
-                    if not r then rexpr_ix=#exprs-1 rexpr=exprs[rexprs_ix] t=#rexpr.Tokens[1] if t then r=Registers_6502[t.Data] end end
-                    if r then
-                    end
-                end
-            end
-
-            if tok:Is('Ident') and tok:Peek(1).Data == '=' then
-                local reg = tok:Peek(2).Data
-                if Registers_6502[reg] then
-                    local st, arg = ParseExpr(scope)
-                    tok:Get(tokenList) tok:Get(tokenList)
-                    arg.Tokens[1].LeadingWhite,tokenList[1].LeadingWhite = tokenList[1].LeadingWhite,arg.Tokens[1].LeadingWhite
-                    stat = emit_call{name = 'st'..reg..'zab', args = {arg}}
-                end
-            end
-        end
-
-        -- 6502 opcodes
+        -- 7801 opcodes
         if not stat then
             local mod_st, mod_expr, inverse_encapsulate
-        for _,op in pairs(Keywords_6502) do
+        for _,op in pairs(Keywords_7801) do
             if tok:ConsumeKeyword(op, tokenList) then
-                if opcode_alias[op] then op = opcode_alias[op] end
-                if opcode_encapsulate[op] then
-                    inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
-                    local st, expr = ParseExpr(scope) if not st then return false, expr end
-                    local paren_open_whites = {}
-                    if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
-                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
-                    stat = emit_call{name=opcode_encapsulate[op], args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, basic=true} break
-                elseif opcode_relative[op] then
+                if opcode_relative[op] then
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     if expr.AstType == 'VarExpr' and expr.Variable.IsGlobal then
                         expr = as_string_expr(expr, expr.Name)
                     end
-                    stat = emit_call{name=op .. "rel", args={expr}, encapsulate=false} break
+                    stat = emit_call{name=op, args={expr}, encapsulate=false} break
                 end
-                if opcode_immediate[op] and tok:ConsumeSymbol('#', tokenList) then
+                if opcode_immediate[op] then
                     inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     local paren_open_whites = {}
@@ -1564,152 +1380,9 @@ local function ParseLua(src, src_name)
                         mod_st, mod_expr = ParseExpr(scope)
                         if not mod_st then return false, mod_expr end
                     end
-                    stat = emit_call{name=op .. "imm", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
+                    stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
                 end
-                if (opcode_indirect[op] or opcode_indirect_x[op] or opcode_indirect_y[op]) and tok:ConsumeSymbol('(', tokenList) then
-                    inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
-                    local st, expr = ParseExpr(scope) if not st then return false, expr end
-                    local paren_open_whites,paren_close_whites,mod_st,mod_expr = {},{}
-                    if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
-                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
-                    if tok:IsSymbol(',') and tok:Peek(1).Data ~= 'x' then
-                        tok:Get(tokenList)
-                        commaTokenList[1] = tokenList[#tokenList]
-                        mod_st, mod_expr = ParseExpr(scope)
-                        if not mod_st then return false, mod_expr end
-                    end
-                    if tok:ConsumeSymbol(',', tokenList) then
-                        if not opcode_indirect_x[op]
-                        or not tok:Get(tokenList).Data == 'x'
-                        or not tok:ConsumeSymbol(')', tokenList)
-                        then return false, expr end
-                        for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
-                        for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                        stat = emit_call{name=op .. "inx", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
-                    elseif not tok:ConsumeSymbol(')', tokenList) then return false, expr
-                    else 
-                        if tok:ConsumeSymbol(',', tokenList) then
-                            if not opcode_indirect_y[op] or not tok:Get(tokenList).Data == 'y'
-                            then return false, expr end
-                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            stat = emit_call{name=op .. "iny", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
-                        else
-                            if not opcode_indirect[op] then return false, expr end
-                            stat = emit_call{name=op .. "ind", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
-                        end
-                    end
-                end
-                if opcode_absolute[op] or opcode_absolute_x[op] or opcode_absolute_y[op]
-                or opcode_zeropage[op] or opcode_zeropage_x[op] or opcode_zeropage_y[op]
-                then
-                    local suffix = ''
-                    tok:Save()
-                    if tok:ConsumeSymbol('.', tokenList) then
-                        local t = tok:Get(tokenList).Data
-                        if t == 'w' then suffix = 'w'
-                        elseif t == 'b' then suffix = 'b'
-                        else tok:Restore() tok:Save() end
-                    end
-                    local paren_open_whites = {}
-                    if tok:ConsumeSymbol('!', tokenList) then
-                        inverse_encapsulate = true
-                        for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
-                    end
-                    local st, expr = ParseExpr(scope)
-                    if not st then tok:Restore()
-                    else
-                        tok:Commit()
-                        if not tok:ConsumeSymbol(',', tokenList) then
-                            if not opcode_absolute[op] and not opcode_zeropage[op] then return false, expr end
-                            suffix = suffix=='b' and "zpg" or suffix=='w' and "abs" or "zab"
-                            if suffix == 'zab' then
-                                if not opcode_zeropage[op] then suffix='abs'
-                                elseif not opcode_absolute[op] then suffix='zpg' end
-                            end
-                            if suffix == 'zpg' and not opcode_zeropage[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage addressing mode") end
-                            if suffix == 'abs' and not opcode_absolute[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr}, inverse_encapsulate=inverse_encapsulate} break
-                        end
-                        if tok:Peek().Data == 'x' then
-                            if not opcode_absolute_x[op] and not opcode_zeropage_x[op] then return false, expr end
-                            tok:Get(tokenList)
-                            local paren_close_whites = {}
-                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            suffix = suffix=='b' and "zpx" or suffix=='w' and "abx" or "zax"
-                            if suffix == 'zax' then
-                                if not opcode_zeropage_x[op] then suffix='abx'
-                                elseif not opcode_absolute_x[op] then suffix='zpx' end
-                            end
-                            if suffix == 'zpx' and not opcode_zeropage_x[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage,x addressing mode") end
-                            if suffix == 'abx' and not opcode_absolute_x[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute,x addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
-                        end
-                        if tok:Peek().Data == 'y' then
-                            if not opcode_absolute_y[op] and not opcode_zeropage_y[op] then return false, expr end
-                            tok:Get(tokenList)
-                            local paren_close_whites = {}
-                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            suffix = suffix=='b' and "zpy" or suffix=='w' and "aby" or "zay"
-                            if suffix == 'zay' then
-                                if not opcode_zeropage_y[op] then suffix='aby'
-                                elseif not opcode_absolute_y[op] then suffix='zpy' end
-                            end
-                            if suffix == 'zpy' and not opcode_zeropage_y[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage,y addressing mode") end
-                            if suffix == 'aby' and not opcode_absolute_y[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute,y addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
-                        end
-                        commaTokenList[1] = tokenList[#tokenList]
-                        local mod_st, mod_expr = ParseExpr(scope)
-                        if not mod_st then return false, mod_expr end
-                        if not tok:ConsumeSymbol(',', tokenList) then
-                            if not opcode_absolute[op] and not opcode_zeropage[op] then return false, expr end
-                            suffix = suffix=='b' and "zpg" or suffix=='w' and "abs" or "zab"
-                            if suffix == 'zab' then
-                                if not opcode_zeropage[op] then suffix='abs'
-                                elseif not opcode_absolute[op] then suffix='zpg' end
-                            end
-                            if suffix == 'zpg' and not opcode_zeropage[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage addressing mode") end
-                            if suffix == 'abs' and not opcode_absolute[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate} break
-                        end
-                        if tok:Peek().Data == 'x' then
-                            if not opcode_absolute_x[op] and not opcode_zeropage_x[op] then return false, expr end
-                            tok:Get(tokenList)
-                            local paren_close_whites = {}
-                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            suffix = suffix=='b' and "zpx" or suffix=='w' and "abx" or "zax"
-                            if suffix == 'zax' then
-                                if not opcode_zeropage_x[op] then suffix='abx'
-                                elseif not opcode_absolute_x[op] then suffix='zpx' end
-                            end
-                            if suffix == 'zpx' and not opcode_zeropage_x[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage,x addressing mode") end
-                            if suffix == 'abx' and not opcode_absolute_x[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute,x addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
-                        end
-                        if tok:Peek().Data == 'y' then
-                            if not opcode_absolute_y[op] and not opcode_zeropage_y[op] then return false, expr end
-                            tok:Get(tokenList)
-                            local paren_close_whites = {}
-                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                            suffix = suffix=='b' and "zpy" or suffix=='w' and "aby" or "zay"
-                            if suffix == 'zay' then
-                                if not opcode_zeropage_y[op] then suffix='aby'
-                                elseif not opcode_absolute_y[op] then suffix='zpy' end
-                            end
-                            if suffix == 'zpy' and not opcode_zeropage_y[op] then return false, GenerateError("Opcode " .. op " doesn't support zeropage,y addressing mode") end
-                            if suffix == 'aby' and not opcode_absolute_y[op] then return false, GenerateError("Opcode " .. op " doesn't support absolute,y addressing mode") end
-                            stat = emit_call{name=op .. suffix, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
-                        end
-
-                        return false, expr
-                    end
-                end
-                if opcode_implied[op] then stat = emit_call{name=op .. "imp"} break end
+                if opcode_implied[op] then stat = emit_call{name=op} break end
                 error("internal error: unable to find addressing of valid opcode " .. op) -- should not happen
             end
         end end
