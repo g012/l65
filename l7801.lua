@@ -70,11 +70,20 @@ local opcode_immediate = lookupify{
 local opcode_relative = lookupify{
     'jr',
 }
+local opcode_reg = lookupify{
+    'dcr', 'inr'
+}
+local opcode_reg_list = {
+    a = lookupify{'dcr','inr'},
+    b = lookupify{'dcr','inr'},
+    c = lookupify{'dcr','inr'},
+}
 
 local addressing_map = {
     imp = opcode_implied,
     imm = opcode_immediate,
     rel = opcode_relative,
+    reg = opcode_reg,
 }
 
 local Scope = {
@@ -1381,6 +1390,14 @@ local function ParseLua(src, src_name)
                         if not mod_st then return false, mod_expr end
                     end
                     stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
+                end
+                if opcode_reg[op] then
+                    local register_name = tok:Get(tokenList).Data
+                    if not Registers_7801[register_name] then return false, GenerateError(register_name .. " is not a valid register") end
+                    if not opcode_reg_list[register_name] and opcode_reg_list[register_name][op] then
+                        return false, GenerateError("Opcode " .. op " doesn't support " .. register_name .. " register")
+                    end  
+                    stat = emit_call{name=op .. register_name, args={expr}, encapsulate=false} break
                 end
                 if opcode_implied[op] then stat = emit_call{name=op} break end
                 error("internal error: unable to find addressing of valid opcode " .. op) -- should not happen
