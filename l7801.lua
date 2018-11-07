@@ -38,7 +38,7 @@ local Keywords_data = {
     'dc',
 }
 local Keywords_7801 = {
-    'block', 'calt', 'dcr', 'jr', 'lxi', 'mvi', 'nop'
+    'block', 'calf', 'calt', 'dcr', 'jr', 'lxi', 'mvi', 'nop'
 }
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
@@ -65,7 +65,7 @@ local opcode_implied = lookupify{
     'block', 'dcr', 'nop'
 }
 local opcode_immediate = lookupify{
-    'calt', 'lxi', 'mvi'
+    'calf', 'calt', 'lxi', 'mvi'
 }
 local opcode_relative = lookupify{
     'jr',

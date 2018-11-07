@@ -275,6 +275,19 @@ M.calt = function(late, early)
     table.insert(M.section_current.instructions, op)
 end
 
+M.calf = function(late, early)
+    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+    local op = { cycles=16 }
+    op.size = function() late,early = M.size_op(late,early) return 2 end
+    op.bin = function() local l65dbg=l65dbg 
+        local x = 0 + M.op_eval_word(late,early)
+        if x < 0x0800 or x > 0xffff then error("subroutine address out of range [0x0800-0xffff]: " .. x) end
+        x = x - 0x0800;
+        return { 0x78 | ((x>>8) & 0x07), x&0xff }
+    end
+    table.insert(M.section_current.instructions, op)
+end
+
 M.jr = function(label)
     local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local parent,offset = M.label_current
@@ -312,7 +325,6 @@ return M
 8 bits instructions:
     JRE+ 0x4e xx 17
     JRE- 0x4f xx 17
-    CALF 0x78-0x75 xx 16
 
 16 bits instructions:
     0x48xx 
