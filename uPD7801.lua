@@ -209,8 +209,8 @@ for k,v in pairs(opvind) do
     end
 end
 
---[[ [todo]
-local opvindxx ={
+--[[
+local opviwaxx ={
     aniw=M.op(0x05,16),
     oriw=M.op(0x15,16),
     gtiw=M.op(0x25,13),
@@ -220,8 +220,8 @@ local opvindxx ={
     neiw=M.op(0x65,13),
     mviw=M.op(0x71,13),
     eqiw=M.op(0x75,13)
-} M.opvindxx = opvindxx
-for k,v in pairs(opvindxx) do
+} M.opvwaxx = opvwaxx
+for k,v in pairs(opvwaxx) do
     M[k .. 'vindxx'] = function(late0, early0, late1, early1)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() 
@@ -240,16 +240,16 @@ for k,v in pairs(opvindxx) do
 end
 ]]--
 
-local opwwww = {
+local opw = {
     call=M.op(0x44,16),
     jmp=M.op(0x54,10),
     lxisp=M.op(0x04,10),
     lxibc=M.op(0x14,10),
     lxide=M.op(0x24,10),
     lxihl=M.op(0x34,10)    
-} M.opwwww = opwwww
-for k,v in pairs(opwwww) do
-    M[k .. 'wwww'] = function(late, early)
+} M.opw = opw
+for k,v in pairs(opw) do
+    M[k] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 3 end
         local bin = function() local l65dbg=l65dbg 
