@@ -39,7 +39,7 @@ local Keywords_data = {
 }
 local Keywords_7801 = {
     'block', 'calb', 'calf', 'calt', 'ei', 'daa', 'di', 'dcr',
-    'exa', 'exx', 'halt', 'jb', 'jr', 'lxi', 'mvi', 'nop',
+    'ex', 'exx', 'halt', 'jb', 'jr', 'lxi', 'mvi', 'nop',
     'ret', 'reti', 'rets', 'sio', 'softi', 'stm', 'table',
 }
 local Registers_7801 = {
@@ -64,7 +64,7 @@ opcode_arg_encapsulate(true)
 local opcode_encapsulate = {} -- additionnal opcode, to have basic encapsulation (function(a) return a end)
 local opcode_alias = {} -- alternate user names for opcodes
 local opcode_implied = lookupify{
-    'block', 'calb', 'ei', 'daa', 'di', 'exa', 'exx', 'halt', 'jb', 'nop', 'ret', 'reti', 'rets', 'sio', 'softi', 'stm', 'table'
+    'block', 'calb', 'ei', 'daa', 'di', 'ex', 'exx', 'halt', 'jb', 'nop', 'ret', 'reti', 'rets', 'sio', 'softi', 'stm', 'table'
 }
 local opcode_immediate = lookupify{
     'calf', 'calt'
@@ -1444,7 +1444,7 @@ local function ParseLua(src, src_name)
                     tok:Commit()
                     stat = emit_call(call_args) break
                 end
-                if opcode_implied[op] then stat = emit_call{name=op} break end
+                if opcode_implied[op] then stat = emit_call{name=op .. 'imp'} break end
                 error("internal error: unable to find addressing of valid opcode " .. op) -- should not happen
             end
         end end

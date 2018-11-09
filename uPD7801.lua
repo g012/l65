@@ -10,7 +10,7 @@ local opimp={
     block=M.op(0x31,13),
     calb=M.op(0x63,13),
     daa=M.op(0x61,4),
-    exa=M.op(0x10,4),
+    ex=M.op(0x10,4),
     exx=M.op(0x11,4),
     halt=M.op(0x01,6),
 	jb=M.op(0x73,4),
@@ -21,10 +21,10 @@ local opimp={
     sio=M.op(0x09,4),
     softi=M.op(0x72,19),
     stm=M.op(0x19,4),
-    table=M.op(0x21,19)
+    ['table']=M.op(0x21,19)
 } M.opimp = opimp
 for k,v in pairs(opimp) do
-    M[k] = function()
+    M[k .. 'imp' ] = function()
         table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
     end
 end
@@ -59,84 +59,12 @@ for k,v in pairs(opc) do
     end
 end
 
-local opd={
-    ldaxm=M.op(0x2e,7),
-    ldaxp=M.op(0x2c,7), 
-    staxm=M.op(0x3e,7),
-    staxp=M.op(0x3c,7)
-} M.opd = opd
-for k,v in pairs(opd) do
-    M[k .. 'd'] = function()
-        table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
-    end
-end
-
-local oph={
-    ldaxm=M.op(0x2f,7),
-    ldaxp=M.op(0x2d,7),
-    staxm=M.op(0x3f,7),
-    staxp=M.op(0x3d,7)
-} M.oph = oph
-for k,v in pairs(oph) do
-    M[k .. 'h'] = function()
-        table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
-    end
-end
-
-local oprwind={
-    dcxbc=M.op(0x13,7),
-    dcxde=M.op(0x23,7),
-    dcxhl=M.op(0x33,7),
-    inxbc=M.op(0x12,7),
-    inxde=M.op(0x22,7),
-    inxhl=M.op(0x32,7),
-    ldaxbc=M.op(0x29,7), 
-    ldaxde=M.op(0x2a,7),
-    ldaxhl=M.op(0x2b,7),
-    staxbc=M.op(0x39,7),
-    staxde=M.op(0x3a,7),
-    staxhl=M.op(0x3b,7),
-} M.oprwind = oprwind
-for k,v in pairs(oprwind) do
-    M[k .. 'ind'] = function()
-        table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
-    end
-end
-
-local opindxx ={
-    mvixbc=M.op(0x49,10),
-    mvixde=M.op(0x4a,10),
-    mvixhl=M.op(0x4b,10)
-} M.opindxx = opindxx
-for k,v in pairs(opindxx) do
-    M[k .. 'indxx'] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
-        local size = function() late,early = M.size_op(late,early) return 2 end
-        local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
-    end
-end
-
 local opsp={
     dcx=M.op(0x03,7),
     inx=M.op(0x02,7)
 } M.opsp = opsp
 for k,v in pairs(opsp) do
     M[k .. 'sp'] = function()
-        table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
-    end
-end
-
-local oprr={
-    movab=M.op(0x0a,4), movac=M.op(0x0b,4),
-    movad=M.op(0x0c,4), movae=M.op(0x0d,4),
-    movah=M.op(0x0e,4), moval=M.op(0x0f,4),
-    movba=M.op(0x1a,4), movca=M.op(0x1b,4),
-    movda=M.op(0x1c,4), movea=M.op(0x1d,4),
-    movha=M.op(0x1e,4), movla=M.op(0x1f,4),
-} M.oprr = oprr
-for k,v in pairs(oprr) do
-    M[k] = function()
         table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
     end
 end
@@ -152,56 +80,6 @@ local opregb ={
 } M.opregb = opregb
 for k,v in pairs(opregb) do
     M[k] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
-        local size = function() late,early = M.size_op(late,early) return 2 end
-        local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
-    end
-end
-
-local opaxx={
-    aci=M.op(0x56,7),
-    adi=M.op(0x46,7),
-    adinc=M.op(0x26,7),
-    ani=M.op(0x07,7),
-    eqi=M.op(0x77,7),    
-    gti=M.op(0x27,7),
-    lti=M.op(0x37,7),
-    mvi=M.op(0x69,7),
-    nei=M.op(0x69,7),
-    offi=M.op(0x57,7),
-    oni=M.op(0x47,7),
-    ori=M.op(0x17,7),
-    sbi=M.op(0x76,7),
-    sui=M.op(0x61,7),
-    suinb=M.op(0x36,7),
-    xri=M.op(0x16,7)
-} M.opaxx = opaxx
-for k,v in pairs(opaxx) do
-    M[k .. 'axx'] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
-        local size = function() late,early = M.size_op(late,early) return 2 end
-        local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
-    end
-end
-
-local opvind ={
-    inrw=M.op(0x20,13),
-    ldaw=M.op(0x28,10),
-    dcrw=M.op(0x30,13),
-    staw=M.op(0x38,10),
-    bit0=M.op(0x58,10),
-    bit1=M.op(0x59,10),
-    bit2=M.op(0x5a,10),
-    bit3=M.op(0x5b,10),
-    bit4=M.op(0x5c,10),
-    bit5=M.op(0x5d,10),
-    bit6=M.op(0x5e,10),
-    bit7=M.op(0x5f,10)
-} M.opvind = opvind
-for k,v in pairs(opvind) do
-    M[k .. 'vind'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 2 end
         local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
@@ -288,7 +166,7 @@ M.jr = function(label)
     table.insert(M.section_current.instructions, op)
 end
 
-local op48imm = {
+local op48imp = {
     ei=M.op(0x20,8),
     di=M.op(0x24,8),
     clc=M.op(0x2a,8),
@@ -298,9 +176,9 @@ local op48imm = {
     pex=M.op(0x2d,11),
     rld=M.op(0x38,17),
     rrd=M.op(0x39,17),
-} M.op48imm = op48imm
-for k,v in pairs(op48imm) do
-    M[k] = function()
+} M.op48imp = op48imp
+for k,v in pairs(op48imp) do
+    M[k .. 'imp'] = function()
         table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, bin={ 0x48, v.opc } })
     end
 end
@@ -320,6 +198,86 @@ return M
     nei
     mvi
     eqi
+
+    -- d
+    ldaxm=M.op(0x2e,7),
+    ldaxp=M.op(0x2c,7), 
+    staxm=M.op(0x3e,7),
+    staxp=M.op(0x3c,7)
+    
+    -- h
+    ldaxm=M.op(0x2f,7),
+    ldaxp=M.op(0x2d,7),
+    staxm=M.op(0x3f,7),
+    staxp=M.op(0x3d,7)
+
+    -- wa = v+xx
+    inrw=M.op(0x20,13),
+    ldaw=M.op(0x28,10),
+    dcrw=M.op(0x30,13),
+    staw=M.op(0x38,10),
+    bit0=M.op(0x58,10),
+    bit1=M.op(0x59,10),
+    bit2=M.op(0x5a,10),
+    bit3=M.op(0x5b,10),
+    bit4=M.op(0x5c,10),
+    bit5=M.op(0x5d,10),
+    bit6=M.op(0x5e,10),
+    bit7=M.op(0x5f,10)
+
+    -- xx
+    aci=M.op(0x56,7),
+    adi=M.op(0x46,7),
+    adinc=M.op(0x26,7),
+    ani=M.op(0x07,7),
+    eqi=M.op(0x77,7),    
+    gti=M.op(0x27,7),
+    lti=M.op(0x37,7),
+    mvi=M.op(0x69,7),
+    nei=M.op(0x69,7),
+    offi=M.op(0x57,7),
+    oni=M.op(0x47,7),
+    ori=M.op(0x17,7),
+    sbi=M.op(0x76,7),
+    sui=M.op(0x61,7),
+    suinb=M.op(0x36,7),
+    xri=M.op(0x16,7)
+
+    -- r8,r8
+    movab=M.op(0x0a,4), movac=M.op(0x0b,4),
+    movad=M.op(0x0c,4), movae=M.op(0x0d,4),
+    movah=M.op(0x0e,4), moval=M.op(0x0f,4),
+    movba=M.op(0x1a,4), movca=M.op(0x1b,4),
+    movda=M.op(0x1c,4), movea=M.op(0x1d,4),
+    movha=M.op(0x1e,4), movla=M.op(0x1f,4),
+
+    -- hhll
+    call=M.op(0x44,16),
+    jmp=M.op(0x54,10),
+    lxisp=M.op(0x04,10),
+    lxibc=M.op(0x14,10),
+    lxide=M.op(0x24,10),
+    lxihl=M.op(0x34,10)    
+
+    -- (r16),hhll
+    mvixbc=M.op(0x49,10),
+    mvixde=M.op(0x4a,10),
+    mvixhl=M.op(0x4b,10)
+
+    - (r16)
+    dcxbc=M.op(0x13,7),
+    dcxde=M.op(0x23,7),
+    dcxhl=M.op(0x33,7),
+    inxbc=M.op(0x12,7),
+    inxde=M.op(0x22,7),
+    inxhl=M.op(0x32,7),
+    ldaxbc=M.op(0x29,7), 
+    ldaxde=M.op(0x2a,7),
+    ldaxhl=M.op(0x2b,7),
+    staxbc=M.op(0x39,7),
+    staxde=M.op(0x3a,7),
+    staxhl=M.op(0x3b,7),
+
 
 16 bits instructions:
     0x48xx 
