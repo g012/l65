@@ -141,7 +141,7 @@ for k,v in pairs(oprr) do
     end
 end
 
-local oprxx ={
+local opregb ={
     mvib=M.op(0x6a,7),
     mvic=M.op(0x6b,7),
     mvid=M.op(0x6c,7),
@@ -149,9 +149,9 @@ local oprxx ={
     mvih=M.op(0x6e,7),
     mvil=M.op(0x6f,7),
     mviv=M.op(0x68,7)
-} M.oprxx = oprxx
-for k,v in pairs(oprxx) do
-    M[k .. 'xx'] = function(late, early)
+} M.opregb = opregb
+for k,v in pairs(opregb) do
+    M[k] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 2 end
         local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
@@ -208,37 +208,6 @@ for k,v in pairs(opvind) do
         table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
-
---[[
-local opviwaxx ={
-    aniw=M.op(0x05,16),
-    oriw=M.op(0x15,16),
-    gtiw=M.op(0x25,13),
-    ltiw=M.op(0x35,13),
-    oniw=M.op(0x45,13),
-    offiw=M.op(0x55,13),
-    neiw=M.op(0x65,13),
-    mviw=M.op(0x71,13),
-    eqiw=M.op(0x75,13)
-} M.opvwaxx = opvwaxx
-for k,v in pairs(opvwaxx) do
-    M[k .. 'vindxx'] = function(late0, early0, late1, early1)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
-        local size = function() 
-            late0,early0 = M.size_op(late,early) 
-            late1,early1 = M.size_op(late,early) 
-            return 3 
-        end
-        local bin = function() 
-            local l65dbg=l65dbg
-            local offset = M.op_eval_byte(late0,early0)
-            local x = M.op_eval_byte(late1,early1)
-            return { v.opc, offset, x }
-        end
-        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
-    end
-end
-]]--
 
 local opw = {
     call=M.op(0x44,16),
@@ -319,12 +288,38 @@ M.jr = function(label)
     table.insert(M.section_current.instructions, op)
 end
 
+local op48imm = {
+    ei=M.op(0x20,8),
+    di=M.op(0x24,8),
+    clc=M.op(0x2a,8),
+    stc=M.op(0x2b,8),
+    pen=M.op(0x2c,11),
+    per=M.op(0x3c,11),
+    pex=M.op(0x2d,11),
+    rld=M.op(0x38,17),
+    rrd=M.op(0x39,17),
+} M.op48imm = op48imm
+for k,v in pairs(op48imm) do
+    M[k] = function()
+        table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, bin={ 0x48, v.opc } })
+    end
+end
+
 return M
 
 --[[ [todo]
 8 bits instructions:
     JRE+ 0x4e xx 17
     JRE- 0x4f xx 17
+    ani
+    ori
+    gti
+    lti
+    oni
+    offi
+    nei
+    mvi
+    eqi
 
 16 bits instructions:
     0x48xx 

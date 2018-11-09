@@ -38,9 +38,9 @@ local Keywords_data = {
     'dc',
 }
 local Keywords_7801 = {
-    'block', 'calb', 'calf', 'calt', 'daa', 'dcr', 'exa', 'exx', 
-    'halt', 'jb', 'jr', 'lxi', 'mvi', 'nop', 'ret', 'reti',
-    'rets', 'sio', 'softi', 'stm', 'table',
+    'block', 'calb', 'calf', 'calt', 'ei', 'daa', 'di', 'dcr',
+    'exa', 'exx', 'halt', 'jb', 'jr', 'lxi', 'mvi', 'nop',
+    'ret', 'reti', 'rets', 'sio', 'softi', 'stm', 'table',
 }
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
@@ -64,7 +64,7 @@ opcode_arg_encapsulate(true)
 local opcode_encapsulate = {} -- additionnal opcode, to have basic encapsulation (function(a) return a end)
 local opcode_alias = {} -- alternate user names for opcodes
 local opcode_implied = lookupify{
-    'block', 'calb', 'daa', 'exa', 'exx', 'halt', 'jb', 'nop', 'ret', 'reti', 'rets', 'sio', 'softi', 'stm', 'table'
+    'block', 'calb', 'ei', 'daa', 'di', 'exa', 'exx', 'halt', 'jb', 'nop', 'ret', 'reti', 'rets', 'sio', 'softi', 'stm', 'table'
 }
 local opcode_immediate = lookupify{
     'calf', 'calt'
@@ -75,13 +75,20 @@ local opcode_relative = lookupify{
 local opcode_reg = lookupify{
     'dcr', 'inr'
 }
+local opcode_regb = lookupify{
+    'mvi'
+}
 local opcode_regw = lookupify{
     'lxi'
 }
 local opcode_reg_list = {
-    a = lookupify{'dcr','inr'},
-    b = lookupify{'dcr','inr'},
-    c = lookupify{'dcr','inr'},
+    a = lookupify{'dcr','inr', 'mvi'},
+    b = lookupify{'dcr','inr', 'mvi'},
+    c = lookupify{'dcr','inr', 'mvi'},
+    d = lookupify{'mvi'},
+    e = lookupify{'mvi'},
+    h = lookupify{'mvi'},
+    l = lookupify{'mvi'},
     bc = lookupify{'lxi'},
     de = lookupify{'lxi'},
     hl = lookupify{'lxi'},
@@ -93,6 +100,7 @@ local addressing_map = {
     imm = opcode_immediate,
     rel = opcode_relative,
     reg = opcode_reg,
+    regb = opcode_regb,
     regw = opcode_regw,
 }
 
@@ -1401,7 +1409,7 @@ local function ParseLua(src, src_name)
                     end
                     stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
                 end
-                if opcode_reg[op] or opcode_regw[op] then
+                if opcode_reg[op] or opcode_regb[op] or opcode_regw[op] then
                     tok:Save()
                     local register_name = tok:Get(tokenList).Data
                     local call_args = {name=op..register_name}
@@ -1411,7 +1419,7 @@ local function ParseLua(src, src_name)
                     if not opcode_reg_list[register_name] and opcode_reg_list[register_name][op] then tok:Restore() 
                         return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
                     end
-                    if opcode_regw[op] then
+                    if opcode_regw[op] or opcode_regb[op] then
                         if not tok:ConsumeSymbol(',', tokenList) then tok:Restore()
                             return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
                         end
