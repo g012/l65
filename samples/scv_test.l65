@@ -64,5 +64,18 @@ section{"rom", org=0x8000}
     rld
     rrd
     stc
-    
+    mov a,b
+    mov a,c
+    mov a,d
+    mov a,e
+    mov a,h
+    mov a,l
+    mov b,a
+    mov c,a
+    mov d,a
+    mov e,a
+    mov h,a
+    mov l,a
+
+
 writebin(filename .. '.bin')

@@ -114,6 +114,20 @@ for k,v in pairs(opaxx) do
     end
 end
 
+local opr8r8 ={
+    movab=M.op(0x0a,4), movac=M.op(0x0b,4),
+    movad=M.op(0x0c,4), movae=M.op(0x0d,4),
+    movah=M.op(0x0e,4), moval=M.op(0x0f,4),
+    movba=M.op(0x1a,4), movca=M.op(0x1b,4),
+    movda=M.op(0x1c,4), movea=M.op(0x1d,4),
+    movha=M.op(0x1e,4), movla=M.op(0x1f,4),
+} M.opr8r8 = opr8r8
+for k,v in pairs(opr8r8) do
+    M[k] = function()
+        table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
+    end
+end
+
 local opw = {
     call=M.op(0x44,16),
     jmp=M.op(0x54,10),
@@ -216,16 +230,7 @@ return M
 8 bits instructions:
     JRE+ 0x4e xx 17
     JRE- 0x4f xx 17
-    ani
-    ori
-    gti
-    lti
-    oni
-    offi
-    nei
-    mvi
-    eqi
-
+    
     -- d
     ldaxm=M.op(0x2e,7),
     ldaxp=M.op(0x2c,7), 
@@ -251,14 +256,6 @@ return M
     bit5=M.op(0x5d,10),
     bit6=M.op(0x5e,10),
     bit7=M.op(0x5f,10)
-
-    -- r8,r8
-    movab=M.op(0x0a,4), movac=M.op(0x0b,4),
-    movad=M.op(0x0c,4), movae=M.op(0x0d,4),
-    movah=M.op(0x0e,4), moval=M.op(0x0f,4),
-    movba=M.op(0x1a,4), movca=M.op(0x1b,4),
-    movda=M.op(0x1c,4), movea=M.op(0x1d,4),
-    movha=M.op(0x1e,4), movla=M.op(0x1f,4),
 
     -- hhll
     call=M.op(0x44,16),

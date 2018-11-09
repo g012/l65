@@ -40,7 +40,7 @@ local Keywords_data = {
 local Keywords_7801 = {
     'aci','adi','adinc','ani',
     'block','calb','calf','call','calt','clc','ei','eqi','daa','di','dcr','dcx',
-    'ex','exx','gti','halt','inr','inx','jb','jmp','jr','lti','lxi','mvi','nei','nop',
+    'ex','exx','gti','halt','inr','inx','jb','jmp','jr','lti','lxi','mov','mvi','nei','nop',
     'offi','oni','ori','pen','per','pex','ret','reti','rets','rld','rrd','sio','softi','stc','stm',
     'sbi','sui','suinb','table','xri',
 }
@@ -80,6 +80,9 @@ local opcode_relative = lookupify{
 local opcode_reg = lookupify{
     'dcr','dcx','inr','inx'
 }
+local opcode_reg_reg = lookupify{
+    'mov'
+}
 local opcode_regb = lookupify{
     'aci','adi','adinc','ani','eqi','gti','lti','mvi','nei','offi','oni','ori','sbi','sui','suinb','xri',
 }
@@ -99,6 +102,36 @@ local opcode_reg_list = {
     de = lookupify{'lxi'},
     hl = lookupify{'lxi'},
     sp = lookupify{'dcx','inx','lxi'},
+}
+
+local opcode_reg_reg_list = {
+    a = {
+        b = lookupify{'mov'},
+        c = lookupify{'mov'},
+        d = lookupify{'mov'},
+        e = lookupify{'mov'},
+        h = lookupify{'mov'},
+        l = lookupify{'mov'},
+    },
+    b = {
+        a = lookupify{'mov'},
+    },
+    c = {
+        a = lookupify{'mov'},
+    },
+    d = {
+        a = lookupify{'mov'},
+    },
+    e = {
+        a = lookupify{'mov'},
+    },
+    h = {
+        a = lookupify{'mov'},
+    },
+    l = {
+        a = lookupify{'mov'},
+    },
+    v = {},
 }
 
 local addressing_map = {
@@ -1415,7 +1448,26 @@ local function ParseLua(src, src_name)
                     end
                     stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
                 end
-                if opcode_reg[op] or opcode_regb[op] or opcode_regw[op] then
+                if opcode_reg_reg[op] then
+                    tok:Save()
+                    local r0_name = tok:Get(tokenList).Data
+                    if not Registers_7801[r0_name] then tok:Restore()
+                        return false, GenerateError(r0_name .. " is not a valid register")
+                    end
+                    if not tok:ConsumeSymbol(',', tokenList) then tok:Restore()
+                        return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
+                    end
+                    local r1_name = tok:Get(tokenList).Data
+                    if not Registers_7801[r1_name] then tok:Restore()
+                        return false, GenerateError(r0_name .. " is not a valid register")
+                    end
+                    if not (opcode_reg_reg_list[r0_name] and opcode_reg_reg_list[r0_name][r1_name] and opcode_reg_reg_list[r0_name][r1_name][op]) then
+                        tok:Restore()  
+                        return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
+                    end
+                    tok:Commit()
+                    stat = emit_call{name=op .. r0_name .. r1_name} break
+                elseif opcode_reg[op] or opcode_regb[op] or opcode_regw[op] then
                     tok:Save()
                     local register_name = tok:Get(tokenList).Data
                     local call_args = {name=op..register_name}
