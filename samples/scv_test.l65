@@ -1,0 +1,68 @@
+require 'scv'
+location(0x8000, 0x8FFF)
+section{"rom", org=0x8000}
+    dc.b 'H'
+@main
+    block 
+    calb
+    ei
+    daa
+    di
+    ex
+    exx
+    halt
+    jb
+    nop
+    ret
+    reti
+    rets
+    sio
+    softi
+    stm
+    table
+    dcr a
+    dcr b
+    dcr c
+    inr a
+    inr b
+    inr c
+    dcx sp
+    inx sp
+    mvi a,0xca
+    mvi b,0xfe
+    mvi c,0xbe
+    mvi d,0xef
+    mvi e,0xf0
+    mvi h,0x0d
+    mvi l,0x78
+    mvi v,0x01
+    aci a,0x0f
+    adi a,0x1e
+    adinc a,0x2d
+    ani a,0x3c
+    eqi a,0x4b
+    gti a,0x5a
+    lti a,0x69
+    nei a,0x87
+    offi a,0x96
+    oni a,0xa5
+    ori a,0xb4
+    sbi a,0xc3
+    sui a,0xd2
+    suinb a,0xe1
+    xri a,0xf0
+    lxi bc,0xabcd
+    lxi de,0xbeef
+    lxi hl,0xcafe
+    lxi sp,0xf00d
+    call 0xd701
+    jmp 0x8e07
+    clc
+    pen
+    per
+    pex
+    rld
+    rrd
+    stc
+    
+writebin(filename .. '.bin')

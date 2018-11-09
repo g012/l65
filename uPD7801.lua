@@ -31,7 +31,7 @@ end
 
 local opa={
     dcr=M.op(0x51,4),
-    inr=M.op(0x41,4)
+    inr=M.op(0x41,4),
 } M.opa = opa
 for k,v in pairs(opa) do
     M[k .. 'a'] = function()
@@ -41,7 +41,7 @@ end
 
 local opb={
     dcr=M.op(0x52,4),
-    inr=M.op(0x42,4)
+    inr=M.op(0x42,4),
 } M.opb = opb
 for k,v in pairs(opb) do
     M[k .. 'b'] = function()
@@ -69,7 +69,7 @@ for k,v in pairs(opsp) do
     end
 end
 
-local opregb ={
+local opregxx ={
     mvib=M.op(0x6a,7),
     mvic=M.op(0x6b,7),
     mvid=M.op(0x6c,7),
@@ -77,9 +77,36 @@ local opregb ={
     mvih=M.op(0x6e,7),
     mvil=M.op(0x6f,7),
     mviv=M.op(0x68,7)
-} M.opregb = opregb
-for k,v in pairs(opregb) do
+} M.opregxx = opregxx
+for k,v in pairs(opregxx) do
     M[k] = function(late, early)
+        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local size = function() late,early = M.size_op(late,early) return 2 end
+        local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
+    end
+end
+
+local opaxx ={
+    aci=M.op(0x56,7),
+    adi=M.op(0x46,7),
+    adinc=M.op(0x26,7),
+    ani=M.op(0x07,7),
+    eqi=M.op(0x77,7),    
+    gti=M.op(0x27,7),
+    lti=M.op(0x37,7),
+    mvi=M.op(0x69,7),
+    nei=M.op(0x67,7),
+    offi=M.op(0x57,7),
+    oni=M.op(0x47,7),
+    ori=M.op(0x17,7),
+    sbi=M.op(0x76,7),
+    sui=M.op(0x66,7),
+    suinb=M.op(0x36,7),
+    xri=M.op(0x16,7)
+} M.opaxx = opaxx
+for k,v in pairs(opaxx) do
+    M[k .. 'a'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 2 end
         local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
@@ -170,12 +197,12 @@ local op48imp = {
     ei=M.op(0x20,8),
     di=M.op(0x24,8),
     clc=M.op(0x2a,8),
-    stc=M.op(0x2b,8),
     pen=M.op(0x2c,11),
     per=M.op(0x3c,11),
     pex=M.op(0x2d,11),
     rld=M.op(0x38,17),
     rrd=M.op(0x39,17),
+    stc=M.op(0x2b,8),
 } M.op48imp = op48imp
 for k,v in pairs(op48imp) do
     M[k .. 'imp'] = function()
@@ -224,24 +251,6 @@ return M
     bit5=M.op(0x5d,10),
     bit6=M.op(0x5e,10),
     bit7=M.op(0x5f,10)
-
-    -- xx
-    aci=M.op(0x56,7),
-    adi=M.op(0x46,7),
-    adinc=M.op(0x26,7),
-    ani=M.op(0x07,7),
-    eqi=M.op(0x77,7),    
-    gti=M.op(0x27,7),
-    lti=M.op(0x37,7),
-    mvi=M.op(0x69,7),
-    nei=M.op(0x69,7),
-    offi=M.op(0x57,7),
-    oni=M.op(0x47,7),
-    ori=M.op(0x17,7),
-    sbi=M.op(0x76,7),
-    sui=M.op(0x61,7),
-    suinb=M.op(0x36,7),
-    xri=M.op(0x16,7)
 
     -- r8,r8
     movab=M.op(0x0a,4), movac=M.op(0x0b,4),

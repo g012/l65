@@ -38,10 +38,13 @@ local Keywords_data = {
     'dc',
 }
 local Keywords_7801 = {
-    'block', 'calb', 'calf', 'calt', 'ei', 'daa', 'di', 'dcr',
-    'ex', 'exx', 'halt', 'jb', 'jr', 'lxi', 'mvi', 'nop',
-    'ret', 'reti', 'rets', 'sio', 'softi', 'stm', 'table',
+    'aci','adi','adinc','ani',
+    'block','calb','calf','call','calt','clc','ei','eqi','daa','di','dcr','dcx',
+    'ex','exx','gti','halt','inr','inx','jb','jmp','jr','lti','lxi','mvi','nei','nop',
+    'offi','oni','ori','pen','per','pex','ret','reti','rets','rld','rrd','sio','softi','stc','stm',
+    'sbi','sui','suinb','table','xri',
 }
+
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
     bc=16,de=16,hl=16,sp=16
@@ -64,35 +67,38 @@ opcode_arg_encapsulate(true)
 local opcode_encapsulate = {} -- additionnal opcode, to have basic encapsulation (function(a) return a end)
 local opcode_alias = {} -- alternate user names for opcodes
 local opcode_implied = lookupify{
-    'block', 'calb', 'ei', 'daa', 'di', 'ex', 'exx', 'halt', 'jb', 'nop', 'ret', 'reti', 'rets', 'sio', 'softi', 'stm', 'table'
+    'block','calb','clc','ei','daa','dcr','di','ex','exx','halt','inr','jb','nop','pen',
+    'per','pex','ret','reti','rets','rld','rrd','sio','softi','stc','stm','table'
 }
+
 local opcode_immediate = lookupify{
-    'calf', 'calt'
+    'calf', 'calt','call','jmp'
 }
 local opcode_relative = lookupify{
     'jr',
 }
 local opcode_reg = lookupify{
-    'dcr', 'inr'
+    'dcr','dcx','inr','inx'
 }
 local opcode_regb = lookupify{
-    'mvi'
+    'aci','adi','adinc','ani','eqi','gti','lti','mvi','nei','offi','oni','ori','sbi','sui','suinb','xri',
 }
 local opcode_regw = lookupify{
     'lxi'
 }
 local opcode_reg_list = {
-    a = lookupify{'dcr','inr', 'mvi'},
-    b = lookupify{'dcr','inr', 'mvi'},
-    c = lookupify{'dcr','inr', 'mvi'},
+    a = lookupify{'aci','adi','adinc','ani','dcr','inr','eqi','gti','lti','mvi','nei','offi','oni','ori','sbi','sui','suinb','xri'},
+    b = lookupify{'dcr','inr','mvi'},
+    c = lookupify{'dcr','inr','mvi'},
     d = lookupify{'mvi'},
     e = lookupify{'mvi'},
     h = lookupify{'mvi'},
     l = lookupify{'mvi'},
+    v = lookupify{'mvi'},
     bc = lookupify{'lxi'},
     de = lookupify{'lxi'},
     hl = lookupify{'lxi'},
-    sp = lookupify{'lxi'},
+    sp = lookupify{'dcx','inx','lxi'},
 }
 
 local addressing_map = {
