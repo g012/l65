@@ -113,4 +113,8 @@ section{"rom", org=0x8000}
     inx bc
     inx de
     inx hl
+    mvix (bc),0xf9
+    mvix (de),0xe8
+    mvix (hl),0xd7
+    
 writebin(filename .. '.bin')

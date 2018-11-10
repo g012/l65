@@ -40,7 +40,7 @@ local Keywords_data = {
 local Keywords_7801 = {
     'aci','adi','adinc','ani','bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
     'block','calb','calf','call','calt','clc','ei','eqi','daa','di','dcr','dcrw','dcx',
-    'ex','exx','gti','halt','inr','inrw','inx','jb','jmp','jr','jre','ldaw','lti','lxi','mov','mvi','nei','nop',
+    'ex','exx','gti','halt','inr','inrw','inx','jb','jmp','jr','jre','ldaw','lti','lxi','mov','mvi','mvix','nei','nop',
     'offi','oni','ori','pen','per','pex','ret','reti','rets','rld','rrd','sio','softi','staw','stc','stm',
     'sbi','sui','suinb','table','xri',
 }
@@ -90,6 +90,9 @@ local opcode_reg_reg = lookupify{
 local opcode_regb = lookupify{
     'aci','adi','adinc','ani','eqi','gti','lti','mvi','nei','offi','oni','ori','sbi','sui','suinb','xri',
 }
+local opcode_regb_ind = lookupify{
+    'mvix'
+}
 local opcode_regw = lookupify{
     'lxi'
 }
@@ -102,9 +105,9 @@ local opcode_reg_list = {
     h = lookupify{'mvi'},
     l = lookupify{'mvi'},
     v = lookupify{'mvi'},
-    bc = lookupify{'lxi'},
-    de = lookupify{'lxi'},
-    hl = lookupify{'dcx','inx','lxi'},
+    bc = lookupify{'lxi','mvix'},
+    de = lookupify{'lxi','mvix'},
+    hl = lookupify{'dcx','inx','lxi','mvix'},
     sp = lookupify{'dcx','inx','lxi'},
 }
 
@@ -146,6 +149,7 @@ local addressing_map = {
     reg = opcode_reg,
     regb = opcode_regb,
     regw = opcode_regw,
+    regb_ind = opcode_regb_ind,
 }
 
 local Scope = {
@@ -1452,6 +1456,33 @@ local function ParseLua(src, src_name)
                         if not mod_st then return false, mod_expr end
                     end
                     stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
+                end
+                if opcode_regb_ind[op] then
+                    if not tok:ConsumeSymbol('(', tokenList) then
+                        return false, GenerateError("Unexpected character")
+                    end
+                    local register_name = tok:Get(tokenList).Data
+                    if not Registers_7801[register_name] then
+                        return false, GenerateError(register_name .. " is not a valid register")
+                    end
+                    if not (opcode_reg_list[register_name] and opcode_reg_list[register_name][op]) then
+                        return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
+                    end
+                    if not tok:ConsumeSymbol(')', tokenList) 
+                    or not tok:ConsumeSymbol(',', tokenList) then
+                        return false, GenerateError("Unexpected character")
+                    end
+                    inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
+                    local st, expr = ParseExpr(scope) if not st then return false, expr end
+                    local paren_open_whites = {}
+                    if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
+                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
+                    if tok:ConsumeSymbol(',', tokenList) then
+                        commaTokenList[1] = tokenList[#tokenList]
+                        mod_st, mod_expr = ParseExpr(scope)
+                        if not mod_st then return false, mod_expr end
+                    end
+                    stat = emit_call{name=op .. register_name, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
                 end
                 if opcode_wa[op] then
                     if not tok:ConsumeSymbol('(', tokenList) then

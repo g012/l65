@@ -91,7 +91,10 @@ local opregxx ={
     mvie=M.op(0x6d,7),
     mvih=M.op(0x6e,7),
     mvil=M.op(0x6f,7),
-    mviv=M.op(0x68,7)
+    mviv=M.op(0x68,7),
+    mvixbc=M.op(0x49,10),
+    mvixde=M.op(0x4a,10),
+    mvixhl=M.op(0x4b,10),
 } M.opregxx = opregxx
 for k,v in pairs(opregxx) do
     M[k] = function(late, early)
@@ -305,11 +308,6 @@ return M
     staxm=M.op(0x3f,7),
     staxp=M.op(0x3d,7)
 
-    -- (r16),hhll
-    mvixbc=M.op(0x49,10),
-    mvixde=M.op(0x4a,10),
-    mvixhl=M.op(0x4b,10)
-    
     - (r16)
     ldaxbc=M.op(0x29,7), 
     ldaxde=M.op(0x2a,7),
@@ -317,6 +315,9 @@ return M
     staxbc=M.op(0x39,7),
     staxde=M.op(0x3a,7),
     staxhl=M.op(0x3b,7),
+
+    -- (wa),xx
+    mviw (v,xx),xx 0x71 3 13
 
 16 bits instructions:
     0x48xx 
