@@ -116,5 +116,11 @@ section{"rom", org=0x8000}
     mvix (bc),0xf9
     mvix (de),0xe8
     mvix (hl),0xd7
-    
+    ldax (bc) 
+    ldax (de)
+    ldax (hl)
+    stax (bc)
+    stax (de)
+    stax (hl)
+
 writebin(filename .. '.bin')

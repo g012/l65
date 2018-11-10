@@ -76,13 +76,18 @@ local opr16={
     inxbc=M.op(0x12,7),
     inxde=M.op(0x22,7),
     inxhl=M.op(0x32,7),
+    ldaxbc=M.op(0x29,7), 
+    ldaxde=M.op(0x2a,7),
+    ldaxhl=M.op(0x2b,7),
+    staxbc=M.op(0x39,7),
+    staxde=M.op(0x3a,7),
+    staxhl=M.op(0x3b,7),
 } M.opr16 = opr16
 for k,v in pairs(opr16) do
     M[k] = function()
         table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
     end
 end
-
 
 local opregxx ={
     mvib=M.op(0x6a,7),
@@ -307,18 +312,11 @@ return M
     ldaxp=M.op(0x2d,7),
     staxm=M.op(0x3f,7),
     staxp=M.op(0x3d,7)
-
-    - (r16)
-    ldaxbc=M.op(0x29,7), 
-    ldaxde=M.op(0x2a,7),
-    ldaxhl=M.op(0x2b,7),
-    staxbc=M.op(0x39,7),
-    staxde=M.op(0x3a,7),
-    staxhl=M.op(0x3b,7),
-
+    
     -- (wa),xx
     mviw (v,xx),xx 0x71 3 13
-
+	eqiw (v,xx),xx 0x75 3 13
+	
 16 bits instructions:
     0x48xx 
     0x4cxx

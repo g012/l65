@@ -40,8 +40,8 @@ local Keywords_data = {
 local Keywords_7801 = {
     'aci','adi','adinc','ani','bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
     'block','calb','calf','call','calt','clc','ei','eqi','daa','di','dcr','dcrw','dcx',
-    'ex','exx','gti','halt','inr','inrw','inx','jb','jmp','jr','jre','ldaw','lti','lxi','mov','mvi','mvix','nei','nop',
-    'offi','oni','ori','pen','per','pex','ret','reti','rets','rld','rrd','sio','softi','staw','stc','stm',
+    'ex','exx','gti','halt','inr','inrw','inx','jb','jmp','jr','jre','ldaw','ldax','lti','lxi','mov','mvi','mvix','nei','nop',
+    'offi','oni','ori','pen','per','pex','ret','reti','rets','rld','rrd','sio','softi','staw','stax','stc','stm',
     'sbi','sui','suinb','table','xri',
 }
 
@@ -90,7 +90,11 @@ local opcode_reg_reg = lookupify{
 local opcode_regb = lookupify{
     'aci','adi','adinc','ani','eqi','gti','lti','mvi','nei','offi','oni','ori','sbi','sui','suinb','xri',
 }
-local opcode_regb_ind = lookupify{
+local opcode_reg_ind = lookupify{
+    'ldax', 
+    'stax',
+}
+local opcode_reg_ind_ex = lookupify{
     'mvix'
 }
 local opcode_regw = lookupify{
@@ -105,9 +109,9 @@ local opcode_reg_list = {
     h = lookupify{'mvi'},
     l = lookupify{'mvi'},
     v = lookupify{'mvi'},
-    bc = lookupify{'lxi','mvix'},
-    de = lookupify{'lxi','mvix'},
-    hl = lookupify{'dcx','inx','lxi','mvix'},
+    bc = lookupify{'ldax','lxi','mvix','stax'},
+    de = lookupify{'ldax','lxi','mvix','stax'},
+    hl = lookupify{'dcx','inx','ldax','lxi','mvix','stax'},
     sp = lookupify{'dcx','inx','lxi'},
 }
 
@@ -149,7 +153,8 @@ local addressing_map = {
     reg = opcode_reg,
     regb = opcode_regb,
     regw = opcode_regw,
-    regb_ind = opcode_regb_ind,
+    reg_ind = opcode_reg_ind,
+    reg_ind_ex = opcode_reg_ind_ex,
 }
 
 local Scope = {
@@ -1457,7 +1462,7 @@ local function ParseLua(src, src_name)
                     end
                     stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
                 end
-                if opcode_regb_ind[op] then
+                if opcode_reg_ind[op] or opcode_reg_ind_ex[op] then
                     if not tok:ConsumeSymbol('(', tokenList) then
                         return false, GenerateError("Unexpected character")
                     end
@@ -1468,10 +1473,16 @@ local function ParseLua(src, src_name)
                     if not (opcode_reg_list[register_name] and opcode_reg_list[register_name][op]) then
                         return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
                     end
-                    if not tok:ConsumeSymbol(')', tokenList) 
-                    or not tok:ConsumeSymbol(',', tokenList) then
+                    if not tok:ConsumeSymbol(')', tokenList) then
                         return false, GenerateError("Unexpected character")
                     end
+                    if opcode_reg_ind[op] then
+                        stat = emit_call{name=op .. register_name} break
+                    end
+                    if not tok:ConsumeSymbol(',', tokenList) then
+                        return false, GenerateError("Unexpected character")
+                    end
+                    
                     inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
                     local paren_open_whites = {}
