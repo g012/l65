@@ -95,4 +95,17 @@ section{"rom", org=0x8000}
 @l8 jre l9
     nop nop nop nop
 @l9
+    inrw (v,0x01)
+    ldaw (v,0x23)
+    dcrw (v,0x45)
+    staw (v,0x67)
+    bit0 (v,0x89)
+    bit1 (v,0xab)
+    bit2 (v,0xcd)
+    bit3 (v,0xef)
+    bit4 (v,0xfe)
+    bit5 (v,0xdc)
+    bit6 (v,0xba)
+    bit7 (v,0x98)
+
 writebin(filename .. '.bin')

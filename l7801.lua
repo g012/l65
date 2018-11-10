@@ -75,7 +75,8 @@ local opcode_immediate = lookupify{
     'calf','calt','call','jmp',
 }
 local opcode_wa = lookupify{
-    'inrw','ldaw','dcrw','staw'
+    'inrw','ldaw','dcrw','staw',
+    'bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
 }
 local opcode_relative = lookupify{
     'jr','jre'
