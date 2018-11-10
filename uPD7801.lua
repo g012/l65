@@ -234,6 +234,29 @@ M.jre = function(label)
     table.insert(M.section_current.instructions, op)
 end
 
+local opwa = {
+    inrw=M.op(0x20,13),
+    ldaw=M.op(0x28,10),
+    dcrw=M.op(0x30,13),
+    staw=M.op(0x38,10),
+    bit0=M.op(0x58,10),
+    bit1=M.op(0x59,10),
+    bit2=M.op(0x5a,10),
+    bit3=M.op(0x5b,10),
+    bit4=M.op(0x5c,10),
+    bit5=M.op(0x5d,10),
+    bit6=M.op(0x5e,10),
+    bit7=M.op(0x5f,10)
+} M.opwa = opwa
+for k,v in pairs(opwa) do
+    M[k .. 'wa'] = function(late, early)
+        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local size = function() late,early = M.size_op(late,early) return 2 end
+        local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
+    end
+end
+
 local op48imp = {
     ei=M.op(0x20,8),
     di=M.op(0x24,8),
@@ -255,7 +278,6 @@ return M
 
 --[[ [todo]
 8 bits instructions:
-    
     -- d
     ldaxm=M.op(0x2e,7),
     ldaxp=M.op(0x2c,7), 
@@ -267,20 +289,6 @@ return M
     ldaxp=M.op(0x2d,7),
     staxm=M.op(0x3f,7),
     staxp=M.op(0x3d,7)
-
-    -- wa = v+xx
-    inrw=M.op(0x20,13),
-    ldaw=M.op(0x28,10),
-    dcrw=M.op(0x30,13),
-    staw=M.op(0x38,10),
-    bit0=M.op(0x58,10),
-    bit1=M.op(0x59,10),
-    bit2=M.op(0x5a,10),
-    bit3=M.op(0x5b,10),
-    bit4=M.op(0x5c,10),
-    bit5=M.op(0x5d,10),
-    bit6=M.op(0x5e,10),
-    bit7=M.op(0x5f,10)
 
     -- (r16),hhll
     mvixbc=M.op(0x49,10),
@@ -300,7 +308,6 @@ return M
     staxbc=M.op(0x39,7),
     staxde=M.op(0x3a,7),
     staxhl=M.op(0x3b,7),
-
 
 16 bits instructions:
     0x48xx 
