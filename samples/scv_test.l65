@@ -76,6 +76,23 @@ section{"rom", org=0x8000}
     mov e,a
     mov h,a
     mov l,a
-
-
+@l0 jre l0
+@l1 nop
+    jre l1
+@l2 nop nop
+    jre l2
+@l3 nop nop nop
+    jre l3
+@l4 nop nop nop nop
+    jre l4
+    jre l5
+@l5 jre l6
+    nop
+@l6 jre l7
+    nop nop
+@l7 jre l8
+    nop nop nop
+@l8 jre l9
+    nop nop nop nop
+@l9
 writebin(filename .. '.bin')

@@ -207,6 +207,33 @@ M.jr = function(label)
     table.insert(M.section_current.instructions, op)
 end
 
+M.jre = function(label)
+    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+    local parent,offset = M.label_current
+    local section,rorg = M.section_current,M.location_current.rorg
+    local op = { cycles=17 }
+    op.size = function()
+        offset = section.size
+        label = M.size_dc(label)
+        return 2
+    end
+    op.bin = function() 
+        local l65dbg=l65dbg 
+        local x,l = label,label
+        if type(x) == 'function' then x=x() end
+        if type(x) == 'string' then
+            if x:sub(1,1) == '_' then x=parent..x l=x end
+            x = symbols[x]
+        end
+        if type(x) ~= 'number' then error("unresolved branch target: " .. tostring(x)) end
+        x = x-2 - offset - rorg(section.org)
+        if x < -128 or x > 127 then error("branch target out of range for " .. l .. ": " .. x) end
+        local opcode = x >= 0 and 0x4e or 0x4f 
+        return { opcode, x&0xff }
+    end
+    table.insert(M.section_current.instructions, op)
+end
+
 local op48imp = {
     ei=M.op(0x20,8),
     di=M.op(0x24,8),
@@ -228,8 +255,6 @@ return M
 
 --[[ [todo]
 8 bits instructions:
-    JRE+ 0x4e xx 17
-    JRE- 0x4f xx 17
     
     -- d
     ldaxm=M.op(0x2e,7),
@@ -256,14 +281,6 @@ return M
     bit5=M.op(0x5d,10),
     bit6=M.op(0x5e,10),
     bit7=M.op(0x5f,10)
-
-    -- hhll
-    call=M.op(0x44,16),
-    jmp=M.op(0x54,10),
-    lxisp=M.op(0x04,10),
-    lxibc=M.op(0x14,10),
-    lxide=M.op(0x24,10),
-    lxihl=M.op(0x34,10)    
 
     -- (r16),hhll
     mvixbc=M.op(0x49,10),

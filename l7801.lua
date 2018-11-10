@@ -40,7 +40,7 @@ local Keywords_data = {
 local Keywords_7801 = {
     'aci','adi','adinc','ani',
     'block','calb','calf','call','calt','clc','ei','eqi','daa','di','dcr','dcx',
-    'ex','exx','gti','halt','inr','inx','jb','jmp','jr','lti','lxi','mov','mvi','nei','nop',
+    'ex','exx','gti','halt','inr','inx','jb','jmp','jr','jre','lti','lxi','mov','mvi','nei','nop',
     'offi','oni','ori','pen','per','pex','ret','reti','rets','rld','rrd','sio','softi','stc','stm',
     'sbi','sui','suinb','table','xri',
 }
@@ -72,10 +72,10 @@ local opcode_implied = lookupify{
 }
 
 local opcode_immediate = lookupify{
-    'calf', 'calt','call','jmp'
+    'calf','calt','call','jmp'
 }
 local opcode_relative = lookupify{
-    'jr',
+    'jr','jre'
 }
 local opcode_reg = lookupify{
     'dcr','dcx','inr','inx'

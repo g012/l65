@@ -14,7 +14,7 @@ section{"rom", org=0x8000}
 	block
 
     lxi hl,message
-    lxi de,0x3043
+    lxi de,0x3044
 	lxi bc,0x01ff
 	
 @loop_0
@@ -34,7 +34,7 @@ section{"vdc_data", org=0x8030}
     dc.b 0xC0,0x00,0x00,0xF2
 
 section{"message", org=0x8040}
-    dc.b "hello world"
+    dc.b "\t\t\t\t Hello world! \t\t\t\t"
     dc.b 0x00
     
 writebin(filename .. '.bin')
