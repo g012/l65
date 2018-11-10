@@ -69,6 +69,21 @@ for k,v in pairs(opsp) do
     end
 end
 
+local opr16={
+    dcxbc=M.op(0x13,7),
+    dcxde=M.op(0x23,7),
+    dcxhl=M.op(0x33,7),
+    inxbc=M.op(0x12,7),
+    inxde=M.op(0x22,7),
+    inxhl=M.op(0x32,7),
+} M.opr16 = opr16
+for k,v in pairs(opr16) do
+    M[k] = function()
+        table.insert(M.section_current.instructions, { size=1, cycles=v.cycles, bin=v.opc })
+    end
+end
+
+
 local opregxx ={
     mvib=M.op(0x6a,7),
     mvic=M.op(0x6b,7),
@@ -294,14 +309,8 @@ return M
     mvixbc=M.op(0x49,10),
     mvixde=M.op(0x4a,10),
     mvixhl=M.op(0x4b,10)
-
+    
     - (r16)
-    dcxbc=M.op(0x13,7),
-    dcxde=M.op(0x23,7),
-    dcxhl=M.op(0x33,7),
-    inxbc=M.op(0x12,7),
-    inxde=M.op(0x22,7),
-    inxhl=M.op(0x32,7),
     ldaxbc=M.op(0x29,7), 
     ldaxde=M.op(0x2a,7),
     ldaxhl=M.op(0x2b,7),

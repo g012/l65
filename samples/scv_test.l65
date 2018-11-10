@@ -107,5 +107,10 @@ section{"rom", org=0x8000}
     bit5 (v,0xdc)
     bit6 (v,0xba)
     bit7 (v,0x98)
-
+    dcx bc
+    dcx de
+    dcx hl
+    inx bc
+    inx de
+    inx hl
 writebin(filename .. '.bin')

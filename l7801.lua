@@ -104,7 +104,7 @@ local opcode_reg_list = {
     v = lookupify{'mvi'},
     bc = lookupify{'lxi'},
     de = lookupify{'lxi'},
-    hl = lookupify{'lxi'},
+    hl = lookupify{'dcx','inx','lxi'},
     sp = lookupify{'dcx','inx','lxi'},
 }
 
