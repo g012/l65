@@ -124,5 +124,13 @@ section{"rom", org=0x8000}
     stax (hl)
     mviw (v,0x9a),0x3f
     eqiw (v,0xc5),0x1b
-
+    ldaxd (de)
+    ldaxi (de)
+    ldaxd (hl)
+    ldaxi (hl)
+    staxd (de)
+    staxi (de)
+    staxd (hl)
+    staxi (hl)
+    
 writebin(filename .. '.bin')

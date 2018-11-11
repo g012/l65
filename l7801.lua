@@ -38,11 +38,16 @@ local Keywords_data = {
     'dc',
 }
 local Keywords_7801 = {
-    'aci','adi','adinc','ani','bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
-    'block','calb','calf','call','calt','clc','ei','eqi','eqiw','daa','di','dcr','dcrw','dcx',
-    'ex','exx','gti','halt','inr','inrw','inx','jb','jmp','jr','jre','ldaw','ldax','lti','lxi','mov','mvi','mviw','mvix','nei','nop',
-    'offi','oni','ori','pen','per','pex','ret','reti','rets','rld','rrd','sio','softi','staw','stax','stc','stm',
-    'sbi','sui','suinb','table','xri',
+    'aci','adi','adinc','ani','bit0','bit1','bit2','bit3',
+    'bit4','bit5','bit6','bit7','block','calb','calf','call',
+    'calt','clc','ei','eqi','eqiw','daa','di','dcr',
+    'dcrw','dcx','ex','exx','gti','halt','inr','inrw',
+    'inx','jb','jmp','jr','jre','ldaw','ldax','ldaxd',
+    'ldaxi','lti','lxi','mov','mvi','mviw','mvix','nei',
+    'nop','offi','oni','ori','pen','per','pex','ret',
+    'reti','rets','rld','rrd','sio','softi','staw','stax',
+    'staxd','staxi','stc','stm','sbi','sui','suinb','table',
+    'xri',
 }
 
 local Registers_7801 = {
@@ -94,8 +99,8 @@ local opcode_regb = lookupify{
     'aci','adi','adinc','ani','eqi','gti','lti','mvi','nei','offi','oni','ori','sbi','sui','suinb','xri',
 }
 local opcode_reg_ind = lookupify{
-    'ldax', 
-    'stax',
+    'ldax','ldaxd','ldaxi',
+    'stax','staxd','staxi',
 }
 local opcode_reg_ind_ex = lookupify{
     'mvix'
@@ -113,8 +118,8 @@ local opcode_reg_list = {
     l = lookupify{'mvi'},
     v = lookupify{'mvi'},
     bc = lookupify{'ldax','lxi','mvix','stax'},
-    de = lookupify{'ldax','lxi','mvix','stax'},
-    hl = lookupify{'dcx','inx','ldax','lxi','mvix','stax'},
+    de = lookupify{'ldax','ldaxd','ldaxi','lxi','mvix','stax','staxd','staxi'},
+    hl = lookupify{'dcx','inx','ldax','ldaxd','ldaxi','lxi','mvix','stax','staxd','staxi'},
     sp = lookupify{'dcx','inx','lxi'},
 }
 
@@ -1490,14 +1495,13 @@ local function ParseLua(src, src_name)
                     if not (opcode_reg_list[register_name] and opcode_reg_list[register_name][op]) then
                         return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
                     end
-                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
                     if not tok:ConsumeSymbol(')', tokenList) then
                         return false, GenerateError("Unexpected character")
                     end
                     if opcode_reg_ind[op] then
                         for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
                         for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                        stat = emit_call{name=op .. register_name, paren_open_white=paren_open_whites} break
+                        stat = emit_call{name=op .. register_name, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                     end
                     if not tok:ConsumeSymbol(',', tokenList) then
                         return false, GenerateError("Unexpected character")

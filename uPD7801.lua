@@ -77,11 +77,19 @@ local opr16={
     inxde=M.op(0x22,7),
     inxhl=M.op(0x32,7),
     ldaxbc=M.op(0x29,7), 
+    ldaxdde=M.op(0x2e,7),
     ldaxde=M.op(0x2a,7),
     ldaxhl=M.op(0x2b,7),
+    ldaxide=M.op(0x2c,7), 
+    ldaxdhl=M.op(0x2f,7),
+    ldaxihl=M.op(0x2d,7),
     staxbc=M.op(0x39,7),
     staxde=M.op(0x3a,7),
+    staxdde=M.op(0x3e,7),
+    staxdhl=M.op(0x3f,7),
     staxhl=M.op(0x3b,7),
+    staxide=M.op(0x3c,7),
+    staxihl=M.op(0x3d,7),
 } M.opr16 = opr16
 for k,v in pairs(opr16) do
     M[k] = function()
@@ -320,18 +328,6 @@ end
 return M
 
 --[[ [todo]
-8 bits instructions:
-    -- d
-    ldaxm=M.op(0x2e,7),
-    ldaxp=M.op(0x2c,7), 
-    staxm=M.op(0x3e,7),
-    staxp=M.op(0x3c,7)
-    
-    -- h
-    ldaxm=M.op(0x2f,7),
-    ldaxp=M.op(0x2d,7),
-    staxm=M.op(0x3f,7),
-    staxp=M.op(0x3d,7)
     	
 16 bits instructions:
     0x48xx 
