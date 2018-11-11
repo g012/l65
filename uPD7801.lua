@@ -329,11 +329,11 @@ local op48r16={
     pushbc=M.op(0x1e,17),
     pushde=M.op(0x2e,17),
     pushhl=M.op(0x3e,17),
-    pushv=M.op(0x0e,17),
+    pushva=M.op(0x0e,17),
     popbc=M.op(0x1f,15),
     popde=M.op(0x2f,15),
     pophl=M.op(0x3f,15),
-    popv=M.op(0x0f,15),
+    popva=M.op(0x0f,15),
 } M.op48r16 = op48r16
 for k,v in pairs(op48r16) do
     M[k] = function()

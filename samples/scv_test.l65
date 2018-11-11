@@ -138,6 +138,6 @@ section{"rom", org=0x8000}
     pop hl
     pop de
     pop bc
-    push v
-    pop v
+    push va
+    pop va
 writebin(filename .. '.bin')

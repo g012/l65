@@ -52,7 +52,7 @@ local Keywords_7801 = {
 
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
-    bc=16,de=16,hl=16,sp=16
+    bc=16,de=16,hl=16,sp=16,va=16
 }
 
 local function syntax7801(on)
@@ -116,13 +116,14 @@ local opcode_reg_list = {
     e = lookupify{'mvi'},
     h = lookupify{'mvi'},
     l = lookupify{'mvi'},
-    v = lookupify{'inrw','ldaw','dcrw','eqiw','mvi','mviw','pop','push','staw',
+    v = lookupify{'inrw','ldaw','dcrw','eqiw','mvi','mviw','staw',
                   'bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
     },
     bc = lookupify{'ldax','lxi','mvix','pop','push','stax'},
     de = lookupify{'ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi'},
     hl = lookupify{'dcx','inx','ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi'},
     sp = lookupify{'dcx','inx','lxi'},
+    va = lookupify{'pop','push'},
 }
 
 local opcode_reg_reg_list = {
