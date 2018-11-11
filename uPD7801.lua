@@ -280,6 +280,26 @@ for k,v in pairs(opwa) do
     end
 end
 
+local opwaxx = {
+    mviw=M.op(0x71,3,13),
+    eqiw=M.op(0x75,3,13),
+} M.opwaxx = opwaxx
+for k,v in pairs(opwaxx) do
+    M[k .. 'waxx'] = function(late_offset, late_data, early_offset, early_data)
+        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local size = function() 
+            late_offset,early_offset = M.size_op(late_offset,early_offset) 
+            late_data,early_data = M.size_op(late_data,early_data) 
+            return 3 
+        end
+        local bin = function() 
+            local l65dbg=l65dbg 
+            return { v.opc, M.op_eval_byte(late_offset,early_offset), M.op_eval_byte(late_data,early_data) }
+        end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
+    end
+end
+
 local op48imp = {
     ei=M.op(0x20,8),
     di=M.op(0x24,8),
@@ -312,11 +332,7 @@ return M
     ldaxp=M.op(0x2d,7),
     staxm=M.op(0x3f,7),
     staxp=M.op(0x3d,7)
-    
-    -- (wa),xx
-    mviw (v,xx),xx 0x71 3 13
-	eqiw (v,xx),xx 0x75 3 13
-	
+    	
 16 bits instructions:
     0x48xx 
     0x4cxx
