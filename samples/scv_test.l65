@@ -140,4 +140,27 @@ section{"rom", org=0x8000}
     pop bc
     push va
     pop va
+    rll a
+    rlr a
+    rll c
+    rlr c
+    sll a
+    slr a
+    sll c
+    slr c
+    skc
+    skz
+    sknc
+    sknz
+    skit f0
+    skit ft
+    skit f1
+    skit f2
+    skit fs
+    sknit f0
+    sknit ft
+    sknit f1
+    sknit f2
+    sknit fs
+
 writebin(filename .. '.bin')

@@ -45,14 +45,17 @@ local Keywords_7801 = {
     'inx','jb','jmp','jr','jre','ldaw','ldax','ldaxd',
     'ldaxi','lti','lxi','mov','mvi','mviw','mvix','nei',
     'nop','offi','oni','ori','pen','per','pex','pop','push','ret',
-    'reti','rets','rld','rrd','sio','softi','staw','stax',
-    'staxd','staxi','stc','stm','sbi','sui','suinb','table',
-    'xri',
+    'reti','rets','rld','rll','rlr','rrd','sbi','sio','skc',
+    'skit','sknit','skz','sknc','sknz','sll','slr','softi',
+    'staw','stax','staxd','staxi','stc','stm','sui','suinb',
+    'table','xri',
 }
-
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
     bc=16,de=16,hl=16,sp=16,va=16
+}
+local Interrupts_7801 = lookupify{
+    'f0','ft','f1','f2','fs'
 }
 
 local function syntax7801(on)
@@ -73,9 +76,9 @@ local opcode_encapsulate = {} -- additionnal opcode, to have basic encapsulation
 local opcode_alias = {} -- alternate user names for opcodes
 local opcode_implied = lookupify{
     'block','calb','clc','ei','daa','dcr','di','ex','exx','halt','inr','jb','nop','pen',
-    'per','pex','ret','reti','rets','rld','rrd','sio','softi','stc','stm','table'
+    'per','pex','ret','reti','rets','rld','rrd','sio','skc','skz','sknc','sknz','softi',
+    'stc','stm','table'
 }
-
 local opcode_immediate = lookupify{
     'calf','calt','call','jmp',
 }
@@ -90,7 +93,7 @@ local opcode_relative = lookupify{
     'jr','jre'
 }
 local opcode_reg = lookupify{
-    'dcr','dcx','inr','inx','pop','push',
+    'dcr','dcx','inr','inx','pop','push','rll','rlr','sll','slr',
 }
 local opcode_reg_reg = lookupify{
     'mov'
@@ -108,10 +111,13 @@ local opcode_reg_ind_ex = lookupify{
 local opcode_regw = lookupify{
     'lxi'
 }
+local opcode_timer = lookupify{
+    'skit','sknit',
+}
 local opcode_reg_list = {
-    a = lookupify{'aci','adi','adinc','ani','dcr','inr','eqi','gti','lti','mvi','nei','offi','oni','ori','sbi','sui','suinb','xri'},
+    a = lookupify{'aci','adi','adinc','ani','dcr','inr','eqi','gti','lti','mvi','nei','offi','oni','ori','rll','rlr','sbi','sll','slr','sui','suinb','xri'},
     b = lookupify{'dcr','inr','mvi'},
-    c = lookupify{'dcr','inr','mvi'},
+    c = lookupify{'dcr','inr','mvi','rll','rlr','sll','slr'},
     d = lookupify{'mvi'},
     e = lookupify{'mvi'},
     h = lookupify{'mvi'},
@@ -167,6 +173,7 @@ local addressing_map = {
     regw = opcode_regw,
     reg_ind = opcode_reg_ind,
     reg_ind_ex = opcode_reg_ind_ex,
+    timer=opcode_timer,
 }
 
 local Scope = {
@@ -1483,7 +1490,6 @@ local function ParseLua(src, src_name)
                     end
                     stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
                 end
-               
                 if (opcode_wa[op] or opcode_wab[op] or opcode_reg_ind[op] or opcode_reg_ind_ex[op]) and tok:ConsumeSymbol('(', tokenList) then
                     local paren_open_whites,paren_close_whites = {},{}
                     for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
@@ -1557,7 +1563,8 @@ local function ParseLua(src, src_name)
                         return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
                     end
                     stat = emit_call{name=op .. r0_name .. r1_name} break
-                elseif opcode_reg[op] or opcode_regb[op] or opcode_regw[op] then
+                end
+                if opcode_reg[op] or opcode_regb[op] or opcode_regw[op] then
                     local register_name = tok:Get(tokenList).Data
                     local call_args = {name=op..register_name}
                     if not Registers_7801[register_name] then
@@ -1589,6 +1596,13 @@ local function ParseLua(src, src_name)
                         call_args.paren_open_white=paren_open_whites
                     end
                     stat = emit_call(call_args) break
+                end
+                if opcode_timer[op] then
+                    local timer_name = tok:Get(tokenList).Data
+                    if not Interrupts_7801[timer_name] then
+                        return false, GenerateError(timer_name .. " is not a valid interrupt name")
+                    end
+                    stat = emit_call{name=op .. timer_name} break
                 end
                 if opcode_implied[op] then stat = emit_call{name=op .. 'imp'} break end
                 error("internal error: unable to find addressing of valid opcode " .. op) -- should not happen
