@@ -95,6 +95,12 @@ section{"rom", org=0x8000}
 @l8 jre l9
     nop nop nop nop
 @l9
+    ldax (bc) 
+    ldax (de)
+    ldax (hl)
+    stax (bc)
+    stax (de)
+    stax (hl)
     inrw (v,0x01)
     ldaw (v,0x23)
     dcrw (v,0x45)
@@ -116,12 +122,6 @@ section{"rom", org=0x8000}
     mvix (bc),0xf9
     mvix (de),0xe8
     mvix (hl),0xd7
-    ldax (bc) 
-    ldax (de)
-    ldax (hl)
-    stax (bc)
-    stax (de)
-    stax (hl)
     mviw (v,0x9a),0x3f
     eqiw (v,0xc5),0x1b
     ldaxd (de)
@@ -132,5 +132,12 @@ section{"rom", org=0x8000}
     staxi (de)
     staxd (hl)
     staxi (hl)
-    
+    push bc
+    push de
+    push hl
+    pop hl
+    pop de
+    pop bc
+    push v
+    pop v
 writebin(filename .. '.bin')

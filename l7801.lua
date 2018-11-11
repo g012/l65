@@ -44,7 +44,7 @@ local Keywords_7801 = {
     'dcrw','dcx','ex','exx','gti','halt','inr','inrw',
     'inx','jb','jmp','jr','jre','ldaw','ldax','ldaxd',
     'ldaxi','lti','lxi','mov','mvi','mviw','mvix','nei',
-    'nop','offi','oni','ori','pen','per','pex','ret',
+    'nop','offi','oni','ori','pen','per','pex','pop','push','ret',
     'reti','rets','rld','rrd','sio','softi','staw','stax',
     'staxd','staxi','stc','stm','sbi','sui','suinb','table',
     'xri',
@@ -90,7 +90,7 @@ local opcode_relative = lookupify{
     'jr','jre'
 }
 local opcode_reg = lookupify{
-    'dcr','dcx','inr','inx'
+    'dcr','dcx','inr','inx','pop','push',
 }
 local opcode_reg_reg = lookupify{
     'mov'
@@ -116,10 +116,12 @@ local opcode_reg_list = {
     e = lookupify{'mvi'},
     h = lookupify{'mvi'},
     l = lookupify{'mvi'},
-    v = lookupify{'mvi'},
-    bc = lookupify{'ldax','lxi','mvix','stax'},
-    de = lookupify{'ldax','ldaxd','ldaxi','lxi','mvix','stax','staxd','staxi'},
-    hl = lookupify{'dcx','inx','ldax','ldaxd','ldaxi','lxi','mvix','stax','staxd','staxi'},
+    v = lookupify{'inrw','ldaw','dcrw','eqiw','mvi','mviw','pop','push','staw',
+                  'bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
+    },
+    bc = lookupify{'ldax','lxi','mvix','pop','push','stax'},
+    de = lookupify{'ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi'},
+    hl = lookupify{'dcx','inx','ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi'},
     sp = lookupify{'dcx','inx','lxi'},
 }
 
@@ -1480,14 +1482,11 @@ local function ParseLua(src, src_name)
                     end
                     stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
                 end
-                if opcode_reg_ind[op] or opcode_reg_ind_ex[op] then
-                    if not tok:ConsumeSymbol('(', tokenList) then
-                        return false, GenerateError("Unexpected character")
-                    end
-
+               
+                if (opcode_wa[op] or opcode_wab[op] or opcode_reg_ind[op] or opcode_reg_ind_ex[op]) and tok:ConsumeSymbol('(', tokenList) then
                     local paren_open_whites,paren_close_whites = {},{}
                     for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
-                  
+                    
                     local register_name = tok:Get(tokenList).Data
                     if not Registers_7801[register_name] then
                         return false, GenerateError(register_name .. " is not a valid register")
@@ -1495,58 +1494,51 @@ local function ParseLua(src, src_name)
                     if not (opcode_reg_list[register_name] and opcode_reg_list[register_name][op]) then
                         return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
                     end
-                    if not tok:ConsumeSymbol(')', tokenList) then
-                        return false, GenerateError("Unexpected character")
-                    end
-                    if opcode_reg_ind[op] then
-                        for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
+                    
+                    if (opcode_wa[op] or opcode_wab[op]) and tok:ConsumeSymbol(',', tokenList) then
+                        if not (register_name == 'v') 
+                        or not (opcode_wa[op] or opcode_wab[op]) then
+                            return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
+                        end
+                        inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
+                        local st, expr = ParseExpr(scope) if not st then return false, expr end
+                        if not tok:ConsumeSymbol(')', tokenList) then
+                            return false, GenerateError("Unexpected character")
+                        end
+                        if opcode_wa[op] then
+                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            stat = emit_call{name=op .. "wa", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
+                        end
+                        if not tok:ConsumeSymbol(',', tokenList) then
+                            return false, GenerateError("Unexpected character")
+                        end
+                        commaTokenList[1] = tokenList[#tokenList]
+                        local inverse_encapsulates = { inverse_encapsulate }
+                        local exprs = { expr }
+                        inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
+                        inverse_encapsulates[#inverse_encapsulates+1] = inverse_encapsulate
+                        if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end end
                         for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                        stat = emit_call{name=op .. register_name, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                        st, expr = ParseExpr(scope) if not st then return false, expr end
+                        exprs[#exprs+1] = expr
+                        stat = emit_call{name=op .. "waxx", args=exprs, inverse_encapsulate=inverse_encapsulates, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                     end
-                    if not tok:ConsumeSymbol(',', tokenList) then
-                        return false, GenerateError("Unexpected character")
+                    if (opcode_reg_ind[op] or opcode_reg_ind_ex[op]) and tok:ConsumeSymbol(')', tokenList) then
+                        if opcode_reg_ind[op] then
+                            for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            stat = emit_call{name=op .. register_name, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                        end
+                        if opcode_reg_ind_ex[op] and tok:ConsumeSymbol(',', tokenList) then
+                            inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
+                            local st, expr = ParseExpr(scope) if not st then return false, expr end
+                            if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end end
+                            for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
+                            stat = emit_call{name=op .. register_name, args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break                            
+                        end
+                        return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")                       
                     end
-                    inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
-                    local st, expr = ParseExpr(scope) if not st then return false, expr end
-                    if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end end
-                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                    stat = emit_call{name=op .. register_name, args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
-                end
-                if opcode_wa[op] or opcode_wab[op] then
-                    if not tok:ConsumeSymbol('(', tokenList) then
-                        return false, GenerateError("Unexpected character")
-                    end
-
-                    local paren_open_whites,paren_close_whites = {},{}
-                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
-
-                    if not (tok:Get(tokenList).Data == 'v') then
-                        return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
-                    end
-                    if not tok:ConsumeSymbol(',', tokenList) then
-                        return false, GenerateError("Unexpected character")
-                    end
-                    inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
-                    local st, expr = ParseExpr(scope) if not st then return false, expr end
-                    if not tok:ConsumeSymbol(')', tokenList) then return false, expr end
-                    if opcode_wa[op] then
-                        for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
-                        for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                        stat = emit_call{name=op .. "wa", args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
-                    end
-                    if not tok:ConsumeSymbol(',', tokenList) then
-                        return false, GenerateError("Unexpected character")
-                    end
-                    commaTokenList[1] = tokenList[#tokenList]
-                    local inverse_encapsulates = { inverse_encapsulate }
-                    local exprs = { expr }
-                    inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
-                    inverse_encapsulates[#inverse_encapsulates+1] = inverse_encapsulate
-                    if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end end
-                    for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
-                    st, expr = ParseExpr(scope) if not st then return false, expr end
-                    exprs[#exprs+1] = expr
-                    stat = emit_call{name=op .. "waxx", args=exprs, inverse_encapsulate=inverse_encapsulates, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
                 end
                 if opcode_reg_reg[op] then
                     local r0_name = tok:Get(tokenList).Data

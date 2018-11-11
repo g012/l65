@@ -325,12 +325,86 @@ for k,v in pairs(op48imp) do
     end
 end
 
+local op48r16={
+    pushbc=M.op(0x1e,17),
+    pushde=M.op(0x2e,17),
+    pushhl=M.op(0x3e,17),
+    pushv=M.op(0x0e,17),
+    popbc=M.op(0x1f,15),
+    popde=M.op(0x2f,15),
+    pophl=M.op(0x3f,15),
+    popv=M.op(0x0f,15),
+} M.op48r16 = op48r16
+for k,v in pairs(op48r16) do
+    M[k] = function()
+        table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, bin={ 0x48, v.opc } })
+    end
+end
+
 return M
 
 --[[ [todo]
     	
 16 bits instructions:
     0x48xx 
+		case 0x00: my_stprintf_s(buffer, buffer_len, _T("skit intf0")); break;
+    	case 0x01: my_stprintf_s(buffer, buffer_len, _T("skit intft")); break;
+		case 0x02: my_stprintf_s(buffer, buffer_len, _T("skit intf1")); break;
+		case 0x03: my_stprintf_s(buffer, buffer_len, _T("skit intf2")); break;
+		case 0x04: my_stprintf_s(buffer, buffer_len, _T("skit intfs")); break;
+		case 0x0a: my_stprintf_s(buffer, buffer_len, _T("sk cy")); break;
+		case 0x0c: my_stprintf_s(buffer, buffer_len, _T("sk z")); break;
+		case 0x10: my_stprintf_s(buffer, buffer_len, _T("sknit f0")); break;
+		case 0x11: my_stprintf_s(buffer, buffer_len, _T("sknit ft")); break;
+		case 0x12: my_stprintf_s(buffer, buffer_len, _T("sknit f1")); break;
+		case 0x13: my_stprintf_s(buffer, buffer_len, _T("sknit f2")); break;
+		case 0x14: my_stprintf_s(buffer, buffer_len, _T("sknit fs")); break;
+		case 0x1a: my_stprintf_s(buffer, buffer_len, _T("skn cy")); break;
+		case 0x1c: my_stprintf_s(buffer, buffer_len, _T("skn z")); break;
+		case 0x30: my_stprintf_s(buffer, buffer_len, _T("rll a")); break;
+		case 0x31: my_stprintf_s(buffer, buffer_len, _T("rlr a")); break;
+		case 0x32: my_stprintf_s(buffer, buffer_len, _T("rll c")); break;
+		case 0x33: my_stprintf_s(buffer, buffer_len, _T("rlr c")); break;
+		case 0x34: my_stprintf_s(buffer, buffer_len, _T("sll a")); break;
+		case 0x35: my_stprintf_s(buffer, buffer_len, _T("slr a")); break;
+		case 0x36: my_stprintf_s(buffer, buffer_len, _T("sll c")); break;
+		case 0x37: my_stprintf_s(buffer, buffer_len, _T("sll c")); break;
+
+	{&upd7810_device::SKIT_F0,       2, 8, 8,L0|L1}, {&upd7810_device::SKIT_FT0,      2, 8, 8,L0|L1},
+	{&upd7810_device::SKIT_F1,       2, 8, 8,L0|L1}, {&upd7810_device::SKIT_F2,       2, 8, 8,L0|L1},
+	{&upd7810_device::SKIT_FST,      2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::illegal2,      2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::illegal2,      2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::SK_CY,         2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::SK_Z,          2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+
+	{&upd7810_device::SKNIT_F0,      2, 8, 8,L0|L1}, {&upd7810_device::SKNIT_FT0,     2, 8, 8,L0|L1},
+	{&upd7810_device::SKNIT_F1,      2, 8, 8,L0|L1}, {&upd7810_device::SKNIT_F2,      2, 8, 8,L0|L1},
+	{&upd7810_device::SKNIT_FST,     2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::illegal2,      2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::illegal2,      2, 8, 8,L0|L1}, {&upd7810_device::illegal,       2, 8, 8,L0|L1},
+	{&upd7810_device::SKN_CY,        2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::SKN_Z,         2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+
+	/* 0x20 - 0x3F */
+	{&upd7810_device::EI,            2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::illegal2,      2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::DI,            2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::illegal2,      2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::illegal2,      2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::CLC,           2, 8, 8,L0|L1}, {&upd7810_device::STC,           2, 8, 8,L0|L1},
+	{&upd7810_device::PEN,           2,11,11,L0|L1}, {&upd7810_device::PEX,           2,11,11,L0|L1},
+
+	{&upd7810_device::RLL_A,         2, 8, 8,L0|L1}, {&upd7810_device::RLR_A,         2, 8, 8,L0|L1},
+	{&upd7810_device::RLL_C,         2, 8, 8,L0|L1}, {&upd7810_device::RLR_C,         2, 8, 8,L0|L1},
+	{&upd7810_device::SLL_A,         2, 8, 8,L0|L1}, {&upd7810_device::SLR_A,         2, 8, 8,L0|L1},
+	{&upd7810_device::SLL_C,         2, 8, 8,L0|L1}, {&upd7810_device::SLR_C,         2, 8, 8,L0|L1},
+	{&upd7810_device::RLD,           2,17,17,L0|L1}, {&upd7810_device::RRD,           2,17,17,L0|L1},
+	{&upd7810_device::illegal2,      2, 8, 8,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	{&upd7810_device::PER,           2,11,11,L0|L1}, {&upd7810_device::illegal2,      2, 8, 8,L0|L1},
+	
+    
+    
     0x4cxx
     0x4dxx
     0x60xx
