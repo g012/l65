@@ -41,10 +41,10 @@ local Keywords_7801 = {
     'aci','adi','adinc','ani','bit0','bit1','bit2','bit3',
     'bit4','bit5','bit6','bit7','block','calb','calf','call',
     'calt','clc','ei','eqi','eqiw','daa','di','dcr',
-    'dcrw','dcx','ex','exx','gti','halt','inr','inrw',
+    'dcrw','dcx','ex','exx','gti','halt','in','inr','inrw',
     'inx','jb','jmp','jr','jre','ldaw','ldax','ldaxd',
     'ldaxi','lti','lxi','mov','mvi','mviw','mvix','nei',
-    'nop','offi','oni','ori','pen','per','pex','pop','push','ret',
+    'nop','offi','oni','ori','out','pen','per','pex','pop','push','ret',
     'reti','rets','rld','rll','rlr','rrd','sbi','sio','skc',
     'skit','sknit','skz','sknc','sknz','sll','slr','softi',
     'staw','stax','staxd','staxi','stc','stm','sui','suinb',
@@ -80,7 +80,7 @@ local opcode_implied = lookupify{
     'stc','stm','table'
 }
 local opcode_immediate = lookupify{
-    'calf','calt','call','jmp',
+    'calf','calt','call','in','jmp','out',
 }
 local opcode_wa = lookupify{
     'inrw','ldaw','dcrw','staw',
@@ -1488,7 +1488,7 @@ local function ParseLua(src, src_name)
                         mod_st, mod_expr = ParseExpr(scope)
                         if not mod_st then return false, mod_expr end
                     end
-                    stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
+                    stat = emit_call{name=op .. 'imm', args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
                 end
                 if (opcode_wa[op] or opcode_wab[op] or opcode_reg_ind[op] or opcode_reg_ind_ex[op]) and tok:ConsumeSymbol('(', tokenList) then
                     local paren_open_whites,paren_close_whites = {},{}

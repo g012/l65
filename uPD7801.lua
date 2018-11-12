@@ -162,12 +162,26 @@ end
 local opw = {
     call=M.op(0x44,16),
     jmp=M.op(0x54,10),
+} M.opw = opw
+for k,v in pairs(opw) do
+    M[k .. 'imm'] = function(late, early)
+        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local size = function() late,early = M.size_op(late,early) return 3 end
+        local bin = function() local l65dbg=l65dbg 
+            local x = M.op_eval_word(late,early)
+            return { v.opc, x&0xff, x>>8 }
+        end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
+    end
+end
+
+local opr16w = {
     lxisp=M.op(0x04,10),
     lxibc=M.op(0x14,10),
     lxide=M.op(0x24,10),
     lxihl=M.op(0x34,10)    
-} M.opw = opw
-for k,v in pairs(opw) do
+} M.opr16w = opr16w
+for k,v in pairs(opr16w) do
     M[k] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 3 end
@@ -179,7 +193,8 @@ for k,v in pairs(opw) do
     end
 end
 
-M.calt = function(late, early)
+
+M['calt' .. 'imm'] = function(late, early)
     local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local op = { cycles=19 }
     op.size = function() late,early = M.size_op(late,early) return 1 end
@@ -194,7 +209,7 @@ M.calt = function(late, early)
     table.insert(M.section_current.instructions, op)
 end
 
-M.calf = function(late, early)
+M['calf' .. 'imm'] = function(late, early)
     local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local op = { cycles=16 }
     op.size = function() late,early = M.size_op(late,early) return 2 end
@@ -376,6 +391,24 @@ local op48int={
 for k,v in pairs(op48int) do
     M[k] = function()
         table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, bin={ 0x48, v.opc } })
+    end
+end
+
+-- IN/OUT
+local opinout={
+    ['in']=M.op(0x4c,10),
+    out=M.op(0x4d,10),
+} M.opinout = op4inout
+for k,v in pairs(opinout) do
+    M[k .. 'imm'] = function(late, early)
+        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local op = { cycles=v.cycles }
+        op.size = function() late,early = M.size_op(late,early) return 2 end
+        op.bin = function() local l65dbg=l65dbg 
+            local x = 0x00 + M.op_eval_byte(late,early)
+            return { v.opc, 0x00, x }
+        end
+        table.insert(M.section_current.instructions, op)
     end
 end
 

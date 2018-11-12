@@ -162,5 +162,11 @@ section{"rom", org=0x8000}
     sknit f1
     sknit f2
     sknit fs
-
+    in 0x00
+    in 0xa7
+    in 0xbf
+    out 0x00
+    out 0x5a
+    out 0xbf
+    
 writebin(filename .. '.bin')
