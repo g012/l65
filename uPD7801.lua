@@ -430,15 +430,29 @@ for k,v in pairs(op4car8) do
     end
 end
 
+local op4dr8a={
+    movpaa=M.op(0xc0,10),
+    movpba=M.op(0xc1,10),
+    movpca=M.op(0xc2,10),
+    movmka=M.op(0xc3,10),
+    movmba=M.op(0xc4,10),
+    movmca=M.op(0xc5,10),
+    movtm0a=M.op(0xc6,10),
+    movtm1a=M.op(0xc7,10),
+    movsa=M.op(0xc8,10),
+} M.op4dr8a = op4dr8a
+for k,v in pairs(op4dr8a) do
+    M[k] = function()
+        table.insert(M.section_current.instructions, { size=2, cycles=v.cycles, bin={ 0x4d, v.opc } })
+    end
+end
+
+
 return M
 
 --[[ [todo]
     	
 16 bits instructions:
-    0x4cxx
-    
-
-    0x4dxx
     0x60xx
     0x64xx
     0x70xx

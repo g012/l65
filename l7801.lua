@@ -151,24 +151,21 @@ local opcode_reg_reg_list = {
         tm1 = lookupify{'mov'},
         s = lookupify{'mov'},
     },
-    b = {
-        a = lookupify{'mov'},
-    },
-    c = {
-        a = lookupify{'mov'},
-    },
-    d = {
-        a = lookupify{'mov'},
-    },
-    e = {
-        a = lookupify{'mov'},
-    },
-    h = {
-        a = lookupify{'mov'},
-    },
-    l = {
-        a = lookupify{'mov'},
-    },
+    b = { a = lookupify{'mov'} },
+    c = { a = lookupify{'mov'} },
+    d = { a = lookupify{'mov'} },
+    e = { a = lookupify{'mov'} },
+    h = { a = lookupify{'mov'} },
+    l = { a = lookupify{'mov'} },
+    pa = { a = lookupify{'mov'} },
+    pb = { a = lookupify{'mov'} },
+    pc = { a = lookupify{'mov'} },
+    mk = { a = lookupify{'mov'} },
+    mb = { a = lookupify{'mov'} },
+    mc = { a = lookupify{'mov'} },
+    tm0 = { a = lookupify{'mov'} },
+    tm1 = { a = lookupify{'mov'} },
+    s = { a = lookupify{'mov'} },
     v = {},
 }
 

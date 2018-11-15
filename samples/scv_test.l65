@@ -177,5 +177,14 @@ section{"rom", org=0x8000}
     mov a,tm0
     mov a,tm1
     mov a,s
+    mov pa,a
+    mov pb,a
+    mov pc,a
+    mov mk,a
+    mov mb,a
+    mov mc,a
+    mov tm0,a
+    mov tm1,a
+    mov s,a
     
 writebin(filename .. '.bin')
