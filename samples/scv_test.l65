@@ -168,5 +168,14 @@ section{"rom", org=0x8000}
     out 0x00
     out 0x5a
     out 0xbf
+    mov a,pa
+    mov a,pb
+    mov a,pc
+    mov a,mk
+    mov a,mb
+    mov a,mc
+    mov a,tm0
+    mov a,tm1
+    mov a,s
     
 writebin(filename .. '.bin')

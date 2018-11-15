@@ -52,7 +52,8 @@ local Keywords_7801 = {
 }
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
-    bc=16,de=16,hl=16,sp=16,va=16
+    bc=16,de=16,hl=16,sp=16,va=16,
+    pa=8,pb=8,pc=8,mk=8,mb=8,mc=8,tm0=8,tm1=8,s=8,
 }
 local Interrupts_7801 = lookupify{
     'f0','ft','f1','f2','fs'
@@ -140,6 +141,15 @@ local opcode_reg_reg_list = {
         e = lookupify{'mov'},
         h = lookupify{'mov'},
         l = lookupify{'mov'},
+        pa = lookupify{'mov'},
+        pb = lookupify{'mov'},
+        pc = lookupify{'mov'},
+        mk = lookupify{'mov'},
+        mb = lookupify{'mov'},
+        mc = lookupify{'mov'},
+        tm0 = lookupify{'mov'},
+        tm1 = lookupify{'mov'},
+        s = lookupify{'mov'},
     },
     b = {
         a = lookupify{'mov'},

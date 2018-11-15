@@ -6,29 +6,29 @@ section{"rom", org=0x8000}
     di
     lxi sp,0xFFD2
     ei
-	calt 0x8C
+    calt 0x8C
 
-	lxi hl,vdc_data
-	lxi de,0x3400
-	mvi c,0x03 
-	block
+    lxi hl,vdc_data
+    lxi de,0x3400
+    mvi c,0x03 
+    block
 
     lxi hl,message
     lxi de,0x3044
-	lxi bc,0x01ff
+    lxi bc,0x01ff
 	
 @loop_0
     block
     dcr b
-	jr loop_0
+    jr loop_0
 
-	-- beep
+    -- beep
     lxi hl,0x3600    
     calf 0xfb0
     
 @loop_1
     nop
-	jr loop_1
+    jr loop_1
 
 section{"vdc_data", org=0x8030}
     dc.b 0xC0,0x00,0x00,0xF2
