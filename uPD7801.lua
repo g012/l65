@@ -447,13 +447,48 @@ for k,v in pairs(op4dr8a) do
     end
 end
 
+local op60names = {'ana','xra','ora','addnc','gta','subnb','lta','add','','adc','','sub','nea','sbb','eqa'}
+local register_names = {'v','a','b','c','d','e','h','l'}
+local k = 0x08
+for i,o in ipairs(op60names) do
+    if o == '' then
+        k = k + #register_names
+    else
+        for j,r in ipairs(register_names) do
+            local l = k
+            M[o .. r .. 'a'] = function()
+                table.insert(M.section_current.instructions, { size=2, cycles=8, bin={ 0x60, l } })
+            end
+            k = k + 1
+        end
+    end
+end
+
+k = 0x88
+op60names[9] = 'ona'
+op60names[11] = 'offa'
+for i,o in ipairs(op60names) do
+    if o == '' then
+        k = k + #register_names
+    else
+        for j,r in ipairs(register_names) do
+            local l = k
+            local name = o .. 'a' .. r
+            if not M[name] then
+                M[name] = function()
+                    table.insert(M.section_current.instructions, { size=2, cycles=8, bin={ 0x60, l } })
+                end
+            end
+            k = k + 1
+        end
+    end
+end
 
 return M
 
 --[[ [todo]
     	
 16 bits instructions:
-    0x60xx
     0x64xx
     0x70xx
     0x74xx

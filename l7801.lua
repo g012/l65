@@ -49,6 +49,8 @@ local Keywords_7801 = {
     'skit','sknit','skz','sknc','sknz','sll','slr','softi',
     'staw','stax','staxd','staxi','stc','stm','sui','suinb',
     'table','xri',
+    'ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa',
+    'ona','offa'
 }
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
@@ -97,7 +99,7 @@ local opcode_reg = lookupify{
     'dcr','dcx','inr','inx','pop','push','rll','rlr','sll','slr',
 }
 local opcode_reg_reg = lookupify{
-    'mov'
+    'mov','ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa','ona','offa'
 }
 local opcode_regb = lookupify{
     'aci','adi','adinc','ani','eqi','gti','lti','mvi','nei','offi','oni','ori','sbi','sui','suinb','xri',
@@ -135,12 +137,14 @@ local opcode_reg_list = {
 
 local opcode_reg_reg_list = {
     a = {
-        b = lookupify{'mov'},
-        c = lookupify{'mov'},
-        d = lookupify{'mov'},
-        e = lookupify{'mov'},
-        h = lookupify{'mov'},
-        l = lookupify{'mov'},
+        a = lookupify{'ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa','ona','offa'},
+        b = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','','adc','','sub','nea','sbb','eqa','ona','offa'},
+        c = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','','adc','','sub','nea','sbb','eqa','ona','offa'},
+        d = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','','adc','','sub','nea','sbb','eqa','ona','offa'},
+        e = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','','adc','','sub','nea','sbb','eqa','ona','offa'},
+        h = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','','adc','','sub','nea','sbb','eqa','ona','offa'},
+        l = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','','adc','','sub','nea','sbb','eqa','ona','offa'},
+        v = lookupify{'ana','xra','ora','addnc','gta','subnb','lta','add','','adc','','sub','nea','sbb','eqa','ona','offa'},
         pa = lookupify{'mov'},
         pb = lookupify{'mov'},
         pc = lookupify{'mov'},
@@ -151,12 +155,13 @@ local opcode_reg_reg_list = {
         tm1 = lookupify{'mov'},
         s = lookupify{'mov'},
     },
-    b = { a = lookupify{'mov'} },
-    c = { a = lookupify{'mov'} },
-    d = { a = lookupify{'mov'} },
-    e = { a = lookupify{'mov'} },
-    h = { a = lookupify{'mov'} },
-    l = { a = lookupify{'mov'} },
+    v = { a = lookupify{'ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa'} },
+    b = { a = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa'} },
+    c = { a = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa'} },
+    d = { a = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa'} },
+    e = { a = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa'} },
+    h = { a = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa'} },
+    l = { a = lookupify{'mov','ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa'} },
     pa = { a = lookupify{'mov'} },
     pb = { a = lookupify{'mov'} },
     pc = { a = lookupify{'mov'} },
@@ -166,8 +171,9 @@ local opcode_reg_reg_list = {
     tm0 = { a = lookupify{'mov'} },
     tm1 = { a = lookupify{'mov'} },
     s = { a = lookupify{'mov'} },
-    v = {},
 }
+local op60names = {}
+local register_names = {'v','a','b','c','d','e','h','l'}
 
 local addressing_map = {
     imp = opcode_implied,
