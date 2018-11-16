@@ -37,6 +37,7 @@ local Keywords_control = {
 local Keywords_data = {
     'dc',
 }
+
 local Keywords_7801 = {
     'aci','adi','adinc','ani','bit0','bit1','bit2','bit3',
     'bit4','bit5','bit6','bit7','block','calb','calf','call',
@@ -50,7 +51,7 @@ local Keywords_7801 = {
     'staw','stax','staxd','staxi','stc','stm','sui','suinb',
     'table','xri',
     'ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa',
-    'ona','offa'
+    'ona','offa',
 }
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
@@ -119,13 +120,14 @@ local opcode_timer = lookupify{
 }
 local opcode_reg_list = {
     a = lookupify{'aci','adi','adinc','ani','dcr','inr','eqi','gti','lti','mvi','nei','offi','oni','ori','rll','rlr','sbi','sll','slr','sui','suinb','xri'},
-    b = lookupify{'dcr','inr','mvi'},
-    c = lookupify{'dcr','inr','mvi','rll','rlr','sll','slr'},
-    d = lookupify{'mvi'},
-    e = lookupify{'mvi'},
-    h = lookupify{'mvi'},
-    l = lookupify{'mvi'},
-    v = lookupify{'inrw','ldaw','dcrw','eqiw','mvi','mviw','staw',
+    b = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi','dcr','inr','mvi'},
+    c = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi','dcr','inr','mvi','rll','rlr','sll','slr'},
+    d = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi','mvi'},
+    e = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi','mvi'},
+    h = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi','mvi'},
+    l = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi','mvi'},
+    v = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi',
+                  'inrw','ldaw','dcrw','eqiw','mvi','mviw','staw',
                   'bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
     },
     bc = lookupify{'ldax','lxi','mvix','pop','push','stax'},
@@ -133,6 +135,10 @@ local opcode_reg_list = {
     hl = lookupify{'dcx','inx','ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi'},
     sp = lookupify{'dcx','inx','lxi'},
     va = lookupify{'pop','push'},
+    pa = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi'},
+    pb = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi'},
+    pc = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi'},
+    mk = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi'},
 }
 
 local opcode_reg_reg_list = {
@@ -1583,7 +1589,7 @@ local function ParseLua(src, src_name)
                     if not Registers_7801[register_name] then
                         return false, GenerateError(register_name .. " is not a valid register")
                     end
-                    if not opcode_reg_list[register_name] and opcode_reg_list[register_name][op] then 
+                    if (not opcode_reg_list[register_name]) and (not opcode_reg_list[register_name][op]) then 
                         return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
                     end
                     if opcode_regw[op] or opcode_regb[op] then

@@ -484,12 +484,58 @@ for i,o in ipairs(op60names) do
     end
 end
 
+k = 0x08
+local op64names = { 'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi' }
+for i,o in ipairs(op64names) do
+    for j,r in ipairs(register_names) do
+        local name = o .. r
+        if not M[name] then
+            local l = k
+            M[name] = function(late,early)
+                local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+                local op = { cycles=11 }
+                op.size = function() late,early = M.size_op(late,early) return 3 end
+                op.bin = function() local l65dbg=l65dbg 
+                    local x = 0x00 + l;
+                    local y = 0x00 + M.op_eval_byte(late,early)
+                    return { 0x64, x, y }
+                end
+                table.insert(M.section_current.instructions, op)
+            end
+        end
+        k = k + 1
+    end
+end
+
+k = 0x88
+local ex_register_names = {'pa','pb','pc','mk'}
+for i,o in ipairs(op64names) do
+    for j,r in ipairs(ex_register_names) do
+        local name = o .. r
+        if not M[name] then
+            local l = k
+            M[name] = function(late,early)
+                local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+                local op = { cycles=11 }
+                op.size = function() late,early = M.size_op(late,early) return 3 end
+                op.bin = function() local l65dbg=l65dbg 
+                    local x = 0x00 + l;
+                    local y = 0x00 + M.op_eval_byte(late,early)
+                    return { 0x64, x, y }
+                end
+                table.insert(M.section_current.instructions, op)
+            end
+        end
+        k = k + 1
+    end
+    k = k + 4
+end
+
 return M
 
 --[[ [todo]
     	
 16 bits instructions:
-    0x64xx
     0x70xx
     0x74xx
 ]]--
