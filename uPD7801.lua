@@ -551,7 +551,7 @@ local op74wa = {
 for k,v in pairs(op74wa) do
     M[k .. 'wa'] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
-        local size = function() late,early = M.size_op(late,early) return 2 end
+        local size = function() late,early = M.size_op(late,early) return 3 end
         local bin = function() local l65dbg=l65dbg return { 0x74, v.opc, M.op_eval_byte(late,early) } end
         table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
@@ -629,7 +629,7 @@ return M
     	
 16 bits instructions:
     0x70xx
-
+        11
 		case 0x89: my_stprintf_s(buffer, buffer_len, _T("anax b")); break;
 		case 0x8a: my_stprintf_s(buffer, buffer_len, _T("anax d")); break;
 		case 0x8b: my_stprintf_s(buffer, buffer_len, _T("anax h")); break;
