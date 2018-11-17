@@ -54,6 +54,9 @@ local Keywords_7801 = {
     'ona','offa',
     'anaw','xraw','oraw','addncw','gtaw','subnbw','ltaw','addw','onaw','adcw','offaw','subw','neaw','sbbw','eqaw',
     'sspd','lspd','sbcd','lbcd','sded','lded','shld','lhld',
+    'anax','xrax','orax','addncx','gtax','subnbx','ltax','addx','onax','adcx','offax','subx','neax','sbbx','eqax',
+    'anaxi','xraxi','oraxi','addncxi','gtaxi','subnbxi','ltaxi','addxi','onaxi','adcxi','offaxi','subxi','neaxi','sbbxi','eqaxi',
+    'anaxd','xraxd','oraxd','addncxd','gtaxd','subnbxd','ltaxd','addxd','onaxd','adcxd','offaxd','subxd','neaxd','sbbxd','eqaxd',
 }
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
@@ -114,6 +117,9 @@ local opcode_regb = lookupify{
 local opcode_reg_ind = lookupify{
     'ldax','ldaxd','ldaxi',
     'stax','staxd','staxi',
+    'anax','xrax','orax','addncx','gtax','subnbx','ltax','addx','onax','adcx','offax','subx','neax','sbbx','eqax',
+    'anaxi','xraxi','oraxi','addncxi','gtaxi','subnbxi','ltaxi','addxi','onaxi','adcxi','offaxi','subxi','neaxi','sbbxi','eqaxi',
+    'anaxd','xraxd','oraxd','addncxd','gtaxd','subnbxd','ltaxd','addxd','onaxd','adcxd','offaxd','subxd','neaxd','sbbxd','eqaxd',
 }
 local opcode_reg_ind_ex = lookupify{
     'mvix'
@@ -140,9 +146,22 @@ local opcode_reg_list = {
                   'bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
                   'anaw','xraw','oraw','addncw','gtaw','subnbw','ltaw','addw','onaw','adcw','offaw','subw','neaw','sbbw','eqaw',
     },
-    bc = lookupify{'ldax','lxi','mvix','pop','push','stax'},
-    de = lookupify{'ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi'},
-    hl = lookupify{'dcx','inx','ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi'},
+    bc = lookupify{
+        'ldax','lxi','mvix','pop','push','stax',
+        'anax','xrax','orax','addncx','gtax','subnbx','ltax','addx','onax','adcx','offax','subx','neax','sbbx','eqax',
+    },
+    de = lookupify{
+        'ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi',
+        'anax','xrax','orax','addncx','gtax','subnbx','ltax','addx','onax','adcx','offax','subx','neax','sbbx','eqax',
+        'anaxi','xraxi','oraxi','addncxi','gtaxi','subnbxi','ltaxi','addxi','onaxi','adcxi','offaxi','subxi','neaxi','sbbxi','eqaxi',
+        'anaxd','xraxd','oraxd','addncxd','gtaxd','subnbxd','ltaxd','addxd','onaxd','adcxd','offaxd','subxd','neaxd','sbbxd','eqaxd',
+    },
+    hl = lookupify{
+        'dcx','inx','ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi',
+        'anax','xrax','orax','addncx','gtax','subnbx','ltax','addx','onax','adcx','offax','subx','neax','sbbx','eqax',
+        'anaxi','xraxi','oraxi','addncxi','gtaxi','subnbxi','ltaxi','addxi','onaxi','adcxi','offaxi','subxi','neaxi','sbbxi','eqaxi',
+        'anaxd','xraxd','oraxd','addncxd','gtaxd','subnbxd','ltaxd','addxd','onaxd','adcxd','offaxd','subxd','neaxd','sbbxd','eqaxd',
+    },
     sp = lookupify{'dcx','inx','lxi'},
     va = lookupify{'pop','push'},
     pa = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi'},
