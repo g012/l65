@@ -557,7 +557,7 @@ for k,v in pairs(op74wa) do
     end
 end
 
-local op70w = {
+local op70ind = {
     sspd=M.op(0x0e,20),
     lspd=M.op(0x0f,20),
     sbcd=M.op(0x1e,20),
@@ -566,11 +566,11 @@ local op70w = {
     lded=M.op(0x2f,20),
     shld=M.op(0x3e,20),
     lhld=M.op(0x3f,20),
-} M.op70w = op70w
-for k,v in pairs(op70w) do
+} M.op70ind = op70ind
+for k,v in pairs(op70ind) do
     M[k] = function(late, early)
         local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
-        local size = function() late,early = M.size_op(late,early) return 3 end
+        local size = function() late,early = M.size_op(late,early) return 4 end
         local bin = function() local l65dbg=l65dbg 
             local x = M.op_eval_word(late,early)
             return { 0x70, v.opc, x&0xff, x>>8 }
@@ -579,6 +579,27 @@ for k,v in pairs(op70w) do
     end
 end
 
+local op70indr8 = {
+    movindv=M.op(0x78,17),
+    movinda=M.op(0x79,17),
+    movindb=M.op(0x7a,17),
+    movindc=M.op(0x7b,17),
+    movindd=M.op(0x7c,17),
+    movinde=M.op(0x7d,17),
+    movindh=M.op(0x7e,17),
+    movindl=M.op(0x7f,17),
+} M.op70indr8 = op70indr8
+for k,v in pairs(op70indr8) do
+    M[k] = function(late, early)
+        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local size = function() late,early = M.size_op(late,early) return 4 end
+        local bin = function() local l65dbg=l65dbg 
+            local x = M.op_eval_word(late,early)
+            return { 0x70, v.opc, x&0xff, x>>8 }
+        end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
+    end
+end
 
 return M
 
@@ -596,14 +617,8 @@ return M
 		case 0x6d: my_stprintf_s(buffer, buffer_len, _T("mov e,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
 		case 0x6e: my_stprintf_s(buffer, buffer_len, _T("mov h,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
 		case 0x6f: my_stprintf_s(buffer, buffer_len, _T("mov l,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x78: my_stprintf_s(buffer, buffer_len, _T("mov %s,v"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x79: my_stprintf_s(buffer, buffer_len, _T("mov %s,a"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x7a: my_stprintf_s(buffer, buffer_len, _T("mov %s,b"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x7b: my_stprintf_s(buffer, buffer_len, _T("mov %s,c"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x7c: my_stprintf_s(buffer, buffer_len, _T("mov %s,d"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x7d: my_stprintf_s(buffer, buffer_len, _T("mov %s,e"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x7e: my_stprintf_s(buffer, buffer_len, _T("mov %s,h"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x7f: my_stprintf_s(buffer, buffer_len, _T("mov %s,l"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		
+		
 		
 		case 0x89: my_stprintf_s(buffer, buffer_len, _T("anax b")); break;
 		case 0x8a: my_stprintf_s(buffer, buffer_len, _T("anax d")); break;

@@ -102,8 +102,11 @@ local opcode_relative = lookupify{
 local opcode_reg = lookupify{
     'dcr','dcx','inr','inx','pop','push','rll','rlr','sll','slr',
 }
+local opcode_mov = lookupify{
+    'mov'
+}
 local opcode_reg_reg = lookupify{
-    'mov','ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa','ona','offa'
+    'ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa','ona','offa'
 }
 local opcode_regb = lookupify{
     'aci','adi','adinc','ani','eqi','gti','lti','mvi','nei','offi','oni','ori','sbi','sui','suinb','xri',
@@ -185,7 +188,7 @@ local opcode_reg_reg_list = {
     tm1 = { a = lookupify{'mov'} },
     s = { a = lookupify{'mov'} },
 }
-local op60names = {}
+local registers_8 = lookupify {'v','a','b','c','d','e','h','l'}
 local register_names = {'v','a','b','c','d','e','h','l'}
 
 local addressing_map = {
@@ -1522,11 +1525,53 @@ local function ParseLua(src, src_name)
                     end
                     inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
                     local st, expr = ParseExpr(scope) if not st then return false, expr end
-                    local paren_open_whites,paren_close_whites,mod_st,mod_expr = {},{}
+                    local paren_open_whites,paren_close_whites = {}
                     if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
                     for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end                                        
                     if not tok:ConsumeSymbol(')', tokenList) then return false, expr end                        
-                    stat = emit_call{name=op, args={expr, mod_expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
+                    stat = emit_call{name=op, args={expr}, inverse_encapsulate=inverse_encapsulate, paren_open_white=paren_open_whites} break
+                end
+                if opcode_mov[op] then
+                    tok:Save()
+                    local r0_name = tok:Get(tokenList).Data
+                    if not Registers_7801[r0_name] then
+                        tok:Restore()
+                        if not tok:ConsumeSymbol('(', tokenList) then
+                            return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
+                        end
+                        inverse_encapsulate = tok:ConsumeSymbol('!', tokenList)
+                        local st, expr = ParseExpr(scope) if not st then return false, expr end
+                        local paren_open_whites,paren_close_whites = {},{}
+                        if inverse_encapsulate then for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_open_whites, v) end end
+                        for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_open_whites, v) end
+        
+                        if not tok:ConsumeSymbol(')', tokenList) then return false, expr end
+
+                        for _,v in ipairs(tokenList[#tokenList-1].LeadingWhite) do table.insert(paren_close_whites, v) end
+                        for _,v in ipairs(tokenList[#tokenList].LeadingWhite) do table.insert(paren_close_whites, v) end
+ 
+                        if not tok:ConsumeSymbol(',', tokenList) then return false, expr end
+                        
+                        r0_name = tok:Get(tokenList).Data
+                        if not registers_8[r0_name] then
+                            return false, GenerateError(r0_name .. " is not a valid register")
+                        end
+                        stat = emit_call{name=op .. "ind" .. r0_name, args={expr}, inverse_encapsulate=inverse_encapsulates, paren_open_white=paren_open_whites, paren_close_white=paren_close_whites} break
+                    else
+                        tok:Commit()
+                    end
+                    
+                    if not tok:ConsumeSymbol(',', tokenList) then
+                        return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
+                    end
+                    local r1_name = tok:Get(tokenList).Data
+                    if not Registers_7801[r1_name] then
+                        return false, GenerateError(r0_name .. " is not a valid register")
+                    end
+                    if not (opcode_reg_reg_list[r0_name] and opcode_reg_reg_list[r0_name][r1_name] and opcode_reg_reg_list[r0_name][r1_name][op]) then
+                        return false, GenerateError("Opcode " .. op .. " doesn't support this addressing mode")
+                    end
+                    stat = emit_call{name=op .. r0_name .. r1_name} break
                 end
                 if (opcode_wa[op] or opcode_wab[op] or opcode_reg_ind[op] or opcode_reg_ind_ex[op]) and tok:ConsumeSymbol('(', tokenList) then
                     local paren_open_whites,paren_close_whites = {},{}

@@ -613,5 +613,13 @@ section{"rom", org=0x8000}
     lded (0x8101)
     shld (0x8110)
     lhld (0x8111)
-    
+    mov (0xab00),v
+    mov (0xbc01),a
+    mov (0xde02),b
+    mov (0xfa03),c
+    mov (0xeb04),d
+    mov (0xdc05),e
+    mov (0xcd06),h
+    mov (0xbe07),l
+        
 writebin(filename .. '.bin')
