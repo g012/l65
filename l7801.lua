@@ -52,6 +52,7 @@ local Keywords_7801 = {
     'table','xri',
     'ana','xra','ora','addnc','gta','subnb','lta','add','adc','sub','nea','sbb','eqa',
     'ona','offa',
+    'anaw','xraw','oraw','addncw','gtaw','subnbw','ltaw','addw','onaw','adcw','offaw','subw','neaw','sbbw','eqaw',
 }
 local Registers_7801 = {
     a=8,b=8,c=8,d=8,e=8,h=8,l=8,v=8,
@@ -89,6 +90,7 @@ local opcode_immediate = lookupify{
 local opcode_wa = lookupify{
     'inrw','ldaw','dcrw','staw',
     'bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
+    'anaw','xraw','oraw','addncw','gtaw','subnbw','ltaw','addw','onaw','adcw','offaw','subw','neaw','sbbw','eqaw',
 }
 local opcode_wab = lookupify{
     'mviw','eqiw'
@@ -129,6 +131,7 @@ local opcode_reg_list = {
     v = lookupify{'ani','xri','ori','adinc','gti','suinb','lti','adi','oni','aci','offi','sui','nei','sbi','eqi',
                   'inrw','ldaw','dcrw','eqiw','mvi','mviw','staw',
                   'bit0','bit1','bit2','bit3','bit4','bit5','bit6','bit7',
+                  'anaw','xraw','oraw','addncw','gtaw','subnbw','ltaw','addw','onaw','adcw','offaw','subw','neaw','sbbw','eqaw',
     },
     bc = lookupify{'ldax','lxi','mvix','pop','push','stax'},
     de = lookupify{'ldax','ldaxd','ldaxi','lxi','mvix','pop','push','stax','staxd','staxi'},

@@ -590,5 +590,20 @@ section{"rom", org=0x8000}
     eqi pb,0xb1
     eqi pc,0xb2
     eqi mk,0xb3
-   
+    anaw (v,0xf0)
+    xraw (v,0xe1)
+    oraw (v,0xd2)
+    addncw (v,0xc3)
+    gtaw (v,0xb4)
+    subnbw (v,0xa5)
+    ltaw (v,0x96)
+    addw (v,0x87)
+    onaw (v,0x78)
+    adcw (v,0x69)
+    offaw (v,0x5a)
+    subw (v,0x4b)
+    neaw (v,0x3c)
+    sbbw (v,0x2d)
+    eqaw (v,0x1e)
+
 writebin(filename .. '.bin')

@@ -531,11 +531,37 @@ for i,o in ipairs(op64names) do
     k = k + 4
 end
 
+local op74wa = {
+    anaw=M.op(0x88,14),
+    xraw=M.op(0x90,14),
+    oraw=M.op(0x98,14),
+    addncw=M.op(0xa0,14),
+    gtaw=M.op(0xa8,14),
+    subnbw=M.op(0xb0,14),
+    ltaw=M.op(0xb8,14),
+    addw=M.op(0xc0,14),
+    onaw=M.op(0xc8,14),
+    adcw=M.op(0xd0,14),
+    offaw=M.op(0xd8,14),
+    subw=M.op(0xe0,14),
+    neaw=M.op(0xe8,14),
+    sbbw=M.op(0xf0,14),
+    eqaw=M.op(0xf8,14),
+} M.op74wa = op74wa
+for k,v in pairs(op74wa) do
+    M[k .. 'wa'] = function(late, early)
+        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local size = function() late,early = M.size_op(late,early) return 2 end
+        local bin = function() local l65dbg=l65dbg return { 0x74, v.opc, M.op_eval_byte(late,early) } end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
+    end
+end
+
+
 return M
 
 --[[ [todo]
     	
 16 bits instructions:
     0x70xx
-    0x74xx
 ]]--
