@@ -601,6 +601,28 @@ for k,v in pairs(op70indr8) do
     end
 end
 
+local op70r8ind = {
+    movvind=M.op(0x68,17),
+    movaind=M.op(0x69,17),
+    movbind=M.op(0x6a,17),
+    movcind=M.op(0x6b,17),
+    movdind=M.op(0x6c,17),
+    moveind=M.op(0x6d,17),
+    movhind=M.op(0x6e,17),
+    movlind=M.op(0x6f,17),
+} M.op70r8ind = op70r8ind
+for k,v in pairs(op70r8ind) do
+    M[k] = function(late, early)
+        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local size = function() late,early = M.size_op(late,early) return 4 end
+        local bin = function() local l65dbg=l65dbg 
+            local x = M.op_eval_word(late,early)
+            return { 0x70, v.opc, x&0xff, x>>8 }
+        end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
+    end
+end
+
 return M
 
 --[[ [todo]
@@ -608,18 +630,6 @@ return M
 16 bits instructions:
     0x70xx
 
-        17        
-		case 0x68: my_stprintf_s(buffer, buffer_len, _T("mov v,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x69: my_stprintf_s(buffer, buffer_len, _T("mov a,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x6a: my_stprintf_s(buffer, buffer_len, _T("mov b,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x6b: my_stprintf_s(buffer, buffer_len, _T("mov c,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x6c: my_stprintf_s(buffer, buffer_len, _T("mov d,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x6d: my_stprintf_s(buffer, buffer_len, _T("mov e,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x6e: my_stprintf_s(buffer, buffer_len, _T("mov h,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		case 0x6f: my_stprintf_s(buffer, buffer_len, _T("mov l,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
-		
-		
-		
 		case 0x89: my_stprintf_s(buffer, buffer_len, _T("anax b")); break;
 		case 0x8a: my_stprintf_s(buffer, buffer_len, _T("anax d")); break;
 		case 0x8b: my_stprintf_s(buffer, buffer_len, _T("anax h")); break;

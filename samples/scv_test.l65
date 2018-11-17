@@ -621,5 +621,13 @@ section{"rom", org=0x8000}
     mov (0xdc05),e
     mov (0xcd06),h
     mov (0xbe07),l
+    mov v,(0x000f)
+    mov a,(0x00f0)
+    mov b,(0x00ff)
+    mov c,(0x0f00)
+    mov d,(0x0f0f)
+    mov e,(0x0ff0)
+    mov h,(0x0fff)
+    mov l,(0xf000)
         
 writebin(filename .. '.bin')
