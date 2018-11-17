@@ -605,5 +605,13 @@ section{"rom", org=0x8000}
     neaw (v,0x3c)
     sbbw (v,0x2d)
     eqaw (v,0x1e)
-
+    sspd (0x8000)
+    lspd (0x8001)
+    sbcd (0x8010)
+    lbcd (0x8011)
+    sded (0x8100)
+    lded (0x8101)
+    shld (0x8110)
+    lhld (0x8111)
+    
 writebin(filename .. '.bin')

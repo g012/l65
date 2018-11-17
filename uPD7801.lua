@@ -557,6 +557,28 @@ for k,v in pairs(op74wa) do
     end
 end
 
+local op70w = {
+    sspd=M.op(0x0e,20),
+    lspd=M.op(0x0f,20),
+    sbcd=M.op(0x1e,20),
+    lbcd=M.op(0x1f,20),
+    sded=M.op(0x2e,20),
+    lded=M.op(0x2f,20),
+    shld=M.op(0x3e,20),
+    lhld=M.op(0x3f,20),
+} M.op70w = op70w
+for k,v in pairs(op70w) do
+    M[k] = function(late, early)
+        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local size = function() late,early = M.size_op(late,early) return 3 end
+        local bin = function() local l65dbg=l65dbg 
+            local x = M.op_eval_word(late,early)
+            return { 0x70, v.opc, x&0xff, x>>8 }
+        end
+        table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
+    end
+end
+
 
 return M
 
@@ -564,4 +586,128 @@ return M
     	
 16 bits instructions:
     0x70xx
+
+        17        
+		case 0x68: my_stprintf_s(buffer, buffer_len, _T("mov v,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x69: my_stprintf_s(buffer, buffer_len, _T("mov a,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x6a: my_stprintf_s(buffer, buffer_len, _T("mov b,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x6b: my_stprintf_s(buffer, buffer_len, _T("mov c,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x6c: my_stprintf_s(buffer, buffer_len, _T("mov d,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x6d: my_stprintf_s(buffer, buffer_len, _T("mov e,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x6e: my_stprintf_s(buffer, buffer_len, _T("mov h,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x6f: my_stprintf_s(buffer, buffer_len, _T("mov l,%s"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x78: my_stprintf_s(buffer, buffer_len, _T("mov %s,v"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x79: my_stprintf_s(buffer, buffer_len, _T("mov %s,a"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x7a: my_stprintf_s(buffer, buffer_len, _T("mov %s,b"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x7b: my_stprintf_s(buffer, buffer_len, _T("mov %s,c"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x7c: my_stprintf_s(buffer, buffer_len, _T("mov %s,d"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x7d: my_stprintf_s(buffer, buffer_len, _T("mov %s,e"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x7e: my_stprintf_s(buffer, buffer_len, _T("mov %s,h"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		case 0x7f: my_stprintf_s(buffer, buffer_len, _T("mov %s,l"), get_value_or_symbol(d_debugger->first_symbol, _T("%04xh"), getw())); break;
+		
+		case 0x89: my_stprintf_s(buffer, buffer_len, _T("anax b")); break;
+		case 0x8a: my_stprintf_s(buffer, buffer_len, _T("anax d")); break;
+		case 0x8b: my_stprintf_s(buffer, buffer_len, _T("anax h")); break;
+		case 0x8c: my_stprintf_s(buffer, buffer_len, _T("anax d+")); break;
+		case 0x8d: my_stprintf_s(buffer, buffer_len, _T("anax h+")); break;
+		case 0x8e: my_stprintf_s(buffer, buffer_len, _T("anax d-")); break;
+		case 0x8f: my_stprintf_s(buffer, buffer_len, _T("anax h-")); break;
+		case 0x91: my_stprintf_s(buffer, buffer_len, _T("xrax b")); break;
+		case 0x92: my_stprintf_s(buffer, buffer_len, _T("xrax d")); break;
+		case 0x93: my_stprintf_s(buffer, buffer_len, _T("xrax h")); break;
+		case 0x94: my_stprintf_s(buffer, buffer_len, _T("xrax d+")); break;
+		case 0x95: my_stprintf_s(buffer, buffer_len, _T("xrax h+")); break;
+		case 0x96: my_stprintf_s(buffer, buffer_len, _T("xrax d-")); break;
+		case 0x97: my_stprintf_s(buffer, buffer_len, _T("xrax h-")); break;
+		case 0x99: my_stprintf_s(buffer, buffer_len, _T("orax b")); break;
+		case 0x9a: my_stprintf_s(buffer, buffer_len, _T("orax d")); break;
+		case 0x9b: my_stprintf_s(buffer, buffer_len, _T("orax h")); break;
+		case 0x9c: my_stprintf_s(buffer, buffer_len, _T("orax d+")); break;
+		case 0x9d: my_stprintf_s(buffer, buffer_len, _T("orax h+")); break;
+		case 0x9e: my_stprintf_s(buffer, buffer_len, _T("orax d-")); break;
+		case 0x9f: my_stprintf_s(buffer, buffer_len, _T("orax h-")); break;
+		case 0xa1: my_stprintf_s(buffer, buffer_len, _T("addncx b")); break;
+		case 0xa2: my_stprintf_s(buffer, buffer_len, _T("addncx d")); break;
+		case 0xa3: my_stprintf_s(buffer, buffer_len, _T("addncx h")); break;
+		case 0xa4: my_stprintf_s(buffer, buffer_len, _T("addncx d+")); break;
+		case 0xa5: my_stprintf_s(buffer, buffer_len, _T("addncx h+")); break;
+		case 0xa6: my_stprintf_s(buffer, buffer_len, _T("addncx d-")); break;
+		case 0xa7: my_stprintf_s(buffer, buffer_len, _T("addncx h-")); break;
+		case 0xa9: my_stprintf_s(buffer, buffer_len, _T("gtax b")); break;
+		case 0xaa: my_stprintf_s(buffer, buffer_len, _T("gtax d")); break;
+		case 0xab: my_stprintf_s(buffer, buffer_len, _T("gtax h")); break;
+		case 0xac: my_stprintf_s(buffer, buffer_len, _T("gtax d+")); break;
+		case 0xad: my_stprintf_s(buffer, buffer_len, _T("gtax h+")); break;
+		case 0xae: my_stprintf_s(buffer, buffer_len, _T("gtax d-")); break;
+		case 0xaf: my_stprintf_s(buffer, buffer_len, _T("gtax h-")); break;
+		case 0xb1: my_stprintf_s(buffer, buffer_len, _T("subnbx b")); break;
+		case 0xb2: my_stprintf_s(buffer, buffer_len, _T("subnbx d")); break;
+		case 0xb3: my_stprintf_s(buffer, buffer_len, _T("subnbx h")); break;
+		case 0xb4: my_stprintf_s(buffer, buffer_len, _T("subnbx d+")); break;
+		case 0xb5: my_stprintf_s(buffer, buffer_len, _T("subnbx h+")); break;
+		case 0xb6: my_stprintf_s(buffer, buffer_len, _T("subnbx d-")); break;
+		case 0xb7: my_stprintf_s(buffer, buffer_len, _T("subnbx h-")); break;
+		case 0xb9: my_stprintf_s(buffer, buffer_len, _T("ltax b")); break;
+		case 0xba: my_stprintf_s(buffer, buffer_len, _T("ltax d")); break;
+		case 0xbb: my_stprintf_s(buffer, buffer_len, _T("ltax h")); break;
+		case 0xbc: my_stprintf_s(buffer, buffer_len, _T("ltax d+")); break;
+		case 0xbd: my_stprintf_s(buffer, buffer_len, _T("ltax h+")); break;
+		case 0xbe: my_stprintf_s(buffer, buffer_len, _T("ltax d-")); break;
+		case 0xbf: my_stprintf_s(buffer, buffer_len, _T("ltax h-")); break;
+		case 0xc1: my_stprintf_s(buffer, buffer_len, _T("addx b")); break;
+		case 0xc2: my_stprintf_s(buffer, buffer_len, _T("addx d")); break;
+		case 0xc3: my_stprintf_s(buffer, buffer_len, _T("addx h")); break;
+		case 0xc4: my_stprintf_s(buffer, buffer_len, _T("addx d+")); break;
+		case 0xc5: my_stprintf_s(buffer, buffer_len, _T("addx h+")); break;
+		case 0xc6: my_stprintf_s(buffer, buffer_len, _T("addx d-")); break;
+		case 0xc7: my_stprintf_s(buffer, buffer_len, _T("addx h-")); break;
+		case 0xc9: my_stprintf_s(buffer, buffer_len, _T("onax b")); break;
+		case 0xca: my_stprintf_s(buffer, buffer_len, _T("onax d")); break;
+		case 0xcb: my_stprintf_s(buffer, buffer_len, _T("onax h")); break;
+		case 0xcc: my_stprintf_s(buffer, buffer_len, _T("onax d+")); break;
+		case 0xcd: my_stprintf_s(buffer, buffer_len, _T("onax h+")); break;
+		case 0xce: my_stprintf_s(buffer, buffer_len, _T("onax d-")); break;
+		case 0xcf: my_stprintf_s(buffer, buffer_len, _T("onax h-")); break;
+		case 0xd1: my_stprintf_s(buffer, buffer_len, _T("adcx b")); break;
+		case 0xd2: my_stprintf_s(buffer, buffer_len, _T("adcx d")); break;
+		case 0xd3: my_stprintf_s(buffer, buffer_len, _T("adcx h")); break;
+		case 0xd4: my_stprintf_s(buffer, buffer_len, _T("adcx d+")); break;
+		case 0xd5: my_stprintf_s(buffer, buffer_len, _T("adcx h+")); break;
+		case 0xd6: my_stprintf_s(buffer, buffer_len, _T("adcx d-")); break;
+		case 0xd7: my_stprintf_s(buffer, buffer_len, _T("adcx h-")); break;
+		case 0xd9: my_stprintf_s(buffer, buffer_len, _T("offax b")); break;
+		case 0xda: my_stprintf_s(buffer, buffer_len, _T("offax d")); break;
+		case 0xdb: my_stprintf_s(buffer, buffer_len, _T("offax h")); break;
+		case 0xdc: my_stprintf_s(buffer, buffer_len, _T("offax d+")); break;
+		case 0xdd: my_stprintf_s(buffer, buffer_len, _T("offax h+")); break;
+		case 0xde: my_stprintf_s(buffer, buffer_len, _T("offax d-")); break;
+		case 0xdf: my_stprintf_s(buffer, buffer_len, _T("offax h-")); break;
+		case 0xe1: my_stprintf_s(buffer, buffer_len, _T("subx b")); break;
+		case 0xe2: my_stprintf_s(buffer, buffer_len, _T("subx d")); break;
+		case 0xe3: my_stprintf_s(buffer, buffer_len, _T("subx h")); break;
+		case 0xe4: my_stprintf_s(buffer, buffer_len, _T("subx d+")); break;
+		case 0xe5: my_stprintf_s(buffer, buffer_len, _T("subx h+")); break;
+		case 0xe6: my_stprintf_s(buffer, buffer_len, _T("subx d-")); break;
+		case 0xe7: my_stprintf_s(buffer, buffer_len, _T("subx h-")); break;
+		case 0xe9: my_stprintf_s(buffer, buffer_len, _T("neax b")); break;
+		case 0xea: my_stprintf_s(buffer, buffer_len, _T("neax d")); break;
+		case 0xeb: my_stprintf_s(buffer, buffer_len, _T("neax h")); break;
+		case 0xec: my_stprintf_s(buffer, buffer_len, _T("neax d+")); break;
+		case 0xed: my_stprintf_s(buffer, buffer_len, _T("neax h+")); break;
+		case 0xee: my_stprintf_s(buffer, buffer_len, _T("neax d-")); break;
+		case 0xef: my_stprintf_s(buffer, buffer_len, _T("neax h-")); break;
+		case 0xf1: my_stprintf_s(buffer, buffer_len, _T("sbbx b")); break;
+		case 0xf2: my_stprintf_s(buffer, buffer_len, _T("sbbx d")); break;
+		case 0xf3: my_stprintf_s(buffer, buffer_len, _T("sbbx h")); break;
+		case 0xf4: my_stprintf_s(buffer, buffer_len, _T("sbbx d+")); break;
+		case 0xf5: my_stprintf_s(buffer, buffer_len, _T("sbbx h+")); break;
+		case 0xf6: my_stprintf_s(buffer, buffer_len, _T("sbbx d-")); break;
+		case 0xf7: my_stprintf_s(buffer, buffer_len, _T("sbbx h-")); break;
+		case 0xf9: my_stprintf_s(buffer, buffer_len, _T("eqax b")); break;
+		case 0xfa: my_stprintf_s(buffer, buffer_len, _T("eqax d")); break;
+		case 0xfb: my_stprintf_s(buffer, buffer_len, _T("eqax h")); break;
+		case 0xfc: my_stprintf_s(buffer, buffer_len, _T("eqax d+")); break;
+		case 0xfd: my_stprintf_s(buffer, buffer_len, _T("eqax h+")); break;
+		case 0xfe: my_stprintf_s(buffer, buffer_len, _T("eqax d-")); break;
+		case 0xff: my_stprintf_s(buffer, buffer_len, _T("eqax h-")); break;
 ]]--
