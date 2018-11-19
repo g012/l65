@@ -140,12 +140,12 @@ static int luaopen_l7801(lua_State *L)
 }
 
 #define SRC_LUA(name) { #name, 0, script_ ## name ## _lua, sizeof(script_ ## name ## _lua) }
-#define SRC_L7801(name) { #name, 1, script_ ## name ## _l7801, sizeof(script_ ## name ## _l7801) }
+#define SRC_L65(name) { #name, 1, script_ ## name ## _l65, sizeof(script_ ## name ## _l65) }
 static struct script { const char *name; int t;  const char *data; size_t sz; } embedded[] = {
     SRC_LUA(dkjson),
     SRC_LUA(l65cfg),
     SRC_LUA(re),
-    SRC_L7801(scv),
+    SRC_L65(scv),
 };
 #undef SRC_LUA
 #undef SRC_L7801

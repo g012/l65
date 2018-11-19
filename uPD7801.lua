@@ -245,7 +245,7 @@ M.jr = function(label)
         if x < -32 or x > 0x32 then error("branch target out of range for " .. l .. ": " .. x)
         elseif x >= 0 then
             x = 0xc0 + x
-            return 
+            return x
         else
             return x & 0xff
         end

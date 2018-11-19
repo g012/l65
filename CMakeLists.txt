@@ -127,7 +127,7 @@ set(L7801_HEADERS
         ${L65_HEADERS}
     )
 
-set(L7801_FILES ${L65_SOURCE_DIR}/scv.l7801)
+set(L7801_FILES ${L65_SOURCE_DIR}/scv.l65)
 
 set(L7801_SCRIPTS
         ${L65_SOURCE_DIR}/asm.lua
