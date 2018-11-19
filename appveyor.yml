@@ -8,7 +8,7 @@ before_build:
   - mkdir install
   - mkdir build
   - cd build 
-  - cmake -G "Visual Studio 12 2013 Win64" -DCMAKE_INSTALL_PREFIX=../install
+  - cmake -G "Visual Studio 12 2013 Win64" -DCMAKE_INSTALL_PREFIX=../install ..
   
 build_script:
   - FOR /F "tokens=*" %%i in ('git describe') do SET COMMITNOW=%%i
