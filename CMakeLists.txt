@@ -151,3 +151,8 @@ set_property(TARGET l7801 PROPERTY C_STANDARD 99)
 target_include_directories(l7801 PRIVATE "${L7801_SOURCE_DIR}" "${L65_BINARY_DIR}")
 target_link_libraries(l7801 ${LINKLIBS})
 
+
+install(TARGETS l65 l7801
+        RUNTIME DESTINATION bin)
+install(DIRECTORY samples DESTINATION doc)
+install(FILES README.md DESTINATION doc)
