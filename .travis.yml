@@ -9,6 +9,7 @@ script:
     - cmake . -DCMAKE_BUILD_TYPE=Release
     - make
     - cd samples; for f in *.l65; do echo $f; ../l65 $f || break; done; cd ..
+    - cd samples; for f in *.l7801; do echo $f; ../l7801 $f || break; done; cd ..
     - cp l65 l65-$TRAVIS_TAG-$TRAVIS_OS_NAME
 deploy:
     provider: releases

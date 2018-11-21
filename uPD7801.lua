@@ -111,9 +111,9 @@ local opregxx ={
 } M.opregxx = opregxx
 for k,v in pairs(opregxx) do
     M[k] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 2 end
-        local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
+        local bin = function() local l7801dbg=l7801dbg return { v.opc, M.op_eval_byte(late,early) } end
         table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
@@ -138,9 +138,9 @@ local opaxx ={
 } M.opaxx = opaxx
 for k,v in pairs(opaxx) do
     M[k .. 'a'] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 2 end
-        local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
+        local bin = function() local l7801dbg=l7801dbg return { v.opc, M.op_eval_byte(late,early) } end
         table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
@@ -165,9 +165,9 @@ local opw = {
 } M.opw = opw
 for k,v in pairs(opw) do
     M[k .. 'imm'] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 3 end
-        local bin = function() local l65dbg=l65dbg 
+        local bin = function() local l7801dbg=l7801dbg 
             local x = M.op_eval_word(late,early)
             return { v.opc, x&0xff, x>>8 }
         end
@@ -183,9 +183,9 @@ local opr16w = {
 } M.opr16w = opr16w
 for k,v in pairs(opr16w) do
     M[k] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 3 end
-        local bin = function() local l65dbg=l65dbg 
+        local bin = function() local l7801dbg=l7801dbg 
             local x = M.op_eval_word(late,early)
             return { v.opc, x&0xff, x>>8 }
         end
@@ -195,11 +195,11 @@ end
 
 
 M['calt' .. 'imm'] = function(late, early)
-    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+    local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local op = { cycles=19 }
     op.size = function() late,early = M.size_op(late,early) return 1 end
     op.bin = function() 
-        local l65dbg=l65dbg
+        local l7801dbg=l7801dbg
         local x = M.op_eval_byte(late,early)
         if (x%2 == 1) then error("offset should be even : " .. x) end
         if x < 0x80 or x > 0xfe then error("offset out of range : " .. x) end
@@ -210,10 +210,10 @@ M['calt' .. 'imm'] = function(late, early)
 end
 
 M['calf' .. 'imm'] = function(late, early)
-    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+    local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local op = { cycles=16 }
     op.size = function() late,early = M.size_op(late,early) return 2 end
-    op.bin = function() local l65dbg=l65dbg 
+    op.bin = function() local l7801dbg=l7801dbg 
         local x = 0 + M.op_eval_word(late,early)
         if x < 0x0800 or x > 0xffff then error("subroutine address out of range [0x0800-0xffff]: " .. x) end
         x = x - 0x0800;
@@ -223,7 +223,7 @@ M['calf' .. 'imm'] = function(late, early)
 end
 
 M.jr = function(label)
-    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+    local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local parent,offset = M.label_current
     local section,rorg = M.section_current,M.location_current.rorg
     local op = { cycles=13 }
@@ -233,7 +233,7 @@ M.jr = function(label)
         return 1
     end
     op.bin = function() 
-        local l65dbg=l65dbg 
+        local l7801dbg=l7801dbg 
         local x,l = label,label
         if type(x) == 'function' then x=x() end
         if type(x) == 'string' then
@@ -254,7 +254,7 @@ M.jr = function(label)
 end
 
 M.jre = function(label)
-    local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+    local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
     local parent,offset = M.label_current
     local section,rorg = M.section_current,M.location_current.rorg
     local op = { cycles=17 }
@@ -264,7 +264,7 @@ M.jre = function(label)
         return 2
     end
     op.bin = function() 
-        local l65dbg=l65dbg 
+        local l7801dbg=l7801dbg 
         local x,l = label,label
         if type(x) == 'function' then x=x() end
         if type(x) == 'string' then
@@ -296,9 +296,9 @@ local opwa = {
 } M.opwa = opwa
 for k,v in pairs(opwa) do
     M[k .. 'wa'] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 2 end
-        local bin = function() local l65dbg=l65dbg return { v.opc, M.op_eval_byte(late,early) } end
+        local bin = function() local l7801dbg=l7801dbg return { v.opc, M.op_eval_byte(late,early) } end
         table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
@@ -309,14 +309,14 @@ local opwaxx = {
 } M.opwaxx = opwaxx
 for k,v in pairs(opwaxx) do
     M[k .. 'waxx'] = function(late_offset, late_data, early_offset, early_data)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() 
             late_offset,early_offset = M.size_op(late_offset,early_offset) 
             late_data,early_data = M.size_op(late_data,early_data) 
             return 3 
         end
         local bin = function() 
-            local l65dbg=l65dbg 
+            local l7801dbg=l7801dbg 
             return { v.opc, M.op_eval_byte(late_offset,early_offset), M.op_eval_byte(late_data,early_data) }
         end
         table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
@@ -401,10 +401,10 @@ local opinout={
 } M.opinout = op4inout
 for k,v in pairs(opinout) do
     M[k .. 'imm'] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local op = { cycles=v.cycles }
         op.size = function() late,early = M.size_op(late,early) return 2 end
-        op.bin = function() local l65dbg=l65dbg 
+        op.bin = function() local l7801dbg=l7801dbg 
             local x = 0x00 + M.op_eval_byte(late,early)
             return { v.opc, 0x00, x }
         end
@@ -492,10 +492,10 @@ for i,o in ipairs(op64names) do
         if not M[name] then
             local l = k
             M[name] = function(late,early)
-                local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+                local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
                 local op = { cycles=11 }
                 op.size = function() late,early = M.size_op(late,early) return 3 end
-                op.bin = function() local l65dbg=l65dbg 
+                op.bin = function() local l7801dbg=l7801dbg 
                     local x = 0x00 + l;
                     local y = 0x00 + M.op_eval_byte(late,early)
                     return { 0x64, x, y }
@@ -515,10 +515,10 @@ for i,o in ipairs(op64names) do
         if not M[name] then
             local l = k
             M[name] = function(late,early)
-                local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+                local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
                 local op = { cycles=11 }
                 op.size = function() late,early = M.size_op(late,early) return 3 end
-                op.bin = function() local l65dbg=l65dbg 
+                op.bin = function() local l7801dbg=l7801dbg 
                     local x = 0x00 + l;
                     local y = 0x00 + M.op_eval_byte(late,early)
                     return { 0x64, x, y }
@@ -550,9 +550,9 @@ local op74wa = {
 } M.op74wa = op74wa
 for k,v in pairs(op74wa) do
     M[k .. 'wa'] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 3 end
-        local bin = function() local l65dbg=l65dbg return { 0x74, v.opc, M.op_eval_byte(late,early) } end
+        local bin = function() local l7801dbg=l7801dbg return { 0x74, v.opc, M.op_eval_byte(late,early) } end
         table.insert(M.section_current.instructions, { size=size, cycles=v.cycles, bin=bin })
     end
 end
@@ -569,9 +569,9 @@ local op70ind = {
 } M.op70ind = op70ind
 for k,v in pairs(op70ind) do
     M[k] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 4 end
-        local bin = function() local l65dbg=l65dbg 
+        local bin = function() local l7801dbg=l7801dbg 
             local x = M.op_eval_word(late,early)
             return { 0x70, v.opc, x&0xff, x>>8 }
         end
@@ -591,9 +591,9 @@ local op70indr8 = {
 } M.op70indr8 = op70indr8
 for k,v in pairs(op70indr8) do
     M[k] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 4 end
-        local bin = function() local l65dbg=l65dbg 
+        local bin = function() local l7801dbg=l7801dbg 
             local x = M.op_eval_word(late,early)
             return { 0x70, v.opc, x&0xff, x>>8 }
         end
@@ -613,9 +613,9 @@ local op70r8ind = {
 } M.op70r8ind = op70r8ind
 for k,v in pairs(op70r8ind) do
     M[k] = function(late, early)
-        local l65dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
+        local l7801dbg = { info=debug.getinfo(2, 'Sl'), trace=debug.traceback(nil, 1) }
         local size = function() late,early = M.size_op(late,early) return 4 end
-        local bin = function() local l65dbg=l65dbg 
+        local bin = function() local l7801dbg=l7801dbg 
             local x = M.op_eval_word(late,early)
             return { 0x70, v.opc, x&0xff, x>>8 }
         end

@@ -2131,7 +2131,7 @@ local function ParseLua(src, src_name)
 end
 
 
-local function Format65(ast)
+local function Format7801(ast)
     local function splitLines(str)
         if str:match("\n") then
             local lines = {}
@@ -2538,34 +2538,34 @@ local function Format65(ast)
 end
 
 local dirsep = package.config:sub(1,1)
-local dirl65 = (string.match(arg[0], "(.*[\\/]).*") or ''):gsub('/',dirsep)
-local searchl65 = ''
-if #dirl65 > 0 then
-    searchl65 = string.format(";%s?;%s?.l65", dirl65, dirl65)
-    package.path = package.path .. string.format(";%s?.lua", dirl65)
+local dirl7801 = (string.match(arg[0], "(.*[\\/]).*") or ''):gsub('/',dirsep)
+local searchl7801 = ''
+if #dirl7801 > 0 then
+    searchl7801 = string.format(";%s?;%s?.l7801", dirl7801, dirl7801)
+    package.path = package.path .. string.format(";%s?.lua", dirl7801)
 end
-l65_def = {
+l7801_def = {
     parse = ParseLua,
-    format = Format65,
+    format = Format7801,
     searcher_index = 2,
-    search_path = string.format(".%s?;.%s?.l65%s", dirsep, dirsep, searchl65),
+    search_path = string.format(".%s?;.%s?.l7801%s", dirsep, dirsep, searchl7801),
     load_org = load,
     loadfile_org = loadfile,
     dofile_org = dofile,
 }
-if not l65 then l65 = l65_def else for k,v in pairs(l65_def) do l65[k]=v end end
-l65.report = function(success, ...)
+if not l7801 then l7801 = l7801_def else for k,v in pairs(l7801_def) do l7801[k]=v end end
+l7801.report = function(success, ...)
     if success then return success,... end
     local message=... io.stderr:write(tostring(message)..'\n')
     os.exit(-1)
 end
-l65.msghandler = function(msg)
+l7801.msghandler = function(msg)
     local o = function(s) io.stderr:write(s) end
 
     msg = tostring(msg)
-    msg = msg:gsub('%[string "(.-%.l65)"%]', '%1') -- [string "xxx.l65"] -> xxx.l65
+    msg = msg:gsub('%[string "(.-%.l7801)"%]', '%1') -- [string "xxx.l7801"] -> xxx.l7801
     local trace_cur = debug.traceback(nil, 2)
-    trace_cur = trace_cur:gsub('%[string "(.-%.l65)"%]', '%1') -- [string "xxx.l65"] -> xxx.l65
+    trace_cur = trace_cur:gsub('%[string "(.-%.l7801)"%]', '%1') -- [string "xxx.l7801"] -> xxx.l7801
     trace_cur = trace_cur:gsub('stack traceback:', '')
 
     local i=2
@@ -2574,7 +2574,7 @@ l65.msghandler = function(msg)
         while true do
             local n,v = debug.getlocal(i, j)
             if not n then break end
-            if n == 'l65dbg' then
+            if n == 'l7801dbg' then
                 o(string.format("%s\n", msg))
                 if trace_cur:find("in local 'late'") then
                     local lines = {}
@@ -2585,7 +2585,7 @@ l65.msghandler = function(msg)
                     o(table.concat(lines,'\n'))
                 end
                 local trace = v.trace:match(".-\n(.*)\n.-'xpcall'")
-                trace = trace:gsub('%[string "(.-%.l65)"%]', '%1')
+                trace = trace:gsub('%[string "(.-%.l7801)"%]', '%1')
                 trace = trace:gsub('stack traceback:', '')
                 o(trace .. '\n')
                 os.exit(-2)
@@ -2601,32 +2601,32 @@ l65.msghandler = function(msg)
 end
 do
     local getembedded = type(arg[-1]) == 'function' and arg[-1]
-    l65.load_embedded = function(name)
+    l7801.load_embedded = function(name)
         if not getembedded then return end
-        local src,isl65 = getembedded(name)
+        local src,isl7801 = getembedded(name)
         if not src then return end
-        if isl65 then
-            name = name .. '.l65'
-            local st, ast = l65.report(l65.parse(src, name))
-            src = l65.format(ast)
+        if isl7801 then
+            name = name .. '.l7801'
+            local st, ast = l7801.report(l7801.parse(src, name))
+            src = l7801.format(ast)
         else
             name = name .. '.lua'
         end
-        local bc = assert(l65.load_org(src, name))
+        local bc = assert(l7801.load_org(src, name))
         return bc, name
     end
 end
-l65.searcher = function(name)
-    local filename,err = package.searchpath(name, l65.search_path, '.', '.')
+l7801.searcher = function(name)
+    local filename,err = package.searchpath(name, l7801.search_path, '.', '.')
     if not filename then return err end
     local file = assert(io.open(filename, 'rb'))
     local src = file:read('*a')
     file:close()
-    local st, ast = l65.report(l65.parse(src, filename))
-    local bc = assert(l65.load_org(l65.format(ast), filename))
+    local st, ast = l7801.report(l7801.parse(src, filename))
+    local bc = assert(l7801.load_org(l7801.format(ast), filename))
     return bc, filename
 end
-l65.load = function(chunk, chunkname, mode, ...)
+l7801.load = function(chunk, chunkname, mode, ...)
     local chunk_t,s = type(chunk)
     if chunk_t == 'string' then s = chunk
     elseif chunk_t == 'function' then
@@ -2635,12 +2635,12 @@ l65.load = function(chunk, chunkname, mode, ...)
     else return nil, string.format("invalid type for chunk %s: %s", chunkname or "=(load)", chunk_t)
     end
     if s:sub(1,4) == "\x1bLua" then -- a binary file
-        return l65.load_org(s, chunkname, mode, ...)
+        return l7801.load_org(s, chunkname, mode, ...)
     end
-    local st, ast = l65.report(l65.parse(s, chunkname or "=(load)"))
-    return l65.load_org(l65.format(ast), chunkname, 't', ...)
+    local st, ast = l7801.report(l7801.parse(s, chunkname or "=(load)"))
+    return l7801.load_org(l7801.format(ast), chunkname, 't', ...)
 end
-l65.loadfile = function(filename, mode, ...)
+l7801.loadfile = function(filename, mode, ...)
     local s
     if not filename then s = io.read('*a')
     else
@@ -2649,34 +2649,34 @@ l65.loadfile = function(filename, mode, ...)
         s = file:read('*a')
         file:close()
     end
-    return l65.load(s, filename, mode, ...)
+    return l7801.load(s, filename, mode, ...)
 end
-l65.dofile = function(filename)
-    local f = l65.report(l65.loadfile(filename))
+l7801.dofile = function(filename)
+    local f = l7801.report(l7801.loadfile(filename))
     return f()
 end
-l65.installhooks = function()
-    if package.searchers[l65.searcher_index] ~= l65.searcher then
-        table.insert(package.searchers, l65.searcher_index, l65.searcher)
+l7801.installhooks = function()
+    if package.searchers[l7801.searcher_index] ~= l7801.searcher then
+        table.insert(package.searchers, l7801.searcher_index, l7801.searcher)
     end
-    if not l65.hooks_installed then l65.hooks_installed = true
-        load = l65.load
-        loadfile = l65.loadfile
-        dofile = l65.dofile
+    if not l7801.hooks_installed then l7801.hooks_installed = true
+        load = l7801.load
+        loadfile = l7801.loadfile
+        dofile = l7801.dofile
     end
 end
-l65.uninstallhooks = function()
+l7801.uninstallhooks = function()
     for k,v in ipairs(package.searchers) do
-        if v == l65.searcher then table.remove(package.searchers, k) break end
+        if v == l7801.searcher then table.remove(package.searchers, k) break end
     end
-    if l65.hooks_installed then l65.hooks_installed = nil
-        load = l65.load_org
-        loadfile = l65.loadfile_org
-        dofile = l65.dofile_org
+    if l7801.hooks_installed then l7801.hooks_installed = nil
+        load = l7801.load_org
+        loadfile = l7801.loadfile_org
+        dofile = l7801.dofile_org
     end
 end
-table.insert(package.searchers, l65.searcher_index, l65.load_embedded)
-l65.installhooks()
+table.insert(package.searchers, l7801.searcher_index, l7801.load_embedded)
+l7801.installhooks()
 
 function getopt(optstring, ...)
 	local opts = { }
@@ -2712,16 +2712,16 @@ function getopt(optstring, ...)
 	end)
 end
 
-local cfg=require"l65cfg" l65.cfg=cfg
+local cfg=require"l65cfg" l7801.cfg=cfg
 local version = function()
-    print(string.format("l65 %s", cfg.version))
+    print(string.format("l7801 %s", cfg.version))
 end
 local usage = function(f)
     if not f then f = io.stdout end
     f:write(string.format([[
 Usage: %s [options] file [args]
 Options:
-  -d <file>        Dump the Lua code after l65 parsing into file
+  -d <file>        Dump the Lua code after l7801 parsing into file
   -h               Display this information
   -v               Display the release version
 ]], arg[0]))
@@ -2740,12 +2740,12 @@ for opt,arg,i in getopt("d:hv", ...) do
     if opt == false then inf=arg optix=i+1 break end
 end
 if not inf then return invalid_usage() end
-if dump then l65.format = function(ast)
-    local s=Format65(ast) l65.format = Format65
+if dump then l7801.format = function(ast)
+    local s=Format7801(ast) l7801.format = Format7801
     local f = assert(io.open(dump, 'wb')) f:write(s) f:close()
     return s
 end end
 
 local fn='' for i=#inf,1,-1 do local c=inf:sub(i,i) if c==dirsep or c=='/' then break end fn=c..fn if c=='.' then fn='' end end filename=fn
-local f = l65.report(l65.loadfile(inf))
-return xpcall(f, l65.msghandler, select(optix, ...))
+local f = l7801.report(l7801.loadfile(inf))
+return xpcall(f, l7801.msghandler, select(optix, ...))
