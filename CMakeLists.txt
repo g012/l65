@@ -80,6 +80,7 @@ set(L65_HEADERS
 
 file(GLOB L65_FILES ${L65_SOURCE_DIR}/*.l65)
 set(L65_SCRIPTS
+        ${L65_SOURCE_DIR}/asm.lua
         ${L65_SOURCE_DIR}/6502.lua
         ${L65_SOURCE_DIR}/dkjson.lua
         ${L65_SOURCE_DIR}/l65.lua
@@ -116,3 +117,42 @@ endif()
 
 target_link_libraries(embed ${LINKLIBS})
 target_link_libraries(${PROJECT_NAME} ${LINKLIBS})
+
+set(L7801_SOURCES 
+        ${L65_SOURCE_DIR}/lfs.c
+        ${L65_SOURCE_DIR}/lpeg.c
+        ${L65_SOURCE_DIR}/l7801.c
+    )
+set(L7801_HEADERS
+        ${L65_HEADERS}
+    )
+
+set(L7801_FILES ${L65_SOURCE_DIR}/scv.l7801)
+
+set(L7801_SCRIPTS
+        ${L65_SOURCE_DIR}/asm.lua
+        ${L65_SOURCE_DIR}/uPD7801.lua
+        ${L65_SOURCE_DIR}/dkjson.lua
+        ${L65_SOURCE_DIR}/l7801.lua
+        ${L65_BINARY_DIR}/l65cfg.lua
+        ${L65_SOURCE_DIR}/re.lua
+        ${L7801_FILES}
+    )
+
+add_custom_command(
+    OUTPUT ${L65_BINARY_DIR}/scripts_7801.h
+    COMMAND embed -o ${L65_BINARY_DIR}/scripts_7801.h ${L7801_SCRIPTS}
+    DEPENDS embed ${L7801_SCRIPTS}
+)
+add_custom_target(prereq_7801 DEPENDS ${L65_BINARY_DIR}/scripts_7801.h)
+add_executable(l7801 ${L7801_SOURCES} ${L7801_HEADERS} ${L7801_FILES})
+add_dependencies(l7801 prereq_7801)
+set_property(TARGET l7801 PROPERTY C_STANDARD 99)
+target_include_directories(l7801 PRIVATE "${L7801_SOURCE_DIR}" "${L65_BINARY_DIR}")
+target_link_libraries(l7801 ${LINKLIBS})
+
+
+install(TARGETS l65 l7801
+        RUNTIME DESTINATION bin)
+install(DIRECTORY samples DESTINATION doc)
+install(FILES README.md DESTINATION doc)

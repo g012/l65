@@ -1,0 +1,498 @@
+----------------------------------------------------------------
+--  Plogue uPD1771C Tester
+--	BY David Viens january 2010	chipsounds R&D
+--	(from Hello World! Program Ver 1.1 by) Programmed By Enri	
+--  haxored to emit 7801 instructions using 
+--  Macro Assembler AS V1.42's 7810 mode
+--  http://john.ccac.rwth-aachen.de:8000/as
+--  Converted to l65
+----------------------------------------------------------------
+	
+require 'scv'
+location(0x8000, 0x9fff)
+section{"rom", org=0x8000}
+	dc.b    'H'             -- Headder
+
+-- 0FF8X seems reserved, but not FF9X
+local PARAMS       = 0xFF90
+local ACTIVE_PARAM = 0xFF9A
+local PLAYING      = 0xFF9B
+
+-------------------------
+-- Clear Text All Area --
+-------------------------
+	calt	0x8c            -- bios function!!!
+
+-------------
+-- Set VDC --
+-------------
+	lxi	hl,VDC_DATA
+	lxi	de,0x3400
+	mvi	c,0x03
+	block
+	
+---------------------
+-- Set INITIAL RAM --
+---------------------
+	lxi	hl,INITIAL_RAM
+	lxi	de,PARAMS
+	mvi	c,0x0F
+	block
+
+--------------------------------------------------------------	
+----------------- END INITIALISATION POUTINE -----------------
+--------------------------------------------------------------
+
+-------------------------
+-- Print Screen Format --
+-------------------------
+	lxi	hl,DISPLAY_DATA
+	lxi	de,0x3040           -- Text RAM Address
+	lxi	bc,0x0180
+@LOOP0
+	block
+	dcr	b
+	jr	LOOP0
+
+--------------------------------------------------------------	
+------------------------- MAIN LOOP  -------------------------
+--------------------------------------------------------------	
+@LOOPN
+	-- reposition pointer to current param
+	lxi hl,PARAMS
+	mov b,(ACTIVE_PARAM)
+	dcx hl
+@POSITIONLOOP
+	inx hl
+	dcr b
+	jmp POSITIONLOOP
+    	
+
+	lxi	de,0x3090
+	-- SLEEP before note
+	mvi c,0x10              -- wait 1 second of vblanks
+	call SLEEPFUNC
+	
+
+  	mvi a,0xFD              -- we want to store that into PA so that portB can be later scanned i guess like the vic/c64 kb
+	mov pa,a
+	mov a,pb	            -- see which are closed upon return
+		
+	oni a,2
+	jr RIGHT_DOWN	
+	jr RIGHT_END
+@RIGHT_DOWN
+	ldax (hl)
+    adi a,1
+	stax (hl)
+
+    -- if playing replay patter
+	mov  a,(PLAYING)	
+	eqi  a,1
+	jmp ALL_DONE
+	-- fake not already playing
+	mvi a,0
+	mov (PLAYING),a         -- ON	
+	call PLAY_PATTERN  
+	jmp ALL_DONE
+	
+@RIGHT_END
+	
+	oni a,1
+	jr DOWN_DOWN	
+	jr DOWN_END
+@DOWN_DOWN
+	mov  a,(ACTIVE_PARAM)
+    adi  a,1
+	mov  (ACTIVE_PARAM),a	
+	jmp  ALL_DONE
+@DOWN_END	
+	
+  	mvi a,0xFE 
+	mov pa,a                -- fill port with voltages
+	mov a,pb	            -- see which are closed upon return
+	
+	oni a,1
+	jr LEFT_DOWN	
+	jr LEFT_END
+@LEFT_DOWN
+	ldax (hl)
+	sui  a,1
+	stax (hl)	
+
+	-- if playing replay patter
+	mov  a,(PLAYING)	
+	eqi  a,1
+	jmp ALL_DONE
+	-- fake not already playing
+	mvi a,0
+	mov (PLAYING),a         -- OFF	
+	call PLAY_PATTERN  
+	jmp ALL_DONE	
+@LEFT_END
+
+	oni a,2
+	jr UP_DOWN	
+	jr UP_END
+@UP_DOWN
+	mov  a,(ACTIVE_PARAM)
+	sui  a,1
+	mov  (ACTIVE_PARAM),a	
+	jmp  ALL_DONE
+@UP_END
+
+	oni a,4
+	jr BUTTON_DOWN
+	jr BUTTON_UP 
+@BUTTON_DOWN
+	call PLAY_PATTERN  
+	jmp ALL_DONE
+@BUTTON_UP
+	call STOP_PATTERN
+	jr BUTTON_END
+@BUTTON_END
+
+@ALL_DONE
+
+	-- check bounds on active param
+	mov  a,(ACTIVE_PARAM)
+	lti  a,0x0A
+	jr ACT_GREATER
+	jr ACT_DONE
+@ACT_GREATER
+	mvi  a,0x00 
+	mov  (ACTIVE_PARAM),a		
+	jr ACT_DONE
+@ACT_DONE
+
+	-- print where we at!
+	call DISPLAY_LOOP
+	
+	jmp	LOOPN
+	
+-------------------------------------------------------------------------
+-- Display init data
+-------------------------------------------------------------------------
+@VDC_DATA
+	dc.b 0xC0,0x00,0x00,0xF1    -- 0F1 -> black
+	
+-------------------------------------------------------------------------
+-- lame sleep (with C param)						
+-------------------------------------------------------------------------
+section{"SLEEPFUNC", org=0x8100}
+-- sleep the amount of time depending on C
+	push bc
+@SLOOP
+	mvi b,0xff
+@SLEEP0
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	dcr b
+	jr SLEEP0
+	dcr c
+	jr SLOOP
+	pop bc
+	ret
+	
+-------------------------------------------------------------------------
+-- wait on VBLANK							
+-------------------------------------------------------------------------
+section{"WVBLANK", org=0x8200}
+	skit f2            -- wait until acknowledged
+	jr  WVBLANK
+	ret
+	
+-------------------------------------------------------------------------
+-- wait on D1771g (wait until INT1=1)					
+-------------------------------------------------------------------------
+section{"WD1771G", org=0x8220}
+	skit f1
+   	jr  WD1771G
+	ret
+	
+-------------------------------------------------------------------------
+-- Print ONE UINT8_T on screen as HEX (two screen chars printed)
+--					
+-- A should contain the hex value to print (A returns unchanged)
+-- D should contain the screen value to dump the high part	(D returns unchanged)	
+-- V is thrashed (used as temporary val)
+-------------------------------------------------------------------------
+section{"PRINT_HEX", org=0x8240}
+	mvi v,0         -- trick to do V=A 
+	add v,a         -- trick to do V=A
+
+	ani  a,0xF0     -- a = a & 0x0f;
+	clc             -- clear carry so not to fuck up the following right shifts
+	rlr  a          --
+	rlr  a          --
+	rlr  a          --
+	rlr  a          -- ok we got the HEX value for the up 4bits
+	
+	gti a,0x09
+	jr HIGH_GREATER
+	jr HIGH_LOWER
+@HIGH_GREATER
+	adi a,0x30      -- a+='0'  (ascii)
+	jr HIGH_DONE
+@HIGH_LOWER	
+	adi a,0x37      -- a+=('A'-10)  (ascii)
+	jr HIGH_DONE	
+@HIGH_DONE
+	
+	staxi (de)      -- 
+		
+	mvi a,0         -- trick to do A=V
+	add a,v         -- trick to do A=V		
+	ani a,0x0F      -- a = a & 0x0f
+	
+	gti a,0x09
+	jr LOW_GREATER
+	jr LOW_LOWER
+@LOW_GREATER
+	adi a,0x30      -- a+='0'  (ascii)
+	jr LOW_DONE
+@LOW_LOWER
+	adi a,0x37      -- a+=('A'-10)  (ascii)
+	jr LOW_DONE	
+@LOW_DONE
+	
+	staxd (de)      -- 
+	mvi a,0         -- trick to do A=V
+	add a,v         -- trick to do A=V	
+	ret
+	
+-------------------------------------------------------------------------
+-- Prints all current param values
+-------------------------------------------------------------------------
+section{"DISPLAY_LOOP", org=0x8280}
+	mvi b,0x0B
+	lxi de,0x3090
+	lxi hl,PARAMS
+@DLOOP
+	
+	-- if b==ACTIVE_PARAM show arrow
+	--   else show space
+	mvi a,0x0B
+	mov c,(ACTIVE_PARAM)	
+	sub a,c
+	
+	eqa a,b
+	jr NOCURSOR		
+	mvi a,0x1C
+	stax (de)
+	jr CURSDONE
+@NOCURSOR	
+	mvi a,0x20
+	stax (de)
+@CURSDONE
+	-- print all ram
+	ldaxi (hl)	
+	-- increase D pos to display in hex
+	inx de	
+	inx de	
+	inx de		
+	call PRINT_HEX
+	dcx de	
+	dcx de	
+	dcx de	
+
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+	inx de	
+		
+	dcr b
+	jmp DLOOP
+	ret
+	
+-------------------------------------------------------------------------
+-- Stop current pattern
+-------------------------------------------------------------------------
+section{"STOP_PATTERN", org=0x82d0}
+	-- if (!playing) return;
+	mov a,(PLAYING)
+	eqi a,1
+	jr STOP_DONE
+	
+	mvi a,0
+	mov (PLAYING),a         -- OFF
+	
+	di
+	lxi hl,0x3600           -- SOUND REGISTER in H		
+	call WVBLANK            -- cwait on intf2
+	skit f1
+	nop
+	
+	mvix (hl),0x00          -- note OFF
+
+	ei
+	
+@STOP_DONE
+    ret
+
+-------------------------------------------------------------------------
+-- Plays current pattern
+--					Start with beep please
+-------------------------------------------------------------------------
+section{"PLAY_PATTERN", org=0x82f0}
+	mov  a,(PLAYING)	
+	eqi  a,0
+	jmp  PLAY_DONE
+	
+	-- setting variable true!
+	mvi a,1
+	mov (PLAYING),a         -- ON
+	
+	lxi de,PARAMS
+	lxi hl,0x3600           -- SOUND REGISTER in H	
+	
+	
+	ldaxi (de)
+	eqi a,1	
+	jmp PLAY_TONE
+	jmp PLAY_NOISE	
+	
+@PLAY_TONE
+	------------------------ Tone Start ------------------------	
+	di
+	call WVBLANK
+	skit f1
+	nop
+	-- instrument params start
+	mvi a,2                 -- tone!	
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WVBLANK            -- cwait on intf2
+	-- instrument params end
+	ei
+	jmp PLAY_DONE
+	
+@PLAY_NOISE
+	------------------------ Tone Start ------------------------	
+	di
+	call WVBLANK            -- cwait on intf2
+	skit f1
+	nop
+	-- instrument params start
+	mvi a,1                 -- NOISE	
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WD1771G            -- cwait on intf1
+	ldaxi (de)		
+	stax (hl)   
+	call WVBLANK            -- cwait on intf2
+	-- instrument params end
+	ei
+	jmp PLAY_DONE	
+
+@PLAY_DONE	
+	ret
+	
+-------------------------------------------------------------------------
+-- Message Data1 
+-- this version has left+audio changes working
+-------------------------------------------------------------------------
+@DISPLAY_DATA
+	dc.b "    Plogue uPD1771C Tester      "	
+	dc.b "    v0.0018                     "
+	dc.b "      Param[0]:   (  )          "
+	dc.b "      Param[1]:   (  )          "
+	dc.b "      Param[2]:   (  )          "
+	dc.b "      Param[3]:   (  )          "
+	dc.b "      Param[4]:   (  )          "
+	dc.b "      Param[5]:   (  )          "
+	dc.b "      Param[6]:   (  )          "
+	dc.b "      Param[7]:   (  )          "
+	dc.b "      Param[8]:   (  )          "
+	dc.b "      Param[9]:   (  )          "	
+	
+	-- go to [FF90;FF9F]
+@INITIAL_RAM
+	-- params
+	dc.b 0x02	
+	dc.b 0x80	
+	dc.b 0xFF	
+	dc.b 0x1F	
+	
+	dc.b 0xAB	
+	dc.b 0xFE	
+	dc.b 0xCD	
+	dc.b 0xDC	
+	dc.b 0x45	
+	dc.b 0x01	
+	
+	dc.b 0x00	  -- FF9A curent param
+	dc.b 0x00	  -- FF9B BOOL note on
+	dc.b 0x83	  -- misc
+	dc.b 0x39	  -- misc
+	dc.b 0x44	  -- misc
+	dc.b 0x36	  -- misc
+
+writebin(filename..'.bin', genbin(0xff))

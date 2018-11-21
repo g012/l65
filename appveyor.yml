@@ -1,0 +1,41 @@
+version: '0.1.{build}'
+
+os: Visual Studio 2013
+platform: x64
+configuration: Release
+
+before_build:
+  - mkdir install
+  - mkdir build
+  - cd build 
+  - cmake -G "Visual Studio 12 2013 Win64" -DCMAKE_INSTALL_PREFIX=../install ..
+  
+build_script:
+  - FOR /F "tokens=*" %%i in ('git describe') do SET COMMITNOW=%%i
+  - if defined APPVEYOR_REPO_TAG_NAME (set L65_RELEASE=true) else (set L65_SNAPSHOT=true)
+  - if defined L65_RELEASE set L65_VERSION=%APPVEYOR_REPO_TAG_NAME:~1%
+  - if defined L65_RELEASE echo Building l65 %L65_VERSION%... (from %COMMITNOW%)
+  - if defined L65_SNAPSHOT set L65_VERSION=%APPVEYOR_BUILD_VERSION%
+  - if defined L65_SNAPSHOT echo Building l65 snapshot %L65_VERSION%... (from %COMMITNOW%)
+  - cmake --build . --config Release
+  - cmake --build . --config Release --target install
+
+after_build:
+   - cd ../install
+   - 7z a ../l65.zip * -tzip
+   
+artifacts:
+  - path: l65.zip
+    name: l65-${L65_VERSION}.zip
+
+deploy:
+  - provider: GitHub
+    release: l65-${L65_VERSION}
+    description: 'l65 msvc12 win64 build'
+    auth_token:
+      secure: xRIravp3mvMiAgogn6KGuK1yrolmSJUsum/wPXwu82bh97O7YkuQ3B178ac+WHml
+    artifact: /l65.*\.zip/
+    draft: true
+    on:
+      appveyor_repo_tag: true
+      push_release: true

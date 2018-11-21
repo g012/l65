@@ -1,0 +1,3 @@
+cpu = require 'uPD7801'
+setmetatable(_ENV, cpu)
+

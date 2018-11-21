@@ -9,12 +9,12 @@
 
 #define LUA_IMPLEMENTATION
 #include "lua.h"
-#include "scripts.h"
+#include "scripts_7801.h"
 
 extern int luaopen_lpeg(lua_State *L);
 extern int luaopen_lfs(lua_State *L);
 
-// l65 lib
+// l7801 lib
 static int r_s32be(uint8_t **b) { uint8_t *p = *b; int v = ((int)(p[0]))<<24 | ((int)(p[1]))<<16 | ((int)p[2])<<8 | p[3]; *b += 4; return v; }
 typedef struct { int len, nam; } chunk_s;
 static chunk_s r_chunk(uint8_t **b) { int len = r_s32be(b), nam = r_s32be(b); chunk_s c = { len, nam }; return c; }
@@ -129,27 +129,26 @@ static int open_image(lua_State *L)
     lua_pushfstring(L, "invalid PNG file %s", filename);
     return 2;
 }
-static const struct luaL_Reg l65lib[] = {
+static const struct luaL_Reg l7801lib[] = {
     {"image", open_image},
     {NULL, NULL},
 };
-static int luaopen_l65(lua_State *L)
+static int luaopen_l7801(lua_State *L)
 {
-    luaL_newlib(L, l65lib);
+    luaL_newlib(L, l7801lib);
     return 1;
 }
 
 #define SRC_LUA(name) { #name, 0, script_ ## name ## _lua, sizeof(script_ ## name ## _lua) }
-#define SRC_L65(name) { #name, 1, script_ ## name ## _l65, sizeof(script_ ## name ## _l65) }
+#define SRC_L7801(name) { #name, 1, script_ ## name ## _l7801, sizeof(script_ ## name ## _l7801) }
 static struct script { const char *name; int t;  const char *data; size_t sz; } embedded[] = {
     SRC_LUA(dkjson),
     SRC_LUA(l65cfg),
     SRC_LUA(re),
-    SRC_L65(nes),
-    SRC_L65(vcs),
+    SRC_L7801(scv),
 };
 #undef SRC_LUA
-#undef SRC_L65
+#undef SRC_L7801
 
 static int getembedded(lua_State *L)
 {
@@ -185,20 +184,20 @@ int main(int argc, char *argv[])
     luaL_openlibs(L);
     luaL_requiref(L, "lpeg", luaopen_lpeg, 1); lua_pop(L, 1);
     luaL_requiref(L, "lfs", luaopen_lfs, 1); lua_pop(L, 1);
-    luaL_requiref(L, "l65", luaopen_l65, 1); lua_pop(L, 1);
+    luaL_requiref(L, "l7801", luaopen_l7801, 1); lua_pop(L, 1);
 
     // preload embedded lua scripts
     luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
     luaL_loadbufferx(L, script_asm_lua, sizeof(script_asm_lua), "asm.lua", "b");
     lua_setfield(L, -2, "asm");
-    luaL_loadbufferx(L, script_6502_lua, sizeof(script_6502_lua), "6502.lua", "b");
-    lua_setfield(L, -2, "6502");
+    luaL_loadbufferx(L, script_uPD7801_lua, sizeof(script_uPD7801_lua), "uPD7801.lua", "b");
+    lua_setfield(L, -2, "uPD7801");
     lua_pop(L, 1);
 
     // error handler
     lua_pushcfunction(L, msghandler);
     // l65.lua script
-    luaL_loadbufferx(L, script_l65_lua, sizeof(script_l65_lua), "l65.lua", "b");
+    luaL_loadbufferx(L, script_l7801_lua, sizeof(script_l7801_lua), "l7801.lua", "b");
     // arg[] table
     lua_createtable(L, argc-1, 2);
     lua_pushcfunction(L, getembedded); // pass embedded script lookup function as arg[-1]
@@ -208,7 +207,7 @@ int main(int argc, char *argv[])
     lua_setglobal(L, "arg");
     // ... arguments
     { int i; for (i = 1; i < argc; ++i) lua_rawgeti(L, -i, i); lua_remove(L, -i); }
-    // call l65
+    // call l7801
     int status = lua_pcall(L, argc-1, 0, -argc-1);
     if (status != LUA_OK)
     {
