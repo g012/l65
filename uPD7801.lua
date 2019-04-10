@@ -242,7 +242,7 @@ M.jr = function(label)
         end
         if type(x) ~= 'number' then error("unresolved branch target: " .. tostring(x)) end
         x = x-1 - offset - rorg(section.org)
-        if x < -32 or x > 0x32 then error("branch target out of range for " .. l .. ": " .. x)
+        if x < -32 or x > 32 then error("branch target out of range for " .. l .. ": " .. x)
         elseif x >= 0 then
             x = 0xc0 + x
             return x
