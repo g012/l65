@@ -1,0 +1,80 @@
+require'nes'
+
+-- samples : extacted of the demo : Let's Go To The Very Important Party 2018
+-- original code : 2018 - mara/flush
+-- asm code : 2019 - mara/flush 
+-- gfx : Exocet/Up Rough
+
+mappers.CNROM{chrmap = function(ci) return ci*0x2000, 0x2000, (ci&1)*0x2000 end}
+
+
+location(chrrom0)
+
+-- create a variable house_tiles which contains tileset.chr's data (house's tiles)
+@@house_tiles do local f, s = assert(io.open('nes_house_tileset.chr','rb')) s=f:read('*all') f:close() byte{s:byte(1,-1)} end
+
+-- don't define nmi and irq routines
+location(prgrom)
+@@nmi rti
+@@irq rti
+
+-- create the house palette
+local home_pal = { 0x32,0x22,0x11,0x30,0x32,0x06,0x16,0x26,0x32,0x27,0x37,0x17,0x32,0x0f,0x00,0x10 }
+
+-- create a variable nam which contains the house's nametable (map of house)
+do
+  local f, s = assert(io.open('nes_house.nam','rb')) s=f:read('*all') f:close()
+  @@nam byte{s:byte(1,-1)}
+end
+
+
+local nam_high = 1
+local nam_low = 0
+
+@@main
+    -- initialize the hardware registers
+    init()
+    -- wait a vertical blank
+    vblank_waitbegin()
+    -- load BG palette in PPU RAM
+    ppu_addr(BGPAL)
+    -- put the house's palette
+    for _,v in ipairs(home_pal) do lda #v sta PPUDATA end
+    ppu_addr(0x2000)
+
+    -- load and set nametable
+    lda #nam>>8&0xff
+    sta nam_high
+    lda #nam & 0xff
+    sta nam_low
+    jsr loadBG
+
+
+    -- reset scroll position
+    ppu_addr(0) sta BGSCROL sta BGSCROL
+    lda #0x0a sta PPUMASK
+    -- idle
+    @_loop jmp _loop
+    
+
+-- routine to load a nametable with the attributes  
+@loadBG
+    ldy #0
+    ldx #0
+    
+@loopLoadBG
+    lda (nam_low), y  -- can only be used with y
+    sta 0x2007
+    iny
+    bne loopLoadBG
+    inc nam_high
+    inx
+    cpx #04
+    bne loopLoadBG
+    rts
+
+-- produce NES file, and debug symbols
+writebin(filename..'.nes')
+writesym(filename..'.mlb', 'mesen')
+writesym(filename..'.nes', 'fceux')
+print(stats)
