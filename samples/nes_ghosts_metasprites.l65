@@ -1,0 +1,93 @@
+require'nes'
+
+-- samples : extacted of the demo : Let's Go To The Very Important Party 2018
+-- original code : 2018 - mara/flush
+-- asm code : 2019 - mara/flush 
+-- gfx : Exocet/Up Rough
+
+mappers.CNROM{chrmap = function(ci) return ci*0x2000, 0x2000, (ci&1)*0x2000 end}
+
+
+location(chrrom0)
+
+@@ghosts_tiles do local f, s = assert(io.open('nes_ghosts.chr','rb')) s=f:read('*all') f:close() byte{s:byte(1,-1)} end
+
+location(prgrom)
+@@nmi rti
+@@irq rti
+
+-- ghosts' palette
+local ghosts_pal = { 0x0F, 0x30, 0x25, 0x15, 0x0F, 0x21, 0x31, 0x30, 0x0F, 0x1B, 0x19, 0x1B, 0x0F, 0x0F, 0x0F, 0x0F }
+
+-- metasprite is a set of sprites to draw a big sprite
+-- here you have two big sprites, the son and mother ghosts
+-- it's a set of oam bank
+-- index, x position, y position, tile number, palette number
+local ghosts_spr = {
+   {  2, x= 0+0x80, y= 0+0x88, tile=0x01, palette=1 },                       -- begin sprite son
+   {  3, x= 8+0x80, y= 0+0x88, tile=0x02, palette=1 },
+   {  4, x=16+0x80, y= 0+0x88, tile=0x03, palette=1 },
+   {  5, x=24+0x80, y= 0+0x88, tile=0x04, palette=1 },
+   {  6, x= 0+0x80, y= 8+0x88, tile=0x07, palette=1 },
+   {  7, x= 8+0x80, y= 8+0x88, tile=0x08, palette=1 },
+   {  8, x=16+0x80, y= 8+0x88, tile=0x09, palette=1 },
+   {  9, x=24+0x80, y= 8+0x88, tile=0x0a, palette=1 },
+   { 10, x= 0+0x80, y=16+0x88, tile=0x0f, palette=1 },
+   { 11, x= 8+0x80, y=16+0x88, tile=0x10, palette=1 },
+   { 12, x=16+0x80, y=16+0x88, tile=0x11, palette=1 },
+   { 13, x=24+0x80, y=16+0x88, tile=0x12, palette=1 },
+   { 14, x= 0+0x80, y=24+0x88, tile=0x17, palette=1 },
+   { 15, x= 8+0x80, y=24+0x88, tile=0x18, palette=1 },
+   { 16, x=16+0x80, y=24+0x88, tile=0x19, palette=1 },
+   { 17, x=24+0x80, y=24+0x88, tile=0x1a, palette=1 },
+
+---------------------------------------------------------------
+                                      
+   { 18, x= 8+0x40, y=  0+0x80, tile=0x05, palette=0 },                       --begin sprite mother
+   { 19, x=16+0x40, y=  0+0x80, tile=0x06, palette=0 },
+   { 20, x= 0+0x40, y=  8+0x80, tile=0x0b, palette=0 },
+   { 21, x= 8+0x40, y=  8+0x80, tile=0x0c, palette=0 },
+   { 22, x=16+0x40, y=  8+0x80, tile=0x0d, palette=0 },
+   { 23, x=24+0x40, y=  8+0x80, tile=0x0e, palette=0 },
+   { 24, x= 0+0x40, y= 16+0x80, tile=0x13, palette=0 },
+   { 25, x= 8+0x40, y= 16+0x80, tile=0x14, palette=0 },
+   { 26, x=16+0x40, y= 16+0x80, tile=0x15, palette=0 },
+   { 27, x=24+0x40, y= 16+0x80, tile=0x16, palette=0 },
+   { 28, x= 0+0x40, y= 24+0x80, tile=0x1b, palette=0 },
+   { 29, x= 8+0x40, y= 24+0x80, tile=0x1c, palette=0 },
+   { 30, x=16+0x40, y= 24+0x80, tile=0x1d, palette=0 },
+   { 31, x=24+0x40, y= 24+0x80, tile=0x1e, palette=0 },
+   { 32, x= 0+0x40, y= 32+0x80, tile=0x1f, palette=0 },
+   { 33, x= 8+0x40, y= 32+0x80, tile=0x20, palette=0 },
+   { 34, x=16+0x40, y= 32+0x80, tile=0x21, palette=0 },
+   { 35, x=24+0x40, y= 32+0x80, tile=0x22, palette=0 }
+}
+
+@@main
+    init()
+    vblank_waitbegin()
+    lda #0b00011000
+    sta PPUMASK
+    lda #0
+    sta PPUCTRL
+    
+    -- load SPRITE palette in PPU RAM
+    ppu_addr(OBJPAL)
+    for _,v in ipairs(ghosts_pal) do lda #v sta PPUDATA end
+	-- load the metasprites
+    for _,v in ipairs(ghosts_spr) do oam_set(v) end
+
+
+    -- reset scroll position
+    ppu_addr(0) sta BGSCROL sta BGSCROL
+
+    -- idle
+    @_loop jmp _loop
+    
+    
+
+
+writebin(filename..'.nes')
+writesym(filename..'.mlb', 'mesen')
+writesym(filename..'.nes', 'fceux')
+print(stats)

@@ -1,0 +1,51 @@
+require'nes'
+
+-- asm code : 2019 - mara/flush 
+-- gfx : mara/flush
+
+mappers.CNROM{chrmap = function(ci) return ci*0x2000, 0x2000, (ci&1)*0x2000 end}
+
+
+location(chrrom0)
+
+-- set beer tileset for sprite
+@@beer_tileset do local f, s = assert(io.open('nes_beer.chr','rb')) s=f:read('*all') f:close() byte{s:byte(1,-1)} end
+
+location(prgrom)
+@@nmi rti
+@@irq rti
+
+-- the beer sprite's palette
+local beer_pal = { 0x0F,0x10,0x38,0x30,0x0F,0x01,0x21,0x31,0x0F,0x06,0x16,0x26,0x0F,0x09,0x19,0x29 }
+
+-- describe oam bank for the sprite 
+-- number, x position, x position, tile number, index in palette
+local sprite_beer = { 0, x=0x80, y=0x80, tile=1, palette=0 }
+
+@@main
+    init()
+    vblank_waitbegin()
+    -- activate sprite
+    lda #0b00011000
+    sta PPUMASK
+    -- load SPRITE palette in PPU RAM
+    ppu_addr(OBJPAL)
+    -- set sprite palette
+    for _,v in ipairs(beer_pal) do lda #v sta PPUDATA end
+    ppu_addr(0x2000)
+
+    -- set the sprite on sprite bank 0
+    oam_set(sprite_beer)
+    -- reset scroll position
+    ppu_addr(0) sta BGSCROL sta BGSCROL
+
+    -- idle
+    @_loop jmp _loop
+    
+    
+
+
+writebin(filename..'.nes')
+writesym(filename..'.mlb', 'mesen')
+writesym(filename..'.nes', 'fceux')
+print(stats)
