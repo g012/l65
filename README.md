@@ -1,7 +1,7 @@
 # l65
-[![Build Status](https://travis-ci.org/g012/l65.svg?branch=master)](https://travis-ci.org/g012/l65)
 
 l65 is a 6502 assembler, operating from within Lua and written in Lua. This means assembler mnemonics become regular Lua statements anywhere in the middle of Lua code.
+l7801 is a µPD7801 assembler, using l65 framework, created and maintained by [@MooZ] (https://github.com/BlockoS).
 
 Table of Contents
 =================

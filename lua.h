@@ -20280,7 +20280,7 @@ static void luai_fchecksize (luai_LoadState *S, size_t size, const char *tname) 
 #define luai_checksize(S,t)	luai_fchecksize(S,sizeof(t),#t)
 
 static void luai_checkHeader (luai_LoadState *S) {
-  luai_checkliteral(S, LUA_SIGNATURE + 1, "not a");  /* 1st char already checked */
+  luai_checkliteral(S, (const char*)LUA_SIGNATURE + 1, "not a");  /* 1st char already checked */
   if (luai_LoadByte(S) != LUAC_VERSION)
     luai_error(S, "version mismatch in");
   if (luai_LoadByte(S) != LUAC_FORMAT)
