@@ -2,6 +2,7 @@
 /tmp
 /zig-*
 *.bin
+*.cdl
 *.nes
 *.nes.deb
 *.sym

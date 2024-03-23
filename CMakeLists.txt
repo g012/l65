@@ -63,7 +63,7 @@ else ()
 	add_definitions(-D_FILE_OFFSET_BITS=64)
 
     add_compile_options(-fno-strict-aliasing -fomit-frame-pointer -ffast-math -fvisibility=hidden)
-    add_compile_options(-Wsign-compare -Wno-missing-braces -Wno-unused-result -Wno-unused-function -Wno-unused-variable -Wno-switch -Wno-parentheses)
+    add_compile_options(-Wsign-compare -Wno-missing-braces -Wno-unused-result -Wno-unused-function -Wno-unused-variable -Wno-switch -Wno-parentheses -Wno-string-plus-int)
 
 endif()
 

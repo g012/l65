@@ -58,6 +58,13 @@ do
     for k,v in pairs(nes) do symbols[k] = v end
 end
 
+NTSC = {
+    CLOCK   = 1789773
+}
+PAL = {
+    CLOCK   = 1662607
+}
+
 -- add some symbol file formats for NES debuggers
 cpu.getsym_as.mesen = function() -- .mlb
     local ins,fmt = table.insert,string.format
@@ -249,7 +256,7 @@ header = function(t)
     -- tv: 'N' for NTSC, 'P' for PAL, 'NP' for both preferring NTSC, 'PN' for both preferring PAL
     local tv, tvm = 0, (t.tv or 'n'):lower()
     assert(tvm=='n' or tvm=='p' or tvm=='np' or tvm=='pn', "invalid tv mode: " .. tostring(t.tv) .. ", expected 'N', 'P', 'NP' or 'PN'")
-    if tvm[1] == 'p' then tv = 1 end 
+    if tvm:sub(1,1) == 'p' then tv = 1 end 
     if #tvm > 1 then tv = tv + 2 end
 
     @@header -- size: 16 bytes
@@ -276,6 +283,32 @@ end
 
 local n0ne = function(x) return not x or x == 0 end
 local val0 = function(x) return x and x or 0 end
+
+-- 2a03 APU emulator
+apuemu = {
+    --a=0,x=0,y=0,s=0,p=0,pc=0,xjam=false,
+    --reset = function(self)
+    --    self.a,self.x,self.y,self.s,self.p,self.pc,self.xjam = 0,0,0,0xff,
+    --end
+}
+
+-- plays a NSF tune and record its register writes for replay
+-- stops at C00
+-- FamiTracker must be in the path
+-- Ported from Shiru's nsf2vgm
+nsf = function(filename, song)
+    local f, nsf = assert(io.open(filename,'rb')) nsf=f:read('*all') f:close()
+    assert(nsf[0x7a] == 0, 'expansion chips are not supported')
+    nsf.songs = nsf[7]
+    nsf.loadadr=nsf[9]+(nsf[10]<<8) nsf.initadr=nsf[11]+(nsf[12]<<8) nsf.playadr=nsf[13]+(nsf[14]<<8)
+    local bs = false for i=1,8 do local p=nsf[0x70+i] nsf.page[i]=p if p~=0 then bs=true end end
+    if not bs then for i=1,8 do nsf.page[i]=i-1 end end
+    local ram,rom,page = {},{},{}
+    for i=1,#nsf-0x80 do rom[nsf.loadadr-0x7FFF] = nsf[0x81] end
+    local reg = { 0x13f, 0x108, 0x100, 0x100, 0x13f, 0x108, 0x100, 0x100, 0x180, 0x100, 0x100, 0x100, 0x13f, 0x100, 0x100, 0x100,
+                  0x100, 0x100, 0x100, 0x100, 0x100, 0x11f, 0x100, 0x100, 0x100, 0x100, 0x100, 0x100, 0x100, 0x100, 0x100, 0x100 }
+
+end
 
 --[[ For all mappers, where relevant:
 
