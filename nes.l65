@@ -405,7 +405,7 @@ mappers.UxROM = function(t)
     until off + sz >= t.chrsize
     chrrom = chrrom0
     function switchprgrom(bankix)
-        if bankix then assert(bankix < bc-1) lda #bankix end
+        if bankix then assert(bankix < bc, "mappers.switchprgrom: bank out of range: " .. bankix .. ", expected 0-" .. (bc-1)) lda #bankix end
         -- lda to reverse map [n..0] to [0..n]
         tax lda bankbytes,x sta bankbytes,x
     end
@@ -414,6 +414,58 @@ mappers.UxROM = function(t)
     end
 end
 mappers[2] = mappers.UxROM
+
+--[[
+    https://www.nesdev.org/wiki/UNROM_512
+]]
+mappers.UNROM512 = function(t)
+    if not t then t = {} end
+    t.mapperid = 30
+    if not t.prgsize then t.prgsize = 32 * 16384 end
+    assert(t.prgsize >= 0x8000 and t.prgsize <= 0x80000, "prgsize must be at least 32kB and at most 512kB")
+    assert(n0ne(t.chrsize), "chrsize must be 0")
+    if n0ne(t.chrramsize) and n0ne(t.chrbramsize) then t.chrramsize = 4 * 8192 end
+    local csize = val0(t.chrramsize) + val0(t.chrbramsize)
+    assert(csize == 0x2000 or csize == 0x4000 or csize == 0x8000, "combined chrram size must be 8, 16 or 32kB")
+    hdrrom = location{0x7ff0, 0x7fff, name='header'}
+    header(t)
+    local bc = t.prgsize//0x4000
+    for bi=0,bc-2 do
+        local o,ix = 0x8000 + bi*0x4000, bc-1-bi
+        _ENV['prgrom'..ix] = location{o, o+0x3fff, rorg=0x8000, name='prgrom'..ix}
+    end
+    local prglast = 0x8000 + (bc-1)*0x4000
+    prgrom0 = location{prglast, prglast+0x3fff, rorg=0xc000, name='prgrom0'}
+    prgrom = prgrom0
+    section{"vectors", org=prglast+0x3ffa} dc.w nmi, main, irq
+    section{ "bankbytes", align=256 } -- for handling bus conflicts
+        for m=0,1 do
+            for c=0,3 do
+                for p=0x1f,0,-1 do byte(m<<7 | c<<5 | p) end
+            end
+        end
+    function clearchrram(page_count, offset)
+        ppu_addr(CHAR0 + (offset or 0)) tay ldx#(page_count or 32) @_clear sta PPUDATA iny bne _clear dex bne _clear
+    end
+    function loadchrram(var, page_count, offset)
+        ppu_addr(CHAR0 + (offset or 0)) ldx#(page_count or 32) ldy#0 @_load lda (var),y sta PPUDATA iny bne _load inc var+1 dex bne _load
+    end
+    function switch(prgbankix, chrbankix, mirror)
+        if prgbankix then assert(prgbankix < bc, "mappers.switch: PRG bank out of range: " .. prgbankix .. ", expected 0-" .. (bc-1)) end
+        if chrbankix then assert(chrbankix < 4, "mappers.switch: CHR bank out of range: " .. chrbankix .. ", expected 0-3") end
+        if mirror then assert(mirror == 0 or mirror == 1, "mappers.switch: mirror out of range: " .. mirror .. ", expected 0-1") end
+        if prgbankix or chrbankix or mirror then
+            local r = (mirror or 0)<<7 | (chrbankix or 0)<<5 | (prgbankix or 1)
+            lda #r
+        end
+        -- lda to reverse prg map [n..0] to [0..n]
+        tax lda bankbytes,x sta bankbytes,x
+    end
+    mappers.init = function()
+        switch(1)
+    end
+end
+mappers[30] = mappers.UxROM
 
 --[[
     https://wiki.nesdev.com/w/index.php/CNROM

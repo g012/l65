@@ -71,6 +71,7 @@ Table of Contents
      * [Windows](#windows)
      * [Linux](#linux)
   * [Vim files installation](#vim-files-installation)
+  * [Visual Studio Code extension](#vscode-extension)
   * [TODO List](#todo-list)
   * [Credits](#credits)
   * [License](#license)
@@ -655,6 +656,10 @@ make
  * add `au BufRead,BufNewFile *.l65 set syntax=l65 filetype=l65` to `~/.vimrc` (or `~/_vimrc` on Windows)
 
 Note that the syntax file includes some highlighting for features only activated via pragmas: `dna`, `xsr`, `rtx` and `far`. If you do not want to use these keywords, remove them from the syntax file.
+
+## Visual Studio Code extension
+
+Install the "l65" extension from the marketplace or check [l65-vscode](https://github.com/g012/l65-vscode) repository.
 
 ## TODO List
 

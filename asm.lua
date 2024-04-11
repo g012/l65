@@ -101,7 +101,8 @@ M.link = function()
         end
         for _,constraint in ipairs(section.constraints) do
             local cstart, cfinish = address+constraint.start, address+constraint.finish
-            if rorg(cstart) // 0x100 == rorg(cfinish) // 0x100 then
+            local s, f = rorg(cstart) // 0x100, rorg(cfinish) // 0x100
+            if s==f or math.ceil(s)==math.floor(s) and s+1==f and cfinish-cstart==0x100 then
                 if constraint.type == 'crosspage' then return end
             else
                 if constraint.type == 'samepage' then return end
@@ -259,7 +260,7 @@ M.link = function()
             return waste, cross, lsb
         end)
         if not position then
-            error("unable to find space for section " .. section.label)
+            error("unable to find space for related section '" .. section.label .. "' of size " .. section.size)
         end
         for section,offset in pairs(related) do
             section.org = position + (section.location.start - location_start) + offset
@@ -273,7 +274,7 @@ M.link = function()
         table.sort(position_independent_sections, function(a,b) if a.size==b.size then return a.label>b.label end return a.size>b.size end)
         for _,section in ipairs(position_independent_sections) do
             if not position_section(section) then
-                error("unable to find space for section " .. section.label)
+                error("unable to find space for section '" .. section.label .. "' of size " .. section.size)
             end
         end
 

@@ -577,7 +577,7 @@ syn match l65Opcode /\<sre\%(.[bw]\)\=\>/
 syn match l65Opcode /\<far\>/
 syn match l65Opcode /\<rtx\>/
 syn match l65Opcode /\<xsr\>/
-" Common alias, reomve if desired.
+" Common alias, remove if desired.
 syn match l65Opcode /\<dna\%(.[bw]\)\=\>/
 syn match l65Keyword /\<dnaimm\>/
 syn match l65Keyword /\<dnazpg\>/
