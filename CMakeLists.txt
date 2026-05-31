@@ -7,12 +7,6 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(L65_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 set(L65_BINARY_DIR ${PROJECT_BINARY_DIR})
 
-set(L65_VERSION_MAJOR "1")
-set(L65_VERSION_MINOR "3")
-set(L65_VERSION_REVISION "0")
-set(L65_VERSION "${L65_VERSION_MAJOR}.${L65_VERSION_MINOR}.${L65_VERSION_REVISION}")
-configure_file("${L65_SOURCE_DIR}/l65cfg.lua.in" "${L65_BINARY_DIR}/l65cfg.lua")
-
 set(LINKLIBS)
 
 if (MSVC)
@@ -84,7 +78,7 @@ set(L65_SCRIPTS
         ${L65_SOURCE_DIR}/6502.lua
         ${L65_SOURCE_DIR}/dkjson.lua
         ${L65_SOURCE_DIR}/l65.lua
-        ${L65_BINARY_DIR}/l65cfg.lua
+        ${L65_SOURCE_DIR}/l65cfg.lua
         ${L65_SOURCE_DIR}/re.lua
         ${L65_FILES}
     )
@@ -134,7 +128,7 @@ set(L7801_SCRIPTS
         ${L65_SOURCE_DIR}/uPD7801.lua
         ${L65_SOURCE_DIR}/dkjson.lua
         ${L65_SOURCE_DIR}/l7801.lua
-        ${L65_BINARY_DIR}/l65cfg.lua
+        ${L65_SOURCE_DIR}/l65cfg.lua
         ${L65_SOURCE_DIR}/re.lua
         ${L7801_FILES}
     )

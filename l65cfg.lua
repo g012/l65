@@ -1,8 +1,8 @@
 local M = {}
 
-M.major = 0
-M.minor = 0
+M.major = 1
+M.minor = 3
 M.revision = 0
-M.version = "0.0.0"
+M.version = "1.3.0"
 
 return M

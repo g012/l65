@@ -1,17 +1,23 @@
 const std = @import("std");
 
-const major: u32 = 1;
-const minor: u32 = 3;
-const revision: u32 = 0;
-
 const targets: []const std.Target.Query = &.{
     .{ .os_tag = .windows, .cpu_arch = .x86_64, .cpu_model = .baseline },
     .{ .os_tag = .windows, .cpu_arch = .aarch64, .cpu_model = .baseline },
-    .{ .os_tag = .macos, .cpu_arch = .x86_64, .cpu_model = .baseline, .os_version_min = std.zig.CrossTarget.OsVersion{ .semver = .{ .major = 10, .minor = 7, .patch = 0 } } },
-    .{ .os_tag = .macos, .cpu_arch = .aarch64, .cpu_model = .baseline, .os_version_min = std.zig.CrossTarget.OsVersion{ .semver = .{ .major = 11, .minor = 0, .patch = 0 } } },
+    .{ .os_tag = .macos, .cpu_arch = .x86_64, .cpu_model = .baseline, .os_version_min = std.Target.Query.OsVersion{ .semver = .{ .major = 10, .minor = 7, .patch = 0 } } },
+    .{ .os_tag = .macos, .cpu_arch = .aarch64, .cpu_model = .baseline, .os_version_min = std.Target.Query.OsVersion{ .semver = .{ .major = 11, .minor = 0, .patch = 0 } } },
     .{ .os_tag = .linux, .cpu_arch = .x86_64, .cpu_model = .baseline, .abi = .musl },
     .{ .os_tag = .linux, .cpu_arch = .aarch64, .cpu_model = .baseline },
 };
+
+fn addCExecutable(b: *std.Build, name: []const u8, target: anytype, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
+    return b.addExecutable(.{
+        .name = name,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+}
 
 fn setupExe(exe: *std.Build.Step.Compile, embed_output: *const std.Build.LazyPath) !void {
     exe.addCSourceFiles(.{
@@ -31,54 +37,27 @@ pub fn build(b: *std.Build) !void {
     ///////////////////////////////////////////////////////////////////////////
     // Embed tool
 
-    const version_storage = struct { var str: [32]u8 = undefined; };
-    const version = try std.fmt.bufPrint(version_storage.str[0..], "{d}.{d}.{d}", .{ major, minor, revision });
-    const l65cfg_lua_in = b.addConfigHeader(
-        .{
-            .style = .{ .cmake = .{ .path = "l65cfg.lua.in" } },
-            .include_path = "l65cfg.lua",
-        },
-        .{
-            .L65_VERSION_MAJOR = major,
-            .L65_VERSION_MINOR = minor,
-            .L65_VERSION_REVISION = revision,
-            .L65_VERSION = version,
-        },
-    );
-    // FIXME current version (0.12-dev) of ConfigHeader adds a C comment on top of file
-    //    - comment "try output.appendSlice(c_generated_line);" in ConfigHeader.zig to avoid it
-    
-
-    const embed_exe = b.addExecutable(.{
-        .name = "embed",
-        .target = target,
-        .optimize = optimize,
-    });
-    embed_exe.addCSourceFile(.{ .file = .{ .path = "embed.c" }, .flags = &.{ "-std=c99" } });
+    const embed_exe = addCExecutable(b, "embed", target, optimize);
+    embed_exe.addCSourceFile(.{ .file = b.path("embed.c"), .flags = &.{"-std=c99"} });
     embed_exe.linkLibC();
 
     const embed = b.addRunArtifact(embed_exe);
-    embed.step.dependOn(&l65cfg_lua_in.step);
     embed.addArg("-o");
     const embed_output = embed.addOutputFileArg("scripts.h");
-    embed.addFileArg(l65cfg_lua_in.getOutput());
-    embed.addFileArg(.{ .path = "asm.lua" });
-    embed.addFileArg(.{ .path = "6502.lua" });
-    embed.addFileArg(.{ .path = "dkjson.lua" });
-    embed.addFileArg(.{ .path = "l65.lua" });
-    embed.addFileArg(.{ .path = "re.lua" });
-    embed.addFileArg(.{ .path = "nes.l65" });
-    embed.addFileArg(.{ .path = "pce.l65" });
-    embed.addFileArg(.{ .path = "vcs.l65" });
+    embed.addFileArg(b.path("l65cfg.lua"));
+    embed.addFileArg(b.path("asm.lua"));
+    embed.addFileArg(b.path("6502.lua"));
+    embed.addFileArg(b.path("dkjson.lua"));
+    embed.addFileArg(b.path("l65.lua"));
+    embed.addFileArg(b.path("re.lua"));
+    embed.addFileArg(b.path("nes.l65"));
+    embed.addFileArg(b.path("pce.l65"));
+    embed.addFileArg(b.path("vcs.l65"));
 
     ///////////////////////////////////////////////////////////////////////////
     // Build for current machine
 
-    var exe = b.addExecutable(.{
-        .name = "l65",
-        .target = target,
-        .optimize = optimize,
-    });
+    var exe = addCExecutable(b, "l65", target, optimize);
 
     exe.step.dependOn(&embed.step);
     try setupExe(exe, &embed_output);
@@ -97,11 +76,7 @@ pub fn build(b: *std.Build) !void {
 
     const release_step = b.step("release", "Generate a release");
     for (targets) |t| {
-        const rel_exe = b.addExecutable(.{
-            .name = "l65",
-            .target = b.resolveTargetQuery(t),
-            .optimize = .ReleaseSmall,
-        });
+        const rel_exe = addCExecutable(b, "l65", b.resolveTargetQuery(t), .ReleaseSmall);
         const target_output = b.addInstallArtifact(rel_exe, .{
             .dest_dir = .{
                 .override = .{
