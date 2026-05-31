@@ -19,9 +19,9 @@ fn addCExecutable(b: *std.Build, name: []const u8, target: anytype, optimize: st
     });
 }
 
-fn setupExe(exe: *std.Build.Step.Compile, embed_output: *const std.Build.LazyPath) !void {
+fn setupExe(exe: *std.Build.Step.Compile, main_file: []const u8, embed_output: *const std.Build.LazyPath) !void {
     exe.addCSourceFiles(.{
-        .files = &.{ "lfs.c", "lpeg.c", "main.c" },
+        .files = &.{ "lfs.c", "lpeg.c", main_file },
         .flags = &.{},
     });
 
@@ -54,14 +54,31 @@ pub fn build(b: *std.Build) !void {
     embed.addFileArg(b.path("pce.l65"));
     embed.addFileArg(b.path("vcs.l65"));
 
+    const embed_7801 = b.addRunArtifact(embed_exe);
+    embed_7801.addArg("-o");
+    const embed_7801_output = embed_7801.addOutputFileArg("scripts_7801.h");
+    embed_7801.addFileArg(b.path("asm.lua"));
+    embed_7801.addFileArg(b.path("uPD7801.lua"));
+    embed_7801.addFileArg(b.path("dkjson.lua"));
+    embed_7801.addFileArg(b.path("l7801.lua"));
+    embed_7801.addFileArg(b.path("l65cfg.lua"));
+    embed_7801.addFileArg(b.path("re.lua"));
+    embed_7801.addFileArg(b.path("scv.l7801"));
+
     ///////////////////////////////////////////////////////////////////////////
     // Build for current machine
 
     var exe = addCExecutable(b, "l65", target, optimize);
 
     exe.step.dependOn(&embed.step);
-    try setupExe(exe, &embed_output);
+    try setupExe(exe, "main.c", &embed_output);
     b.installArtifact(exe);
+
+    var exe_7801 = addCExecutable(b, "l7801", target, optimize);
+
+    exe_7801.step.dependOn(&embed_7801.step);
+    try setupExe(exe_7801, "l7801.c", &embed_7801_output);
+    b.installArtifact(exe_7801);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -85,8 +102,20 @@ pub fn build(b: *std.Build) !void {
             },
         });
         rel_exe.step.dependOn(&embed.step);
-        try setupExe(rel_exe, &embed_output);
+        try setupExe(rel_exe, "main.c", &embed_output);
         release_step.dependOn(&target_output.step);
+
+        const rel_exe_7801 = addCExecutable(b, "l7801", b.resolveTargetQuery(t), .ReleaseSmall);
+        const target_output_7801 = b.addInstallArtifact(rel_exe_7801, .{
+            .dest_dir = .{
+                .override = .{
+                    .custom = try t.zigTriple(b.allocator),
+                },
+            },
+        });
+        rel_exe_7801.step.dependOn(&embed_7801.step);
+        try setupExe(rel_exe_7801, "l7801.c", &embed_7801_output);
+        release_step.dependOn(&target_output_7801.step);
     }
 
     ///////////////////////////////////////////////////////////////////////////
