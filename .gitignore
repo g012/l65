@@ -2,10 +2,15 @@
 /tmp
 /zig-*
 /.zig-*
+/.agents
+/.codex
 *.bin
 *.cdl
+*.gb
+*.gbc
 *.nes
 *.nes.deb
 *.sym
+*.dbg
 *.mlb
 *.nl

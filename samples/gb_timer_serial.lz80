@@ -1,0 +1,43 @@
+require 'gb'
+
+mappers.ROM{
+    title = "GB TIMER SERIAL",
+    cgb_only = true,
+}
+
+@@main
+    di
+    sp := stack_address
+
+    divider_reset()
+    timer_start(TACF_4096_HZ, 0xfc)
+
+    a := 0x55
+    serial_transfer(true, true)
+    serial_wait()
+
+    timer_stop()
+@loop
+    halt
+    jr loop
+
+-- External-clock example. A real program should add a timeout around the
+-- wait in case no peer supplies a clock.
+@external_transfer
+    a := 0xff
+    serial_transfer(false)
+    serial_wait()
+    ret
+
+@resume_timer
+    timer_resume()
+    ret
+
+@default_serial
+    a := 0xaa
+    serial_send()
+    serial_cancel()
+    ret
+
+writebin(filename .. '.gb')
+print(stats)

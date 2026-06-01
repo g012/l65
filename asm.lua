@@ -7,6 +7,8 @@ local relations={} M.relations=relations
 local stats={} M.stats=stats setmetatable(stats, stats)
 
 local before_link={} M.before_link=before_link
+M.bin_filler = 0 -- brk opcode on 6502
+M.bin_finalizer = function() end
 
 M.strip = true  -- set to false to disable dead stripping of relocatable sections
 M.strip_empty = false -- set to true to strip empty sections: their label will then not resolve
@@ -317,7 +319,7 @@ end
 
 M.genbin = function(filler)
     if #locations == 0 then return end
-    if not filler then filler = 0 end -- brk opcode
+    if filler == nil then filler = M.bin_filler end
     M.resolve()
     local bin = {}
     local ins,mov = table.insert,table.move
@@ -359,8 +361,11 @@ end
 M.writebin = function(filename, bin)
     if not filename then filename = 'main.bin' end
     if not bin then bin = M.genbin() end
+    M.bin_finalizer(bin)
     local f = assert(io.open(filename, "wb"), "failed to open " .. filename .. " for writing")
-    f:write(string.char(table.unpack(bin)))
+    for i = 1, #bin, 0x4000 do
+        f:write(string.char(table.unpack(bin, i, math.min(i + 0x3fff, #bin))))
+    end
     f:close()
 end
 

@@ -1,7 +1,10 @@
 # l65
 
 l65 is a 6502 assembler, operating from within Lua and written in Lua. This means assembler mnemonics become regular Lua statements anywhere in the middle of Lua code.
+
 l7801 is a µPD7801 assembler, using l65 framework, created and maintained by [@MooZ] (https://github.com/BlockoS).
+
+lz80 is a GameBoy SM83 assembler, using l65 framework.
 
 Table of Contents
 =================
@@ -67,6 +70,7 @@ Table of Contents
            * [load, loadfile, dofile ; installhooks(), uninstallhooks()](#load-loadfile-dofile--installhooks-uninstallhooks)
            * [image(filename)](#imagefilename)
      * [Platform Modules](#platform-modules)
+  * [LZ80](#lz80)
   * [Building](#building)
      * [Windows](#windows)
      * [Linux](#linux)
@@ -109,6 +113,21 @@ Have a look at these files in the `samples` folder to get started with l65:
  * `vcs_mcart.l65`: imports all TIATracker .ttt files in the folder supplied as arg, or current directory, and builds a music cart.
 
  * `nes_hello.l65`: a NES 'Hello World' using BG tiles, and automatic positioned font within a 4kB CHR rom page.
+
+ * `gb_hello.lz80`: a Game Boy “Hello World” using pre-encoded 2bpp font tiles and the `charset` helper.
+ * `gb_bank1.lz80`: switches related text sections at the same address between two MBC1 ROM banks.
+ * `gb_celeste.lz80`: a native lz80 conversion of [joshop's Celeste Classic port to Game Boy](https://joshop.itch.io/celeste-game-boy), with PB16-compressed graphics and a sample-local map asset.
+ * `gb_hugetracker.lz80`: a Game Boy ROM that imports and plays the upstream hUGETracker sample song [“Fish 'n Chips” by Jester](https://github.com/SuperDisk/hUGETracker/tree/hUGETracker/sample-songs) (converted by SuperDisk) through the full four-channel hUGEDriver port.
+ * `gb_operator_syntax.lz80`: a self-validating Game Boy opcode corpus covering every valid base and CB-prefixed encoding, plus all available operator-syntax equivalents.
+ * `gb_pb16.lz80`: build-time PB8/PB16 compression and callable Game Boy PB16 decompression.
+ * `gb_cgb_speed.lz80`: a CGB-only ROM that switches the CPU to double speed.
+ * `gb_helpers.lz80`: reset initialization, joypad input, buffered OAM DMA, debugger symbols, and debugfile actions.
+ * `gb_infrared.lz80`: CGB infrared receiver polling, emitter control, and low-power shutdown.
+ * `gb_mbc1.lz80`: a Game Boy ROM using the MBC1 mapper helper and a switchable ROM bank.
+ * `gb_mbc3_rtc.lz80`: an MBC3 RTC cartridge that reads a coherent clock snapshot.
+ * `gb_mbc5.lz80`: a Game Boy ROM using MBC5 9-bit ROM bank switching and RAM bank switching.
+ * `gb_timer_serial.lz80`: divider, programmable timer, and serial transfer helpers.
+ * `gb_twister.lz80`: a Game Boy raster twister that selects a separately projected, shaded cuboid slice during every scanline's HBlank.
 
 There's also `vcspal.act`, a palette file for authoring software for VCS. Use this palette or a similar one to create 8b PNG for `l65.image` and helper loaders depending on it. You can generate such a palette, or a GPL one for GIMP using [vcsconv](https://github.com/g012/vcsconv) `authpalette` command.
 
@@ -318,6 +337,8 @@ Check if `v` is within long range, call `error` if it is not, or convert negativ
 
 `pcall_za`: ...unless this field is set to system's `pcall`. Defaults to module's `pcall`. This field is used only by the `za*` (`zab`, `zax`, `zay`) virtual addressing modes, to discriminate between zeropage and absolute addressing.
 
+`bin_filler`: byte used by `genbin()` to fill unwritten output space. Defaults to 0; targets may choose a different value.
+
 `zeropage`: a function with one number parameter, returning its zeropage byte value if it is within zero/direct page addressing range, nothing otherwise. Set by default to page [0x0000, 0x00ff].
 
 `symbols`: list of symbols, resolved or not. Values can be anything before the resolve phase, but must be numbers after (except for the metatable fields). Set as the metatable of the 6502 module, which itself should be set as the metatable of the current `_ENV` environment.
@@ -463,7 +484,8 @@ It calls `link` if needed.
 
 #### genbin([filler])
 
-Generate the binary as a table, using `filler` byte to fill gaps. `filler` defaults to 0 (`brk` opcode). It calls `resolve` first if needed.
+Generate the binary as a table, using `filler` byte to fill gaps. `filler` defaults to `bin_filler`, which is initially 0 (`brk` opcode on 6502).
+It calls `resolve` first if needed.
 
 Return a table, where each entry is a byte.
 
@@ -478,6 +500,8 @@ Write one or more symbol files into `filename` (prefix in case of multiple outpu
 `format` defaults to 'dasm'.
 All platforms: 'dasm', 'lua'.
 NES: 'mesen', 'fceux'.
+Game Boy: 'rgbds', with aliases 'bgb', 'mesen', 'sameboy', 'mgba', and
+'emulicious' for the same standard `.sym` output.
 
 ### Parser Functions
 
@@ -603,15 +627,157 @@ Return `nil` and an error message on failure, or a table with the following fiel
  * `height`: image height, in pixels
  * [1..width\*height]: the pixels, as palette indices (all bytes)
 
+### PB8 and PB16 compression
+
+The embedded `pb` module ports Damian Yerrick's PB8 and PB16 encoders to Lua,
+so assets can be compressed without an external Python step. `pb.pb8(data)`
+and `pb.pb16(data)` accept a raw string or byte table; `pb.pb8_file(filename)`
+and `pb.pb16_file(filename)` read an asset directly. All return a byte table
+suitable for `byte(...)`. The last packet is padded to eight decoded bytes.
+
+Game Boy programs can emit callable PB8 and PB16 routines in the current ROM
+location with `pb8_unpacker()` and `pb16_unpacker()`. Their
+`pb8_unpack_packet()` / `pb8_unpack_block(packet)` and
+`pb16_unpack_packet()` / `pb16_unpack_block(packet)` bodies are also available
+inline. Both packet forms expand eight bytes from DE to HL. The PB8 block form
+expands `8 * C` bytes, while PB16 expands `16 * B` bytes. PB16's temporary byte
+defaults to HRAM and can be relocated by setting `pb16_byte0` before emitting
+the routines.
+
 ### Platform Modules
 
 `vcs.l65` is a helper file for developing on Atari 2600 VCS. It's embedded into the l65 executable. It sets the 6502.lua module as metatable of the current `_ENV`, defines all TIA and PIA symbols, some helper constants and functions, as well as mapper helpers and automatic cross bank call functions. See the samples directory for usage examples, and browse vcs.l65 directly for the list of self-explanatory helpers.
 
 `nes.l65` is for NES/Famicom. It provides templates for some mappers, including 0-NROM, 1-MMC1, 2-UxROM, 3-CNROM, 4-MMC3, 5-MMC5, and 66-GxROM.
 
+## LZ80
+
+`gb.lz80` provides cartridge declarations for ROM-only, MBC1, MBC2, MBC3,
+and MBC5 through `mappers.ROM`, `mappers.MBC1`, `mappers.MBC2`,
+`mappers.MBC3`, and `mappers.MBC5`.
+For every 32 KiB cartridge (`rom_banks = 2`), `rom`, `rom0`, `rom1`, and
+`romx` alias the same contiguous `$0000-$7FFF` location, so relocatable
+sections do not need to choose a ROM bank. Larger cartridges retain separate
+fixed and switchable locations.
+Declare an RTC-equipped MBC3 cartridge with `mappers.MBC3{ rtc = true }`;
+this selects the timer+battery cartridge type.
+
+`gb.lz80` exposes the constants from
+[gbdev hardware.inc v5.3.0](https://raw.githubusercontent.com/gbdev/hardware.inc/v5.3.0/hardware.inc)
+directly, without RGBDS's register-name `r` prefix. This includes register
+aliases, bit positions and masks such as `LCDC_ON`, `LCDC_BG_ON`, `STAT_BUSY`,
+`AUDENA_ON`, screen/tile/OAM dimensions, interrupt vectors, CGB controls, and
+common MBC values. `PAD_*` uses hardware.inc's conventional layout;
+its bit positions and masks match the values returned by `read_joy`.
+
+As with l65, lz80 immediate operands always use the `#` prefix: for example,
+`ld sp,#0xfffe` and `cp #144`. For `ld` and `ldh`, bare operands denote memory
+addresses (`ld a,variable`, `ld variable,a`, `ldh a,SCX`), while register-indirect
+operands use parentheses (`ld a,(hl)`, `ldh a,(c)`). Direct branch and call
+destinations remain unprefixed; indirect jumps use parentheses (`jp (hl)`).
+Parenthesized absolute addresses such as `ld a,(variable)` are rejected.
+
+LZ80 also provides an optional operator syntax. Unbracketed values are
+immediates (except register names), square brackets dereference memory, and
+`[hl+]` / `[hl-]` select the Game Boy incrementing/decrementing loads:
+
+| Operator syntax | Mnemonic syntax |
+|---|---|
+| `a := 3` | `ld a,#3` |
+| `hl := foo` | `ld hl,#foo` |
+| `a := [foo]` | `ld a,foo` |
+| `a := [hl]` | `ld a,(hl)` |
+| `[hl] := a` | `ld (hl),a` |
+| `hl := sp+4` | `ld hl,sp+#4` |
+| `sp := hl` | `ld sp,hl` |
+| `a += b` | `add a,b` |
+| `a -= 4` | `sub #4` |
+| `a &= 0x3f` | `ana #0x3f` |
+| `a \|= 0x80` | `ora #0x80` |
+| `a ^= a` | `xor a` |
+| `hl++`, `c--`, `[hl]++` | `inc hl`, `dec c`, `inc (hl)` |
+| `[hl+] := a`, `a := [hl-]` | `ldi (hl),a`, `ldd a,(hl)` |
+| `jr.nz label`, `jp.z label` | `jr nz,label`, `jp z,label` |
+
+Lua's `#` length operator can be used in immediate expressions. Mnemonic
+syntax therefore uses two hashes (`ld c,##hello` or `ld hl,sp+##hello`): the
+first marks the operand as immediate and the second is Lua's length operator.
+Operator values are already immediate, so they use one (`c := #hello` or
+`hl := sp+#hello`).
+
+Operator immediates are normally delayed until symbol resolution. Prefix the
+right-hand expression with `!` to evaluate it while the macro is being emitted,
+for example `a := !bytes[i]`, `hl := !address()`, or
+`a := !(value or 0x91)`. This is the operator equivalent of disabling operand
+encapsulation in mnemonic syntax.
+
+A `[` beginning a new line always starts a new operator memory statement; it
+does not index the Lua expression on the preceding line. Thus consecutive
+assignments such as `a := value` followed by `[LCDC] := a` do not require a
+semicolon.
+
+The operator syntax lowers directly to the corresponding instruction and does
+not optimize instruction sequences. In particular, `a := 0` emits `ld a,#0`;
+only `a ^= a` emits `xor a`. Instructions without an unambiguous operator form,
+such as `adc`, rotations, bit operations, `call`, `ret`, and `rst`, retain their
+mnemonic syntax. Bit operations also accept bracketed memory in operator-style
+source, for example `set 3,[hl]`.
+
+Game Boy operator assignments through A select the shorter `ldh` encoding when
+the resolved memory address is in `$ff00`-`$ffff`. This choice is delayed so
+constants declared later in the source also work: `[LCDC] := a` and
+`a := [LCDC]` emit `ldh LCDC,a` and `ldh a,LCDC`. Mnemonic syntax remains
+explicit: `ld` always emits the absolute form, while `ldh` always emits the
+high-page form.
+
+### Game Boy debugfiles
+
+`gb.lz80` can generate version-1 Game Boy
+[debugfiles](https://github.com/aaaaaa123456789/gb-debugfiles/blob/master/debugfile.md).
+Annotations emit no ROM bytes, and actions placed inside code are resolved to
+their final bank and address after linking:
+
+```lua
+dbg_group("checks", "Runtime checks")
+
+@@main
+    dbg_log("Entering main")
+
+@@loop
+    runtime_assert("@sp >= $ff80", "Stack escaped HRAM")
+    -- ...
+    jr loop
+
+end_dbg_group()
+
+writebin(filename .. ".gb")
+writesym(filename .. ".sym", "rgbds")
+writedebug(filename .. ".dbg", { symfile = filename .. ".sym" })
+```
+
+`dbg_action(commands, condition, flags)` adds an action at the current code
+position; flags default to `x`. `dbg_watch(address, flags, commands, condition)`
+accepts explicit symbols, numeric addresses, ranges, or address lists.
+`dbg_break`, `dbg_log`, `dbg_alert`, `runtime_assert`, `unreachable`, `dbg_var`,
+`dbg_group`, and `end_dbg_group` provide common operations. `dbg_line` accepts
+any single raw line from the specification for directives or commands that do
+not need a dedicated helper. `getdebugfile` returns the generated text, while
+`writedebug` writes it to disk; both accept either a symfile path or an options
+table containing `symfile` and an optional `version`.
+
 ## Building
 
-Use CMake to build a standalone executable. Following are basic instructions if you've never used CMake.
+With Zig installed, build all three assemblers with:
+
+```sh
+zig build
+```
+
+The executables are installed in `zig-out/bin/`. Their Lua assembler and
+platform modules are embedded, so rerun `zig build` after editing those files.
+
+Alternatively, use CMake to build a standalone executable. Following are basic
+instructions if you've never used CMake.
 
 ### Windows
 
@@ -654,6 +820,8 @@ make
 
  * copy `vim/*` into `~/vimfiles/`
  * add `au BufRead,BufNewFile *.l65 set syntax=l65 filetype=l65` to `~/.vimrc` (or `~/_vimrc` on Windows)
+ * add `au BufRead,BufNewFile *.l7801 set syntax=l7801 filetype=l7801` for l7801 files
+ * add `au BufRead,BufNewFile *.lz80 set syntax=lz80 filetype=lz80` for lz80 files
 
 Note that the syntax file includes some highlighting for features only activated via pragmas: `dna`, `xsr`, `rtx` and `far`. If you do not want to use these keywords, remove them from the syntax file.
 

@@ -1,0 +1,106 @@
+require 'gb'
+local pb = require 'pb'
+
+local example = "ABAHBHCHCECEFEFE"
+local packed8 = pb.pb8(example)
+local packed16 = pb.pb16(example)
+
+local function bytes_equal(actual, expected)
+    if #actual ~= #expected then return false end
+    for i = 1, #actual do
+        if actual[i] ~= expected[i] then return false end
+    end
+    return true
+end
+
+assert(bytes_equal(packed8, {
+    0x00, 0x41, 0x42, 0x41, 0x48, 0x42, 0x48, 0x43, 0x48,
+    0x00, 0x43, 0x45, 0x43, 0x45, 0x46, 0x45, 0x46, 0x45,
+}))
+assert(bytes_equal(packed16, {
+    0x25, 0x41, 0x42, 0x48, 0x42, 0x43,
+    0xb7, 0x45, 0x46,
+}))
+assert(bytes_equal(pb.pb8{ 0, 0, 0, 0, 0, 0, 0, 0 }, { 0xff }))
+assert(bytes_equal(pb.pb8("AAAAAAAA"), { 0x7f, 0x41 }))
+assert(bytes_equal(pb.pb16{ 0, 0, 0, 0, 0, 0, 0, 0 }, { 0xff }))
+assert(bytes_equal(pb.pb16("ABABABAB"), { 0x3f, 0x41, 0x42 }))
+assert(bytes_equal(pb.pb16("A"), { 0x7f, 0x41 }))
+assert(bytes_equal(pb.pb16("AB"), { 0x3f, 0x41, 0x42 }))
+assert(bytes_equal(pb.pb16("ABC"), { 0x1f, 0x41, 0x42, 0x43 }))
+
+-- Host-side round trips exercise empty, partial, and multiple packets for
+-- both codecs. The result includes the format's final packet padding.
+local function decode(data, distance, size)
+    local output = {}
+    local previous = {}
+    for i = 1, distance do previous[i] = 0 end
+
+    local index = 1
+    for packet = 1, (size + 7) // 8 do
+        local control = data[index]
+        index = index + 1
+        for bit = 0, 7 do
+            local stream = (#output % distance) + 1
+            local value
+            if control & (0x80 >> bit) ~= 0 then
+                value = previous[stream]
+            else
+                value = data[index]
+                index = index + 1
+                previous[stream] = value
+            end
+            output[#output + 1] = value
+        end
+    end
+    assert(index == #data + 1)
+    return output
+end
+
+for size = 0, 33 do
+    local input = {}
+    for i = 1, size do
+        input[i] = (i * 37 + size * 11) & 0xff
+        if i > 2 and i % 3 == 0 then input[i] = input[i - 2] end
+    end
+
+    for distance, encoder in ipairs{ pb.pb8, pb.pb16 } do
+        local encoded = encoder(input)
+        local decoded = decode(encoded, distance, size)
+        assert(#decoded == (size + 7) // 8 * 8)
+        for i = 1, size do assert(decoded[i] == input[i]) end
+    end
+end
+
+mappers.ROM{ title = "PB CODECS", entry = "main" }
+wram("pb8_output", 16)
+wram("pb16_output", 16)
+
+section{ "code", org = 0x0150 }
+@main
+    de := packed8_data
+    hl := pb8_output
+    c := 2
+    call pb8_unpack_block
+
+    de := packed_data
+    hl := pb16_output
+    b := 1
+    call pb16_unpack_block
+
+@loop
+    halt
+    jr loop
+
+section("packed8_data")
+    byte(packed8)
+
+section("packed_data")
+    byte(packed16)
+
+pb8_unpacker()
+pb16_unpacker()
+
+writebin(filename .. '.gb')
+writesym(filename .. '.sym', 'rgbds')
+print(stats)

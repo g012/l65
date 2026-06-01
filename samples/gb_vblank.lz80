@@ -1,0 +1,26 @@
+require'gb'
+
+mappers.ROM{ title = "GB VBLANK" }
+stack_size = 0x100
+stack_address = 0xcfff
+
+@@main
+    sp := stack_address
+    ld a,#1
+    ldh IE,a
+    ei
+@_loop
+    call wait_vblank
+    jr _loop
+
+@@wait_vblank
+    wait_vblank()
+
+vblank_isr(function()
+    ldh a,SCX
+    inc a
+    ldh SCX,a
+end)
+
+writebin(filename .. '.gb')
+print(stats)

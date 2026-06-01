@@ -1,0 +1,26 @@
+require 'gb'
+
+mappers.MBC5{
+    title = "LZ80 MBC5",
+    rom_banks = 512,
+    ram_kib = 32,
+    rumble = true,
+}
+
+@@main
+    di
+    mbc5_ram_enable()
+    mbc5_select_ram_bank(2)
+    rumble(true)
+    rumble(false)
+    mbc5_select_rom_bank(0x101)
+    jp bank101_start
+
+romx_section("bank101", 0x101, 0x4000)
+@bank101_start
+    xor a
+    ldh LCDC,a
+@loop
+    jr loop
+
+writebin(filename .. '.gb')

@@ -45,6 +45,7 @@ local sec_text1 = section("text1") byte(text1)
 location(prgrom2)
 local text2 = "bank two"
 local sec_text2 = section("text2") byte(text2)
+
 -- force sec_text2 to have same offset in prgrom2 than sec_text1 in prgrom1,
 -- so we can use either address to reference the custom bank data
 relate(sec_text1, sec_text2)

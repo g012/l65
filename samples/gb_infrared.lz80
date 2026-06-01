@@ -1,0 +1,52 @@
+require 'gb'
+
+mappers.ROM{
+    title = "GB INFRARED",
+    cgb_only = true,
+}
+
+hram("hInfraredState")
+
+@@main
+    hardware_detect()
+    cp #HARDWARE_CGB
+    jr.z cgb
+
+@unsupported
+    halt
+    jr unsupported
+
+@cgb
+    di
+    sp := stack_address
+    infrared_enable()
+
+@poll
+    infrared_poll()
+    jr.nz idle
+    a := 1
+    jr store
+
+@idle
+    xor a
+
+@store
+    [hInfraredState] := a
+    jr poll
+
+-- Callable emitter controls. Real protocols must supply their own pulse
+-- timing; leaving the LED continuously on is not a reliable signal.
+@emitter_on
+    infrared_emit()
+    ret
+
+@emitter_off
+    infrared_emit(false)
+    ret
+
+@infrared_power_down
+    infrared_disable()
+    ret
+
+writebin(filename .. '.gb')
+print(stats)

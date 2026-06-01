@@ -1,0 +1,8445 @@
+require'gb'
+local pb = require'pb'
+
+-- Native lz80 conversion of joshop's Celeste Classic port to Game Boy:
+-- https://joshop.itch.io/celeste-game-boy
+mappers.ROM{ title = "CELESTE", entry = "entry" }
+
+local function ram_alias(name, address)
+    assert(cpu.symbols[name] == nil, "duplicate RAM symbol: " .. name)
+    cpu.symbols[name] = address
+    rawset(_ENV, name, address)
+end
+
+-- Original RGBDS WRAM layout, including its 256-byte alignments.
+wram("gamestate", 1)
+wram("titleparticles", 4 * 12)
+wram("scrollval", 2)
+wram("rng", 2)
+wram("buttons", 1)
+wram("flashmode", 1)
+wram("playerx", 2)
+wram("playery", 2)
+wram("playervx", 2)
+wram("playervy", 2)
+wram("jbuffer", 1)
+wram("grace", 1)
+wram("oldjump", 1)
+wram("olddash", 1)
+wram("havedash", 1)
+wram("dashtime", 1)
+wram("frametimer", 1)
+wram("cloudtimer", 1)
+wram("dashacc", 1)
+wram("wallslide", 1)
+wram("maxdash", 1)
+wram("playerstate", 1)
+wram("playersprite", 1)
+wram("playerwalk", 1)
+wram("playerflip", 1)
+wram("temp", 1)
+wram("temp2", 2)
+wram("temp3", 2)
+wram("temp4", 3)
+wram("tempx", 2)
+wram("tempy", 2)
+wram("tempflags", 1)
+wram("onground", 1)
+wram("oldonground", 1)
+wram("numpuffs", 1)
+wram("numthings", 1)
+wram("screenshake", 1)
+wram("curroom", 1)
+wram("freeze", 1)
+wram("slowmode", 1)
+wram("slowhold", 1)
+wram("puffs", 4 * 12)
+wram("things", 8 * 16)
+wram("hairs", 4 * 5)
+wram("spawnanimy", 2)
+wram("spawnanimvy", 2)
+wram("spawnanimst", 1)
+wram("spawnanimt", 1)
+wram("skiphackx", 1)
+wram("skiphacky", 1)
+wram("deadtime", 1)
+wram("deaths", 2)
+wram("spritecount", 1)
+wram("noblocks", 1)
+wram("berries", 30)
+wram("keyed", 1)
+wram("bwings", 1)
+wram("altboxup", 1)
+wram("altboxsaved", 26)
+wram("chestanim", 1)
+wram("defaultbp", 1)
+wram("needrestore", 1)
+wram("brkblkstate", 1)
+wram("timecount", 4)
+wram("sstringbuf", 12)
+wram("flagmode", 1)
+wram("sidebarst", 1)
+wram("musstate", 2, 256)
+ram_alias("pl1musp", musstate)
+wram("pl1lleft", 1)
+wram("celeste_padding_1", 1)
+wram("pl2musp", 2)
+wram("pl2lleft", 1)
+wram("celeste_padding_2", 1)
+wram("trimusp", 2)
+wram("trilleft", 1)
+wram("celeste_padding_3", 1)
+wram("nsxmusp", 2)
+wram("nsxlleft", 1)
+wram("celeste_padding_4", 1)
+wram("nsmusp", 2)
+wram("nslleft", 1)
+wram("celeste_padding_5", 1)
+wram("musstateseq", 2)
+ram_alias("pl1seq", musstateseq)
+wram("pl2seq", 2)
+wram("triseq", 2)
+wram("nsxseq", 2)
+wram("nsseq", 2)
+wram("sfxpriority", 1)
+wram("oambuffer", 256, 256)
+wram("oamtrashheap", 256)
+assert((berries >> 8) == ((berries + 29) >> 8))
+assert((musstate & 0xff) == 0)
+
+section{ "rst_reserve_00", org = 0x0000 }
+    for i = 1, INT_HANDLER_VBLANK do dc.b 0xff end
+
+section{ "vblank_vector", org = INT_HANDLER_VBLANK }
+    reti
+
+section{ "rst_reserve_41", org = INT_HANDLER_VBLANK + 1 }
+    for i = INT_HANDLER_VBLANK + 1, 0xff do dc.b 0xff end
+
+local function read_asset(name)
+    local paths = { name, "samples/" .. name }
+    for _, path in ipairs(paths) do
+        local file = io.open(path, "rb")
+        if file then
+            local data = file:read("*all")
+            file:close()
+            return data
+        end
+    end
+    error("unable to open Celeste asset: " .. name)
+end
+
+local packed_chrdata = pb.pb16(read_asset("gb_celeste_gfx.2bpp"))
+
+local function waitvram()
+    hl := STAT
+    local loop = label()
+    bit 1,(hl)
+    jr.nz !loop
+end
+
+@@entry
+    di
+    a := 0
+    [NR52] := a
+
+    call wblo
+
+    hl := 0x8000 -- clear out all the bytes
+    bc := 0x2000
+@clearbytesloop2
+    a := 0
+    [hl+] := a
+    bc--
+    a := b
+    a |= c
+    jr.nz clearbytesloop2
+
+    hl := 0xc000 -- clear out all the bytes
+    bc := 0x2000
+@clearbytesloop
+    a := 0
+    [hl+] := a
+    bc--
+    a := b
+    a |= c
+    jr.nz clearbytesloop
+
+    --call wblo
+
+    de := chrdata_pb16
+    hl := 0x8000
+    b := 0 -- 256 PB16 blocks produce 4096 decoded bytes
+    call pb16_unpack_block
+
+    de := spritedma
+    bc := spritedmaend - spritedma
+    hl := 0xff80
+@copyspritedma
+    a := [de]
+    [hl+] := a
+    de++
+    bc--
+    a := b
+    a |= c
+    jr.nz copyspritedma
+    call loadborder
+    a := 31
+    call loadroom
+
+
+    a := 0
+    [curroom] := a
+
+    hl := 0x9928
+    de := text1
+    bc := 2
+    call copybytes
+
+    hl := 0x9966
+    de := text2
+    bc := 7
+    call copybytes
+
+    hl := 0x9986
+    de := text3
+    bc := 5
+    call copybytes
+
+    hl := 0x99a6
+    de := text4
+    bc := 6
+    call copybytes
+
+    call inittitleparticles
+    call apuenable
+
+    a := 0
+    [SCX] := a
+    [SCY] := a
+
+    a := LCDC_ON | LCDC_BG_ON | LCDC_OBJ_ON | LCDC_BLOCK01
+    [LCDC] := a
+    a := 0b00011011
+    [BGP] := a
+    [OBP0] := a
+
+    a := 2
+    call playsong
+
+    xor a
+    [IF] := a
+    a := IEF_VBLANK
+    [IE] := a
+    ei
+@titleloop
+    call wblank
+    call 0xff80
+    a := LCDC_ON | LCDC_BG_ON | LCDC_OBJ_ON | LCDC_BLOCK01
+    [LCDC] := a
+    call genrandom
+    call readctrlr
+    a &= PAD_B | PAD_A
+    cp #PAD_B | PAD_A
+    jr.nz flashstartskip
+    a := [flashmode]
+    cp #0
+    jr.nz flashstartskip
+    a := 1
+    [flashmode] := a
+    a := 1
+    call playsong
+    hl := sfx_gamestart
+    call playsfx_pulse
+@flashstartskip
+    a := [flashmode]
+    cp #0
+    jr.z flashskip
+    a++
+    [flashmode] := a
+    cp #160
+    jr.z flash3
+    a &= 16
+    cp #0
+    jr.nz flash1
+    a := 0b00000011
+    [BGP] := a
+    jr flash2
+@flash1
+    a := 0b00011011
+    [BGP] := a
+@flash2
+    jr flashskip
+@flash3
+    a := 1
+    [gamestate] := a
+    a := 0
+    [flashmode] := a
+    [flagmode] := a
+    a := 1
+    [maxdash] := a
+    call wblo
+    a := [curroom]
+    call loadroom
+    call initthings
+    call savealtbox
+    call inithair
+    a := LCDC_ON | LCDC_BG_ON | LCDC_OBJ_ON | LCDC_BLOCK01
+    [LCDC] := a
+    a := 1
+    [playerstate] := a
+    a := 0
+    call playsong
+    a := 0b00011011
+    [defaultbp] := a
+    jr endloop
+@flashskip
+    call gensprites
+    call adjustsprites
+    call updatetitleparticles
+    call shakescroll
+    call musstep
+    call musseq
+    jp titleloop
+@endloop
+
+    a := [curroom]
+    cp #30
+    jr.nz nosidebar
+    call updatesidebar
+@nosidebar
+    a := [flagmode]
+    cp #0
+    jr.nz notimecount
+    a := [timecount]
+    a++
+    cp #60
+    jr.nz timecountno1
+    a := [timecount+1]
+    a++
+    cp #60
+    jr.nz timecountno2
+    a := [timecount+2]
+    a++
+    cp #60
+    jr.nz timecountno3
+    a := [timecount+3]
+    a++
+    [timecount+3] := a
+    a := 0
+@timecountno3
+    [timecount+2] := a
+    a := 0
+@timecountno2
+    [timecount+1] := a
+    a := 0
+@timecountno1
+    [timecount] := a
+    jr noflag
+@notimecount
+    cp #2
+    jr.z noflag
+    a++
+    [flagmode] := a
+    hl := sfx_flag
+    call playsfx_pulse
+    call wblank
+    call drawwinbox
+@noflag
+    a := [cloudtimer]
+    a++
+    [cloudtimer] := a
+    call musstep
+    call musseq
+    a := [spawnanimst]
+    cp #0
+    jr.nz stillnoblocks
+    a := [buttons]
+    a &= PAD_LEFT | PAD_RIGHT | PAD_A | PAD_B
+    cp #0
+    jr.z stillnoblocks
+    a := 0
+    [noblocks] := a
+@stillnoblocks
+    a := [buttons]
+    a &= PAD_SELECT
+    cp #PAD_SELECT
+    jr.nz noselect
+    a := [slowhold]
+    cp #0
+    jr.nz yesselect
+    a := 1
+    [slowhold] := a
+    call selectpress
+    jr yesselect
+@noselect
+    a := 0
+    [slowhold] := a
+@yesselect
+    a := [slowmode]
+    cp #0
+    jr.z noslow
+    e := 33
+@slowloop
+    call wblank
+    e--
+    a := e
+    cp #0
+    jr.nz slowloop
+@noslow
+    a := [keyed]
+    cp #0
+    jr.z nokeyed
+    cp #40
+    jr.z nokeyed
+    a++
+    [keyed] := a
+@nokeyed
+    call wblank
+    call 0xff80 -- sprite dma
+    call shakescroll
+    a := [needrestore]
+    cp #0
+    jr.z dontneedrestore
+    call restorealtbox
+@dontneedrestore
+    a := [havedash]
+    cp #0
+    jr.z dashhair1
+    a := [havedash]
+    cp #2
+    jr.nz dashhairno2
+    a := [frametimer]
+    a &= 8
+    cp #0
+    jr.z dashhairno2
+    a := 0b00001011
+    jr dashhair2
+@dashhairno2
+    a := 0b00011011
+    jr dashhair2
+@dashhair1
+    a := 0b00101011
+@dashhair2
+    [OBP1] := a
+    call genrandom
+    call readctrlr
+    a := [frametimer]
+    a &= 1
+    cp #0
+    jr.nz nohair
+    call updatehair
+@nohair
+    call gensprites
+    call adjustsprites
+
+    a := [spawnanimst]
+    cp #0
+    jr.z nospawnanim
+    a := [frametimer]
+    a++
+    [frametimer] := a
+
+    a &= 1
+    cp #0
+    jr.z skipspawnanim
+    call spawnanim
+@skipspawnanim
+    call updatetitleparticles
+    call updatepuffs
+    jp endloop
+@nospawnanim
+    a := [freeze]
+    cp #0
+    jr.z notfrozen
+    a--
+    [freeze] := a
+    jr frozen
+@notfrozen
+    call updatetitleparticles
+    a := [deadtime]
+    cp #0
+    jr.nz youredead
+    a := [frametimer]
+    a++
+    [frametimer] := a
+    a &= 0
+    cp #0
+    jr.nz noplayerlogic60
+@noplayerlogic60
+    a := [frametimer]
+    a &= 1
+    cp #0
+    jr.nz noplayerlogic
+    call playerlogic
+    call updatepuffs
+    jr yesplayerlogic
+@noplayerlogic
+@yesplayerlogic
+    call playerlogic60
+@frozen
+    jr yourenotdead
+@youredead
+    a--
+    [deadtime] := a
+    a := [deadtime]
+    cp #0
+    jr.nz yourenotdead
+    a := [deaths]
+    a++
+    [deaths] := a
+    cp #0
+    jr.nz deathsnocarry
+    a := [deaths+1]
+    a++
+    [deaths+1] := a
+@deathsnocarry
+    call wblo
+    a := [curroom] -- reload current room
+    call loadroom
+    call initthings
+    call savealtbox
+    call inithair
+    a := LCDC_ON | LCDC_BG_ON | LCDC_OBJ_ON | LCDC_BLOCK01
+    [LCDC] := a
+@yourenotdead
+
+    a := [chestanim]
+    cp #0
+    jr.z nochestanim
+    a--
+    [chestanim] := a
+    cp #0
+    jr.nz nochestanimend
+    a := 0b00011110
+    [defaultbp] := a
+@nochestanimend
+    srl a
+    srl a
+    srl a
+    a &= 3
+    a |= 0b00011000
+    waitvram()
+    [BGP] := a
+    jp endloop
+@nochestanim
+    a := [defaultbp]
+    waitvram()
+    [BGP] := a
+    jp endloop
+
+    -- b0 for numbers
+    -- e1 for letters
+
+
+@@selectpress
+    ret
+
+@@updatesidebar
+    a := [playerx+1]
+    a -= 64
+    cp #0x80
+    jr.c updatesidebarnoneg
+    cpl
+    a++
+@updatesidebarnoneg
+    cp #16
+    jr.nc updatesidebarno1
+    a := 3
+    jr updatesidebarend1
+@updatesidebarno1
+    cp #32
+    jr.nc updatesidebarno2
+    a := 2
+    jr updatesidebarend1
+@updatesidebarno2
+    cp #48
+    jr.nc updatesidebarno3
+    a := 1
+    jr updatesidebarend1
+@updatesidebarno3
+    a := 0
+@updatesidebarend1
+    c := a
+    a := [sidebarst]
+    b := a
+    a := c
+    cp b
+    [sidebarst] := a
+    jr.z updatesidebardone
+    jr.c updatesidebarrestore
+    call wblank
+    a := [sidebarst]
+    a--
+    c := a
+    a := 0x28
+    call clearslice
+    a := [sidebarst]
+    c := a
+    a := 16
+    a -= c
+    c := a
+    a := 0x28
+    call clearslice
+    jr updatesidebardone
+@updatesidebarrestore
+    call wblank
+    a := [sidebarst]
+    c := a
+    a := 30
+    call loadslice
+    a := [sidebarst]
+    c := a
+    a := 15
+    a -= c
+    c := a
+    a := 30
+    call loadslice
+@updatesidebardone
+    ret
+
+
+@@sfxtest
+    a := ((mus0_p1seq) & 0xff)
+    [pl1seq] := a
+    a := ((mus0_p1seq) >> 8)
+    [pl1seq+1] := a
+    a := ((mus0_nsseq) & 0xff)
+    [nsseq] := a
+    a := ((mus0_nsseq) >> 8)
+    [nsseq+1] := a
+    a := ((mus0_triseq) & 0xff)
+    [triseq] := a
+    a := ((mus0_triseq) >> 8)
+    [triseq+1] := a
+    a := 0x80
+    [NR34] := a
+    ret
+
+@@drawnyb
+    cp #10
+    jr.nc drawnybletter
+    a += 0xb0
+    jr drawnybnumber
+@drawnybletter
+    a += 0xd7
+@drawnybnumber
+    [hl] := a
+    hl++
+    ret
+
+-- $75 - $8c
+@@savealtbox
+    hl := 0x98e5
+    bc := 0x0702
+    de := altboxsaved
+    a := 0
+    [needrestore] := a
+@savealtboxloop
+    a := [hl]
+    [de] := a
+    a := 0
+    [hl+] := a
+    de++
+    b--
+    a := b
+    cp #0
+    jr.nz savealtboxloop
+    b := 7
+    push bc
+    bc := 25
+    hl += bc
+    pop bc
+    c--
+    a := c
+    cp #0
+    jr.nz savealtboxloop
+    -- draw altitude meter
+    -- first tile: $b1 + level num (curroom)
+    -- second tile: $99
+    -- third tile: $ed
+    a := 1
+    [altboxup] := a
+    ret
+
+@@restorealtbox
+    hl := 0x98e5
+    bc := 0x0702
+    de := altboxsaved
+    a := 0
+    [needrestore] := a
+@restorealtboxloop
+    a := [de]
+    [hl+] := a
+    de++
+    b--
+    a := b
+    cp #0
+    jr.nz restorealtboxloop
+    b := 7
+    push bc
+    bc := 25
+    hl += bc
+    pop bc
+    c--
+    a := c
+    cp #0
+    jr.nz restorealtboxloop
+    a := 0
+    [altboxup] := a
+    ret
+
+@@drawnumber
+    -- hl: address to draw at
+    -- bc: the number
+    a := b
+    srl a
+    srl a
+    srl a
+    srl a
+    call drawnyb
+    a := b
+    a &= 15
+    call drawnyb
+    a := c
+    srl a
+    srl a
+    srl a
+    srl a
+    call drawnyb
+    a := c
+    a &= 15
+    call drawnyb
+    ret
+
+@@assertfailed
+    jr assertfailed
+
+@@wblank
+    halt
+    ret
+
+@@wblo
+    -- wait blank, LCD off
+@wblowait
+    a := [LY]
+    cp #144
+    jr.nz wblowait
+    a := LCDC_OFF
+    [LCDC] := a
+    ret
+
+@@spawnanim
+    a := [spawnanimst]
+    cp #1
+    jr.z spawnanim1
+    a := [playery+1]
+    h := a
+    a := [playery]
+    l := a
+    a := [spawnanimvy+1]
+    b := a
+    a := [spawnanimvy]
+    c := a
+    hl += bc
+    a := h
+    [playery+1] := a
+    a := l
+    [playery] := a
+    a := [spawnanimst]
+    cp #2
+    jr.z spawnanim2
+    cp #3
+    jr.z spawnanim3
+    jp spawnanim4
+@spawnanim1
+    a++
+    [spawnanimst] := a
+    a := [playery]
+    [spawnanimy] := a
+    a := [playery+1]
+    [spawnanimy+1] := a
+    a := 128
+    [playery+1] := a
+    a := -4
+    a := 0xfc
+    [spawnanimvy+1] := a
+    a := 0
+    [playery] := a
+    [spawnanimvy] := a
+    jr spawnanim
+@spawnanim2
+    a := 3
+    [playersprite] := a
+    a := [spawnanimy+1]
+    a += 16
+    b := a
+    a := [playery+1]
+    cp b
+    jr.nc spawnanim2s
+    a := 3
+    [spawnanimst] := a
+    a := 3
+    [spawnanimt] := a
+@spawnanim2s
+    ret
+@spawnanim3
+    a := [spawnanimvy+1]
+    b := a
+    a := [spawnanimvy]
+    c := a
+    hl := 128
+    hl += bc
+    a := l
+    [spawnanimvy] := a
+    a := h
+    [spawnanimvy+1] := a
+    a &= 0x80
+    cp #0
+    jr.nz spawnanim3n
+    a := [spawnanimt]
+    cp #0
+    jr.z spawnanim3d
+    a--
+    [spawnanimt] := a
+    a := 0
+    [spawnanimvy] := a
+    [spawnanimvy+1] := a
+    jr spawnanim3n
+@spawnanim3d
+    a := [spawnanimy+1]
+    b := a
+    a := [playery+1]
+    cp b
+    jr.c spawnanim3s
+    a := 4
+    [spawnanimst] := a
+    a := 4
+    [spawnanimt] := a
+    a := 5
+    [screenshake] := a
+    a := b
+    [playery+1] := a
+    a := [spawnanimy]
+    [playery] := a
+    a := 0
+    [spawnanimvy] := a
+    [spawnanimvy+1] := a
+    a := 1
+    [needrestore] := a
+@spawnanim3s
+@spawnanim3n
+    ret
+@spawnanim4
+    a := [spawnanimt]
+    a--
+    [spawnanimt] := a
+    cp #0
+    jr.nz spawnanim4s
+    [spawnanimst] := a
+@spawnanim4s
+    ret
+
+
+@@shakescroll
+    a := [screenshake]
+    cp #0
+    jr.z noshake
+    call genrandom
+    b := a
+    srl a
+    srl a
+    srl a
+    srl a
+    srl a
+    a -= 4
+    a -= 16
+    [SCX] := a
+    a := b
+    a &= 0x07
+    a -= 4
+    a -= 8
+    [SCY] := a
+    a := [screenshake]
+    a--
+    [screenshake] := a
+    jr yesshake
+@noshake
+    a := -16
+    [SCX] := a
+    a := -8
+    [SCY] := a
+@yesshake
+    ret
+
+@@inittitleparticles
+    hl := titleparticles
+    b := 12
+@inittitleparticlesloop
+    [hl] := 0
+    push hl
+    call genrandom
+    a &= 0x7f
+    pop hl
+    hl++
+    [hl] := a
+    push hl
+    call genrandom
+    a &= 3
+    a++
+    pop hl
+    hl++
+    [hl] := a
+    hl++
+    a &= 1
+    [hl] := a
+    hl++
+    b--
+    a := b
+    cp #0
+    jr.nz inittitleparticlesloop
+    ret
+
+@@updatetitleparticles
+    hl := titleparticles
+    e := 12
+@updatetitleparticlesloop
+    d := [hl]
+    push hl
+    pop bc
+    hl++
+    hl++
+    a := [hl]
+    a += d
+    [bc] := a
+    a &= 0x80
+    cp #0
+    jr.nz updatetitleparticlesnew
+    hl++
+    hl++
+@updatetitleparticlesfinish
+    e--
+    a := e
+    cp #0
+    jr.nz updatetitleparticlesloop
+    ret
+@updatetitleparticlesnew
+    a := 0
+    push hl
+    [bc] := a
+    call genrandom
+    a &= 0x7f
+    bc++
+    [bc] := a
+    call genrandom
+    a &= 3
+    a++
+    pop hl
+    bc++
+    [bc] := a
+    bc++
+    a &= 1
+    [bc] := a
+    hl++
+    hl++
+    jr updatetitleparticlesfinish
+
+@@readctrlr
+    a := JOYP_GET_CTRL_PAD
+    [JOYP] := a
+    nop
+    nop
+    nop
+    nop
+    a := [JOYP]
+    cpl
+    sla a
+    sla a
+    sla a
+    sla a
+    b := a
+    a := JOYP_GET_BUTTONS
+    [JOYP] := a
+    nop
+    nop
+    nop
+    nop
+    a := [JOYP]
+    cpl
+    a &= 0x0f
+    a |= b
+    [buttons] := a
+    ret
+
+@@checkonground
+    -- de is offset
+    -- for vertical collision check, pass de = 32
+    a := [playery+1] -- load a high byte of Y
+    -- prevent wrapping
+    cp #128
+    jr.c checkongroundnosnap
+    a := 0
+@checkongroundnosnap
+    sla a -- a = Yhi << 1
+    hl := temp -- hl = &temp
+    [hl] := 0 -- temp = 0
+    rl (hl) -- temp = upper bit of Yhi
+    sla a
+    rl (hl)
+    h := [hl] -- h:a = Yhi << 2
+    a &= 0xe0 -- mask off lower 3 bits of Yhi
+    l := a -- hl = (Yhi & ~7) << 2
+    a := [playerx+1] -- a = Xhi
+@checkongroundslidedone
+    srl a
+    srl a
+    srl a
+    a |= l
+    l := a -- hl = ((Yhi & ~7) << 2) | (Xhi >> 3)
+    bc := 0x9800 -- essentially, hl is index of player tile
+    hl += bc
+    hl += de -- offset to level data
+    push hl -- bandaid fix for waitvram using hl
+    pop bc
+    waitvram()
+    a := [bc]
+    c := a
+    b := 0
+    hl := collision
+    hl += bc
+    a := [brkblkstate]
+    cp #1
+    jr.nz checkongroundnoblk
+    a := [dashtime]
+    cp #0
+    jr.z checkongroundnoblk
+    a := [hl]
+    a &= 32
+    cp #0
+    jr.z checkongroundnoblk
+    a := 2
+    [brkblkstate] := a
+
+    a := [playervx+1]
+    cp #0
+    jr.z checkongroundnovx
+    a &= 0x80
+    jr.z checkongroundposvx
+    a := 1
+    [playervx+1] := a
+    a := 0x80
+    [playervx] := a
+    jr checkongroundnovx
+@checkongroundposvx
+    a := 0xfe
+    [playervx+1] := a
+    a := 0x80
+    [playervx] := a
+@checkongroundnovx
+
+    a := 0xfe
+    [playervy+1] := a
+    a := 0x80
+    [playervy] := a
+
+    a := 0x00
+    [dashtime] := a
+@checkongroundnoblk
+    a := [hl]
+    a &= 32
+    jr.z checkongroundnoblkcollide
+    a := [brkblkstate]
+    cp #2
+    jr.nz checkongroundnoblkcollide
+    a := 0
+    ret
+@checkongroundnoblkcollide
+    a := [hl] -- offset to collision
+    ret
+
+@@checkspikes
+    -- same arguments as checkonground
+    -- returns 1 if spikes detected, and if not, 0
+    a := [playery+1] -- load a high byte of Y
+    a += 3 -- HITBOX OFFSET
+    sla a -- a = Yhi << 1
+    hl := temp -- hl = &temp
+    [hl] := 0 -- temp = 0
+    rl (hl) -- temp = upper bit of Yhi
+    sla a
+    rl (hl)
+    h := [hl] -- h:a = Yhi << 2
+    a &= 0xe0 -- mask off lower 3 bits of Yhi
+    l := a -- hl = (Yhi & ~7) << 2
+    a := [onground]
+    cp #0
+    jr.nz checkspikesnooff
+    a := [playerx+1] -- a = Xhi
+    a++ -- HITBOX OFFSET
+    jr checkspikesyesoff
+@checkspikesnooff
+    a := [playerx+1] -- a = Xhi
+@checkspikesyesoff
+    srl a
+    srl a
+    srl a
+    a |= l
+    l := a -- hl = ((Yhi & ~7) << 2) | (Xhi >> 3)
+    bc := 0x9800 -- essentially, hl is index of player tile
+    hl += bc
+    hl += de -- offset to level data
+    push hl -- bandaid fix for waitvram using hl
+    pop bc
+    waitvram()
+    a := [bc] -- now, we just get the tile itself, not collision data
+    cp #17
+    jr.z checkspikesup
+    cp #27
+    jr.z checkspikesdown
+    cp #43
+    jr.z checkspikesright
+    cp #59
+    jr.z checkspikesleft
+@checkspikesno
+    a := 0
+    ret
+@checkspikesup
+    a := [playervy+1]
+    a &= 0x80
+    cp #0
+    jr.nz checkspikesno
+    a := [playery+1]
+    a += 4+2 -- would be 4+3
+    a &= 7
+    cp #5
+    jr.c checkspikesno
+    jr checkspikesyes
+@checkspikesdown
+    a := [playervy+1]
+    cp #0
+    jr.z checkspikesdown1
+    a &= 0x80
+    cp #0
+    jr.z checkspikesno
+@checkspikesdown1
+    a := [playery+1]
+    a += 1 -- would be 3
+    a &= 7
+    cp #3
+    jr.nc checkspikesno
+    jr checkspikesyes
+@checkspikesright
+    a := [playervx+1]
+    cp #0
+    jr.z checkspikesright1
+    a &= 0x80
+    cp #0
+    jr.z checkspikesno
+@checkspikesright1
+    a := [playerx+1]
+    a += 1
+    a &= 7
+    cp #3
+    jr.nc checkspikesno
+    jr checkspikesyes
+@checkspikesleft
+    a := [playervx+1]
+    cp #0
+    a &= 0x80
+    cp #0
+    jr.nz checkspikesno
+    a := [playerx+1]
+    --cp a, 122
+    --jr nc, checkspikesno
+    a += 5+1
+    a &= 7
+    cp #6
+    jr.c checkspikesno
+@checkspikesyes
+    a := 1
+    ret
+
+@@spin
+    a := 255
+@spinloop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    a--
+    cp #0
+    jr.nz spinloop
+
+
+
+
+@twothirds
+    -- bc like before
+    a := b
+    a &= 0x80
+    jr.z twothirdspos
+    --dec bc
+    a := b
+    cpl
+    b := a
+    a := c
+    cpl
+    c := a
+    bc++ -- OAM BUG
+    call twothirdspos
+    bc-- -- do it before (OAM FIX)
+    a := b
+    cpl
+    b := a
+    a := c
+    cpl
+    c := a
+    --inc bc			; OAM BUG
+    ret
+@twothirdspos
+    push de
+    hl := twothirdslut
+    push bc
+    a := b
+    c := a
+    b := 0
+    hl += bc
+    hl += bc
+    a := [hl+]
+    e := a
+    a := [hl]
+    d := a
+    pop bc
+    b := 0
+    hl := twothirdslut
+    hl += bc
+    hl += bc
+    hl++
+    c := [hl]
+    b := 0
+    push de
+    pop hl
+    hl += bc
+    push hl
+    pop bc
+    pop de
+    ret
+
+
+@@inithair
+    a := [playerx]
+    b := a
+    a := [playerx+1]
+    c := a
+    --ld a, [playery]
+    --ld d, a
+    --ld a, [playery+1]
+    --ld e, a
+    a := 128
+    e := a
+    a := 0
+    d := a
+    hl := hairs
+    a := 0
+@inithairloop
+    [hl] := b
+    hl++
+    [hl] := c
+    hl++
+    [hl] := d
+    hl++
+    [hl] := e
+    hl++
+    a++
+    cp #5
+    jr.nz inithairloop
+    ret
+
+@@updatehair
+@PROFSTART
+    a := [playerx+1]
+    b := a
+    a := [playerx]
+    c := a
+    a := [playerflip]
+    cp #0
+    jr.z updatehairnoflip
+    b++
+    b++
+    b++
+    b++
+@updatehairnoflip
+    -- starting spot: playerx +/- 2 in bc
+    b++
+    b++
+    a := b
+    [tempx+1] := a
+    a := c
+    [tempx] := a -- store in tempx
+    a := [playery+1]
+    b := a
+    a := [playersprite]
+    cp #6
+    jr.nz updatehairnocrouch
+    b++
+@updatehairnocrouch
+    a := [playery]
+    c := a
+    b++
+    b++
+    b++
+    a := b
+    [tempy+1] := a
+    a := c
+    [tempy] := a -- save in tempy
+    a := 0
+    [temp] := a
+    de := hairs -- format: x/x y/y
+@updatehairloop
+    a := [de] -- read -x of next h to bc
+    cpl
+    c := a
+    de++
+    a := [de]
+    cpl
+    b := a
+    c++
+    jr.nz updatehairnoc1
+    b++
+@updatehairnoc1
+    a := [tempx]
+    l := a
+    a := [tempx+1]
+    h := a
+    hl += bc -- last.x - h.x
+    push hl
+    pop bc
+    call twothirds
+    a := [de]
+    h := a
+    de--
+    a := [de]
+    l := a
+    hl += bc -- h.x + (last.x-h.x)/1.5
+    a := l
+    [de] := a
+    [tempx] := a
+    a := h
+    de++
+    [de] := a
+    [tempx+1] := a -- -> back in h.x, and tempx (last)
+    de++
+
+    a := [de] -- load y
+    cpl
+    c := a
+    de++
+    a := [de]
+    cpl
+    b := a
+    c++
+    jr.nz updatehairnoc2
+    b++
+@updatehairnoc2
+    --inc bc				; OAM BUG
+    a := [tempy]
+    l := a
+    a := [tempy+1]
+    h := a
+    hl += bc
+    bc := 0x0080 -- same but add +0.5
+    hl += bc
+    push hl
+    pop bc
+    call twothirds
+    a := [de]
+    h := a
+    de--
+    a := [de]
+    l := a
+    hl += bc
+    a := l
+    [de] := a
+    [tempy] := a
+    a := h
+    de++
+    [de] := a
+    [tempy+1] := a -- -> back in y
+    de++
+
+    a := [temp]
+    a++
+    [temp] := a
+    cp #5
+    jr.nz updatehairloop
+@PROFEND
+    ret
+
+@@playerdograv -- essentially, gravity if you're not falling too fast
+    a := [playervy]
+    l := a
+    a := [playervy+1]
+    h := a
+    a &= 0x80
+    cp #0
+    a := h
+    jr.z playernolowneg
+    cp #0xff
+    jr.nz playernolograv
+    a := l
+    cp #-39
+    jr.c playernolograv
+    bc := 0x001b
+    jr playerlograv
+@playernolowneg
+    cp #0 -- playernolograv if hi is nonzero
+    jr.nz playernolograv
+    a := l
+    cp #39 -- or if low is at least 39
+    jr.nc playernolograv
+    bc := 0x001b
+    jr playerlograv -- use full gravity if velocity > 0039
+@playernolograv -- otherwise use half gravity
+    bc := 0x0036 -- 0036
+@playerlograv
+    a := [wallslide]
+    cp #0
+    jr.z playernogravslide -- playernogravslide if not sliding
+    a := h -- VYhi
+    a &= 0x80
+    jr.nz playernogravslide -- playernogravslide if moving up
+    a := h
+    cp #0
+    jr.nz playergravslide -- playergravslide if moving down substantially
+    a := l
+    cp #102
+    jr.nc playergravslide -- that is, >102
+    jr playernogravslide -- essentially, playergravslide if you're falling too fast
+@playergravslide
+    bc-- -- mitigate oam bug
+    a := b
+    cpl
+    b := a
+    a := c
+    cpl
+    c := a
+    --inc bc						; negate gravity, OAM BUG
+@playernogravslide
+    hl += bc -- add gravity to Y velocity
+    a := h
+    a &= 0x80
+    cp #0
+    jr.nz playergravnocap
+    a := h
+    cp #2
+    jr.c playergravnocap
+    hl := 0x0200
+@playergravnocap
+    a := l
+    [playervy] := a
+    a := h
+    [playervy+1] := a -- and writeback
+    ret
+
+
+
+@@playerlogic
+    a := [chestanim]
+    cp #0
+    jr.z notchested
+    ret
+@notchested
+    a := [buttons]
+    a &= PAD_A
+    cp #0
+    jr.z nojumping
+    a := [oldjump]
+    cp #0
+    jr.nz nojumping -- if A pressed and it was not pressed last frame
+    a := 4
+    [jbuffer] := a -- set jbuffer to 4
+    jr didjump
+@nojumping
+    a := [jbuffer] -- else, decrement the jbuffer
+    cp #0 -- jbuffer is the amount of time you can jump
+    jr.z didjump -- after pressing A, so you can buffer jumps
+    a--
+    [jbuffer] := a
+@didjump
+    a := [buttons] -- if you ended up jumping or jbuffer was zero
+    a &= PAD_A -- store the old jump
+    [oldjump] := a
+    a := [playerstate]
+    cp #1
+    jr.z playerdo
+    ret -- if player is not active (ie dead), just stop
+@playerdo
+    -- spike hitbox starts at x+1, y+3 and goes for 6x and 5y
+    -- we extend y by 1 pixel up (y+2, 6y) to account for collision differences
+    de := 0
+    call checkspikes
+    cp #0
+    jr.nz playerkill
+    a := [playerx+1]
+    cp #120
+    jr.nc playerspikeskip1
+    a++
+    a &= 7
+    cp #4
+    jr.c playerspikeskip1
+    de := 1
+    call checkspikes
+    cp #0
+    jr.nz playerkill
+    a := [playery+1]
+    a += 3
+    a &= 7
+    cp #5
+    jr.c playerspikeskip1
+    de := 0x21
+    call checkspikes
+    cp #0
+    jr.nz playerkill
+@playerspikeskip1
+    a := [playery+1]
+    a += 3
+    a &= 7
+    cp #5
+    jr.c playernokill
+    de := 0x20
+    call checkspikes
+    cp #0
+    jr.z playernokill
+@playerkill
+    a := 20
+    [deadtime] := a
+    hl := sfx_death
+    call playsfx_pulse
+    ret
+@playernokill
+    a := [playery+1]
+    cp #240 -- 240 or greater? wrapped, next level!
+    jr.c playernonext
+    cp #252
+    jr.nc playernonext
+@playerforcenext
+    a := [curroom]
+    cp #30
+    jr.nc playernonext
+    a++
+    [curroom] := a
+    cp #21
+    jr.z playernextnomus
+    cp #11
+    jr.z playernextnomus
+    cp #30
+    jr.z playernextnomus
+    cp #12
+    jr.z playernextmus2
+    cp #22
+    jr.nz playernextsamemus
+    a := 4
+    call playsong
+    jr playernextsamemus
+@playernextnomus
+    a := 5
+    call playsong
+    jr playernextsamemus
+@playernextmus2
+    a := 3
+    call playsong
+@playernextsamemus
+    call wblo
+    a := [curroom]
+    call loadroom
+    call initthings
+    call savealtbox
+    call inithair
+    a := LCDC_ON | LCDC_BG_ON | LCDC_OBJ_ON | LCDC_BLOCK01
+    [LCDC] := a
+    a := 0 -- clear velocity on entrance
+    [playervx+1] := a
+    [playervx] := a
+    [playervy+1] := a
+    [playervy] := a
+    ret
+@playernonext
+    cp #128 -- 128 or greater? pit, you're dead!
+    jr.c playerendground
+    cp #140
+    jr.c playerkill
+@playerendground
+
+    --jr playernograv
+    a := [dashtime]
+    cp #0
+    jr.nz playernograv -- dashing means no gravity
+    call playerdograv
+@playernograv
+    a := [dashtime]
+    cp #0
+    jp.z playernotdashing -- playernotdashing if dashtime is zero!
+    a--
+    [dashtime] := a -- decrement it by one
+    a := [playerx+1]
+    d := a
+    a := [playery+1]
+    e := a
+    call spawnpuff -- spawn a puff if you're dashing!!
+    a := [playervx+1]
+    cp #0
+    jr.z playerdanox -- playerdanox if VXhi = 0
+    a := [playervx]
+    l := a
+    a := [playervx+1]
+    h := a -- load hl with x velocity
+    a &= 0x80
+    cp #0
+    jr.nz playerdaxneg -- playerdaxneg if VX < 0
+    a := [dashacc]
+    cpl
+    a++ -- negate dash acceleration
+    c := a
+    a := 0xff -- "sign extend"
+    b := a
+    hl += bc -- add dash acceleration
+    hl += bc -- twice, since it's stored as half
+    a := h
+    cp #2
+    jr.nc playerdaxposnocap -- cap it at $0200 dash xvel pos
+    hl := 0x0200
+@playerdaxposnocap
+    a := h
+    [playervx+1] := a
+    a := l
+    [playervx] := a
+    jr playerdanox -- store back and we're done
+@playerdaxneg
+    a := [dashacc] -- now this time don't negate it
+    c := a
+    a := 0
+    b := a
+    hl += bc
+    hl += bc
+    a := h
+    cp #0xfe
+    jr.c playerdaxnegnocap -- cap at -$0200
+    hl := -(0x0200)
+@playerdaxnegnocap
+    a := h
+    [playervx+1] := a
+    a := l
+    [playervx] := a -- and store back
+@playerdanox
+
+    a := [playervy+1] -- repeat the process with VY
+    cp #0
+    jr.z playerdanoy
+    a := [playervy]
+    l := a
+    a := [playervy+1]
+    h := a
+    a &= 0x80
+    cp #0
+    jr.nz playerdayneg
+    a := [dashacc]
+    cpl
+    a++
+    c := a
+    a := 0xff
+    b := a
+    hl += bc
+    hl += bc
+    a := h
+    cp #2
+    jr.nc playerdayposnocap
+    hl := 0x0200
+@playerdayposnocap
+    a := h
+    [playervy+1] := a
+    a := l
+    [playervy] := a
+    jr playerdanoy
+@playerdayneg
+    a := [dashacc]
+    c := a
+    a := 0
+    b := a
+    hl += bc
+    hl += bc
+    a := h
+    -- edge case: if result is zero, we need to cap
+    cp #0
+    jr.nz playerdaynotzero
+    a := l
+    cp #0
+    jr.z playerdaynegyescap
+    a := h
+@playerdaynotzero
+    cp #0xfe
+    jr.c playerdaynegnocap -- comparison should be to $0180 not $0200
+    cp #0xff
+    jr.z playerdaynegyescap
+    a := l
+    cp #0x80
+    jr.c playerdaynegnocap
+@playerdaynegyescap
+    hl := -(0x0180)
+@playerdaynegnocap
+    a := h
+    [playervy+1] := a
+    a := l
+    [playervy] := a
+@playerdanoy
+    jp playernojump -- if you're dashing, you're not jumping
+@playernotdashing
+    a := [playervx+1]
+    cp #0
+    jr.z playervxgood -- playervxgood if it's < 0100
+    cp #0xff
+    jr.z playervxgood -- or >= ff00
+    a &= 0x80
+    cp #0
+    jr.nz playervxlimitleft -- playervxlimitleft if VX < 0
+    bc := -39 ---($0039)
+    jr playerrunend2
+@playervxlimitleft
+    bc := 39 --$0039
+    jr playerrunend2 -- go to playerrunend2 with bc with opposite sign as VX
+@playervxgood
+    a := [buttons]
+    a &= PAD_LEFT | PAD_RIGHT
+    cp #PAD_LEFT -- go to playerrunleft/right depending on button pressed
+    jr.z playerrunleft
+    cp #PAD_RIGHT
+    jr.z playerrunright
+    a := [playervx+1]
+    cp #0
+    jr.nz playerrunnozero -- playerrunnozero if VX is not zero
+    a := [playervx]
+    cp #0
+    jr.z playerrunzero -- otherwie playerrunzero
+    a := [playervx+1]
+    jr.nz playerrunnozero
+@playerrunzero
+    bc := 0
+    jr playerrunend2 -- go to playerrunend2 with bc 0
+@playerrunnozero
+    a &= 0x80
+    cp #0
+    jr.z playerrunleft
+    jr playerrunright
+@playerrunleft
+    d := 0 -- negative
+    jr playerrunend
+@playerrunright
+    d := 1
+@playerrunend -- get d = 0 if VX < 0, d = 1 if VX > 0
+    a := [onground]
+    cp #0
+    jr.nz playerrunground -- playerrunground if you're on the ground
+    a := d
+    cp #0
+    jr.z playerrun1
+    bc := 102
+    jr playerrunend2 -- go to playerrunend2 with bc same sign as VX
+@playerrun1
+    bc := -102
+    jr playerrunend2
+@playerrunground -- if you're on the ground, same deal, but faster
+    a := d
+    cp #0
+    jr.z playerrun2
+    bc := 154
+    jr playerrunend2
+@playerrun2
+    bc := -154
+@playerrunend2 -- finally add the velocity delta to the velocity
+    a := [playervx]
+    l := a
+    a := [playervx+1]
+    h := a
+    hl += bc -- DO IT FINALLY I'M SICK OF ALL THIS PREPARATION
+    cp #0
+    jr.nz playerrunwrap -- playerrunwrap if VXhi nonzero
+    b := a
+    a := [playervx]
+    cp #0
+    jr.z playerrunnowrap -- playerrunnowrap if VXlo zero
+    a := b -- essentially, playerrunwrap if VX != 0, else playerrunnowrap
+@playerrunwrap
+    a ^= h -- a here is still VXhi, xor with result
+    a &= 0x80 -- if the sign changed, need to fix
+    cp #0
+    jr.z playerrunnowrap -- we're good if that didn't happen
+    hl := 0 -- otherwise, just zero out
+@playerrunnowrap
+    a := h
+    cp #0 -- we may not need to clamp if it's low enough
+    jr.z playerrunnoclamp
+    cp #0xff
+    jr.z playerrunnoclamp
+    a := c
+    cp #-39 ---($39)				; don't clamp if we already slowed down
+    jr.z playerrunnoclamp
+    cp #39 --$39
+    jr.z playerrunnoclamp
+    a := h
+    a &= 0x80
+    cp #0
+    jr.nz playerrunclampleft
+    hl := 0x00ff
+    jr playerrunnoclamp
+@playerrunclampleft
+    hl := -(0x00ff) -- clamp it on one end or the other
+@playerrunnoclamp
+    a := l
+    [playervx] := a
+    a := h
+    [playervx+1] := a -- and finally save it back
+@playervxbad
+    a := [onground]
+    cp #0
+    jr.z playernograce
+    a := 6 -- refill jump grace timer to 6 frames when on groud
+    [grace] := a
+    jr playergrace
+@playernograce
+    a := [grace] -- you weren't on ground, so you lose 1 grace frame
+    cp #0
+    jr.z playergrace
+    a--
+    [grace] := a
+@playergrace
+    a := [jbuffer]
+    cp #0
+    jp.z playernojump -- if jbuffer > 0, you try to jump
+    a := [grace]
+    cp #0
+    jr.z playertrywalljump -- if you have no grace, it's a wall jump
+    a := 0 -- now you're trying a standard jump
+    [jbuffer] := a -- 0 jbuffer, 0 jump grace
+    [grace] := a
+    a := 0xfe
+    [playervy+1] := a
+    a := 0x00
+    [playervy] := a -- give you some velocity upwards
+    a := [playerx+1]
+    d := a
+    a := [playery+1]
+    e := a
+    call spawnpuff -- spawn a puff where you were
+    hl := sfx_jump
+    call playsfx_lowpri
+    jp playernojump
+@playertrywalljump
+    de := 1
+    call checkonground -- check if the tile to the right of you is solid
+    a &= 1
+    cp #0
+    jr.nz playerrightwall -- playernorightwall if it isn't
+    a := [playery+1]
+    a &= 7
+    cp #3
+    jr.c playernorightwall
+    de := 33 -- need to check both tiles!
+    call checkonground
+    a &= 1
+    cp #0
+    jr.z playernorightwall
+@playerrightwall
+    a := 0 -- doing a right side wall jump!
+    [jbuffer] := a -- no more jbuffer
+    a := -2
+    [playervy+1] := a
+    [playervx+1] := a -- and give you velocity away from the wall
+    a := 0
+    [playervy] := a
+    [playervx] := a
+    a := [playerx+1]
+    d := a
+    a := [playery+1]
+    e := a
+    call spawnpuff -- puff once more
+    hl := sfx_walljump
+    call playsfx_lowpri
+    jr playernojump
+@playernorightwall
+    de := -1 -- now check for a left wall
+    a := [playerx+1]
+    a &= 4 -- too far to the right to go one full tile left
+    cp #0
+    jr.z playerrightwall1
+    de := 0
+@playerrightwall1
+    call checkonground
+    a &= 1
+    cp #0
+    jr.nz playerleftwall -- playernojump if no wall jump or anything
+    a := [playery+1]
+    a &= 7
+    cp #3
+    jr.c playernojump
+    de := 31 -- need to check both tiles!
+    a := [playerx+1]
+    a &= 4 -- too far to the right to go one full tile left
+    cp #0
+    jr.z playerrightwall2
+    e++
+@playerrightwall2
+    call checkonground
+    a &= 1
+    cp #0
+    jr.z playernojump
+@playerleftwall
+    a := 0
+    [jbuffer] := a -- same procedure as before
+    a := -2
+    [playervy+1] := a
+    a := 2
+    [playervx+1] := a
+    a := 0
+    [playervy] := a
+    a := 0
+    [playervx] := a
+    a := [playerx+1]
+    d := a
+    a := [playery+1]
+    e := a
+    call spawnpuff -- puff once again
+    hl := sfx_walljump
+    call playsfx_lowpri
+@playernojump
+    a := 0
+    [wallslide] := a -- ok so you might be wallsliding but default is 0
+    a := [playerwalk]
+    a++
+    a &= 15 -- update walk cycle animation
+    [playerwalk] := a
+    a := [onground]
+    cp #0
+    jr.nz playerspriteonground -- playerspriteonground if you are
+    a := [buttons]
+    a &= PAD_LEFT | PAD_RIGHT
+    cp #PAD_LEFT
+    jr.z playerspritewallleft -- if you're holding left, check for a left wall slide
+    cp #PAD_RIGHT
+    jr.z playerspritewallright -- likewise with right
+@playerspritenowall
+    a := 3
+    [playersprite] := a -- 3 is aerial, not sliding
+    jp playerspriteend
+@playerspritewallleft
+    de := -1 + 32
+    call checkonground
+    a &= 1
+    cp #0
+    jr.nz playerspriteyesleft -- playerspritenowall if not a wall on the proper side
+    a := [playery+1]
+    a &= 7
+    cp #0 -- check another tile if necessary
+    de := -1
+    call checkonground
+    a &= 1
+    cp #0
+    jr.z playerspritenowall
+@playerspriteyesleft
+    a := 5
+    [playersprite] := a -- 5 is wall sliding
+    a := 1
+    [wallslide] := a -- set wallslide flag
+    jr playerspriteend
+@playerspritewallright
+    de := 1 + 32
+    call checkonground
+    a &= 1
+    cp #0
+    jr.nz playerspriteyesright -- likewise for right wallslide
+    a := [playery+1]
+    a &= 7
+    cp #0 -- check another tile if necessary
+    de := 1
+    call checkonground
+    a &= 1
+    cp #0
+    jr.z playerspritenowall
+@playerspriteyesright
+    a := 5
+    [playersprite] := a
+    a := 1
+    [wallslide] := a
+    jr playerspriteend
+@playerspriteonground
+    a := [buttons]
+    a &= PAD_UP | PAD_DOWN
+    cp #PAD_UP
+    jr.nz playerspritenoup
+    a := 7 -- 7 is looking upwards sprite
+    [playersprite] := a
+    jr playerspriteend
+@playerspritenoup
+    cp #PAD_DOWN
+    jr.nz playerspritenodown
+    a := 6 -- 6 is crouch sprite
+    [playersprite] := a
+    jr playerspriteend
+@playerspritenodown
+    a := [playervx]
+    b := a
+    a := [playervx+1]
+    a |= b
+    cp #0
+    jr.nz playerspritewalk -- if VX nonzero, walking is happening
+    a := 1 -- 1 is standing still sprite
+    [playersprite] := a
+    jr playerspriteend
+@playerspritewalk
+    a := [playerwalk]
+    srl a
+    srl a -- it takes 4 frames to change walk sprite
+    a++ -- and base of 1
+    [playersprite] := a
+@playerspriteend
+    a := 0 -- default onground is zero, this will be updated
+    [onground] := a
+    a := [playervx] -- bug fix needed
+    b := a
+    a := [playervx+1]
+    a |= b
+    cp #0
+    jr.z playernoflip -- playernoflip if VX is zero
+    a := [playervx+1]
+    a &= 0x80 -- playerflip = 1 => moving left
+    [playerflip] := a -- put sign bit of VX into playerflip
+@playernoflip
+    a := [buttons]
+    a &= PAD_B
+    cp #0
+    jr.z nodashing
+    a := [olddash]
+    cp #0
+    jr.nz nodashing -- only dash if B is pressed newly this frame
+    a := [havedash]
+    cp #0
+    jr.z nodashing -- and if you have a dash
+    a--
+    [havedash] := a -- now you don't
+    hl := sfx_dash_pl
+    call playsfx_lowpri
+    hl := sfx_dash_ns
+    call playsfx_noise
+    a := 6
+    [screenshake] := a -- 6 more frames of screenshake
+    a := 4
+    [freeze] := a
+    a := 4
+    [dashtime] := a -- 4 frames of dash length
+    a := [buttons]
+    srl a
+    srl a
+    a &= 0x3c -- mask out directional buttons
+    c := a
+    b := 0
+    hl := dashlut -- directional buttons are << 2 since entries 4 bytes
+    hl += bc -- read velocities from dashlut
+    a := [hl+]
+    [playervx+1] := a
+    a := [hl+]
+    [playervx] := a
+    a := [hl+]
+    [playervy+1] := a
+    a := [hl+]
+    [playervy] := a
+    b := 0
+    a := [playervx+1]
+    cp #0
+    jr.z playerdashskip1 -- playerdashskip1 if granted no VX
+    b++ -- b is 1 now
+@playerdashskip1
+    a := [playervy+1]
+    cp #0
+    jr.z playerdashskip2 -- playerdashskip2 if no VY
+    b++
+@playerdashskip2
+    a := b -- b is now the number of axes you dashed along
+    cp #1
+    jr.nz playerdashslac -- if it's 2 (not 1), each axis is slower (pythag)
+    -- todo: the original source does some other stuff here
+    a := 192
+    [dashacc] := a -- max out that dash acceleration
+    jr nodashing
+@playerdashslac
+    a := 136 -- make it a bit less (todo: maybe even less)
+    [dashacc] := a
+@nodashing
+    a := [buttons]
+    a &= PAD_B
+    [olddash] := a -- and store the old dash back
+    a := [wallslide]
+    cp #0
+    jr.z noslidepuff
+    call genrandom
+    a &= 3
+    cp #0
+    jr.nz noslidepuff -- randomly generate puffs while sliding
+    a := [playerx+1]
+    d := a
+    a := [playery+1]
+    e := a
+    call spawnpuff
+@noslidepuff
+    a := 0
+    [skiphackx] := a
+    [skiphacky] := a
+    ret -- player logic done! celebrate!
+
+@@playerupdatevel
+    a := [playerx]
+    l := a
+    a := [playerx+1]
+    h := a
+    d := a
+    a := [playervx]
+    c := a
+    a := [playervx+1]
+    b := a
+    sra b
+    rr c
+    hl += bc -- tack your velocity onto your position
+    a := [skiphackx] -- weird pico-8 velocity behavior
+    cp #1
+    jr.z velxhackskip
+    a := h
+    cp d
+    jr.z velxhackskip
+    jr.nc velxhackplus
+    h--
+    a := 1
+    [skiphackx] := a
+    jr velxhackskip
+@velxhackplus
+    h++
+    a := 1
+    [skiphackx] := a
+@velxhackskip
+    a := l
+    [playerx] := a
+    a := h
+    [playerx+1] := a -- write it back
+    ret
+
+@@playerlogic60 -- this one is run every frame
+    call playerupdatevel
+    a := [playerx]
+    l := a
+    a := [playerx+1]
+    h := a
+    a := [playervx]
+    c := a
+    a := [playervx+1]
+    b := a
+    a := b
+    cp #0
+    jr.nz playercheckgo1 -- if VX is nonzero, playercheckgo1
+    a := c
+    cp #0
+    jp.z playercheckdone
+    a := b
+@playercheckgo1
+    a &= 0x80
+    cp #0
+    jr.z playercheckright -- playercheckright if you're going right
+    de := 0 -- you must be going left
+    call checkonground -- check where you are right now
+    a &= 1
+    cp #0
+    jr.nz playershuntright -- if you're in the tile, shunt out to the right
+    a := [playery+1]
+    a &= 7
+    cp #0
+    jr.z playercheckdone -- if you're tile aligned, that's the only needed check
+    de := 32 -- otherwise, check the tile below you too
+    call checkonground
+    a &= 1
+    cp #0
+    jr.z playercheckdone
+@playershuntright
+    a := [playerx+1]
+    a += 8 -- move one tile to the right, then snap to the tile
+    a &= 0xf8
+    --ld d, a
+    --ld a, [wallslide]
+    --cp a, 0
+    --jr z, playershuntrightnows
+    --dec d
+    --playershuntrightnows:
+    --ld a, d
+    [playerx+1] := a
+    a := 0 -- no x velocity either
+    [playervx] := a
+    [playervx+1] := a
+    jr playercheckdone
+@playercheckright
+    de := 1 -- same procedure as left check, but to the right
+    call checkonground
+    a &= 1
+    cp #0
+    jr.nz playershuntleft
+    a := [playery+1]
+    a &= 7
+    cp #0
+    jr.z playercheckdone
+    de := 33
+    call checkonground
+    a &= 1
+    cp #0
+    jr.z playercheckdone
+@playershuntleft
+    a := [playerx+1]
+    a &= 0xf8
+    [playerx+1] := a
+    a := 0
+    [playervx] := a
+    [playervx+1] := a
+    jr playercheckdone
+@playercheckdone -- you've been sufficiently shunted horizontally now
+    a := [playery]
+    l := a
+    a := [playery+1]
+    h := a
+    d := a
+    a := [playervy]
+    c := a
+    a := [playervy+1]
+    b := a
+    sra b
+    rr c
+    hl += bc -- add the y velocity now
+    a := [playery+1] -- band aid fix for weird height bug
+    cp #0xff
+    jp.z velyhackskip
+    a := [skiphacky]
+    cp #1
+    jr.z velyhackskip
+    a := h
+    cp d
+    jr.z velyhackskip
+    jr.nc velyhackplus
+    h--
+    a := 1
+    [skiphacky] := a
+    jr velyhackskip
+@velyhackplus
+    h++
+    a := 1
+    [skiphacky] := a
+@velyhackskip
+    a := l
+    [playery] := a
+    a := h
+    [playery+1] := a -- write back to y pos
+    a := b
+    cp #0
+    jr.nz playercheckgo2
+    a := c
+    cp #0
+    jp.z playercheckdone2
+    a := b
+@playercheckgo2 -- now you're here if there's any VY
+    a &= 0x80
+    cp #0
+    jr.z playercheckdown -- playercheckdown if going down
+    de := 0 -- we're going up then
+    call checkonground -- check your current tile
+    a &= 1
+    cp #0
+    jr.nz playershuntup -- shunt you down if it's solid
+    a := [playerx+1]
+    a &= 7 -- essentially, same procedure as X check
+    cp #0
+    jp.z playercheckdone2
+    de := 1
+    call checkonground
+    a &= 1
+    cp #0
+    jr.z playercheckdone2
+@playershuntup
+    a := [playery+1]
+    a += 8 -- snap your Y position downwards
+    a &= 0xf8
+    [playery+1] := a
+    a := 0
+    [playervy] := a
+    [playervy+1] := a
+    jr playercheckdone2
+@playercheckdown
+    de := 32
+    call checkonground
+    a &= 1
+    cp #0
+    jr.nz playershuntdown
+    a := [playerx+1]
+    a &= 7
+    cp #0
+    jr.z playercheckdone2
+    de := 33
+    call checkonground
+    a &= 1
+    cp #0
+    jr.z playercheckdone2
+@playershuntdown
+    a := [playery+1]
+    a &= 0xf8
+    [playery+1] := a
+    a := 0
+    [playery] := a
+    a := 1 -- if you got shunted up, that means you're on ground
+    [onground] := a
+    a := [oldonground] -- if you just started being on ground, make a puff
+    cp #0
+    jr.nz playershuntdownnopuff
+    a := [playerx+1]
+    d := a
+    a := [playery+1]
+    e := a
+    call spawnpuff
+@playershuntdownnopuff
+    a := [havedash]
+    cp #0
+    jr.nz playershuntdownnosfx
+    hl := sfx_dashback
+    call playsfx_lowpri
+@playershuntdownnosfx
+    a := [maxdash] -- and you have a dash now
+    [havedash] := a
+    a := 0 -- and no y velocity
+    [playervy] := a
+    [playervy+1] := a
+    jr playercheckdone2 -- jr playercheckdone2
+@playercheckdone2
+    a := [onground] -- finally store old onground
+    [oldonground] := a
+    a := [playerx+1] -- clamping time
+    cp #121
+    jp.c playernoclampx
+    cp #200
+    jp.c playerclampxleft
+    a := 0
+    jr playerclampxdone
+@playerclampxleft
+    a := 121
+@playerclampxdone
+    [playerx+1] := a
+    a := 0
+    [playerx] := a
+    [playervx] := a
+    [playervx+1] := a
+@playernoclampx
+
+
+    ret -- done with player logic
+
+@@genrandom
+    hl := DIV
+    a := [rng]
+    adc a,(hl)
+    [rng] := a
+    a := [rng+1]
+    sbc a,(hl)
+    a := [rng]
+    ret
+
+@@adjustsprites
+    hl := oambuffer
+    b := 0
+@adjustspritesloop
+    c := [hl]
+    a := [SCY]
+    a += c
+    a += 16
+    [hl+] := a
+    c := [hl]
+    a := [SCX]
+    a += c
+    a += 32
+    [hl+] := a
+    hl++
+    hl++
+    b++
+    a := b
+    cp #40
+    jr.nz adjustspritesloop
+    ret
+
+
+@@gensprites
+    hl := oambuffer
+    a := [gamestate]
+    cp #0
+    jr.z nogenspritesgame
+    call genspritesgame
+@nogenspritesgame
+    a := [altboxup]
+    cp #0
+    jp.z genspritesnocull
+    push hl
+    hl := oambuffer
+    e := 40
+@genspritescullloop
+    a := [hl+] -- y pos: 60 + 16 + 1, so between 65 and 89
+    cp #65
+    jp.c genspritescullok
+    cp #87
+    jp.nc genspritescullok
+    a := [hl] -- x pos: 56 + 8, so between 40 and 104
+    cp #40
+    jp.c genspritescullok
+    cp #104
+    jp.nc genspritescullok
+    hl++
+    a := [hl-] -- sprite: after $80
+    a &= 0x80
+    cp #0
+    jp.nz genspritescullok
+
+
+    hl--
+    a := 230
+    [hl+] := a
+@genspritescullok
+    hl++
+    hl++
+    hl++
+    e--
+    a := e
+    cp #0
+    jp.nz genspritescullloop
+    pop hl
+@genspritesnocull
+    a := [curroom]
+    cp #6
+    call genspritestitlescreen -- draw title particles except when in that One Room
+@nogenspritestitle
+    a := l
+    srl a
+    srl a
+    [spritecount] := a
+    jp genspritesclear
+@@genspritestitlescreen
+    bc := titleparticles
+    d := 12 -- there are 12 of them!
+@genspritestitlescreenloop
+    a := [bc] -- x position
+    a += 8 -- correction? not sure why
+    bc++
+    e := a
+    a := [bc] -- y position
+    a += 8
+    push bc
+    b := a
+    a := d -- number of remaining sprites
+    sla a -- serves as an offset to differentiate them
+    sla a
+    sla a
+    a += e
+    push hl -- backup oambuffer
+    a &= 127
+    h := ((sinlut) >> 8)
+    l := a
+    a := [hl] -- compute sin
+    srl a -- todo: the lut can be way smaller if i do this
+    srl a
+    srl a
+    srl a
+    srl a
+    pop hl
+    a += b -- add sin(x) to y
+    pop bc
+    [hl] := a -- sprite y position to oam
+    hl++
+    [hl] := e -- sprite x position to oam
+    bc++
+    bc++
+    a := [bc] -- tile ("size")
+    a += 0x80 -- base offset
+    hl++
+    [hl] := a -- put tile into oam
+    bc++
+    hl++
+    [hl] := 0 -- and flags are zero
+    hl++ -- offset to next oam sprite
+    d-- -- count down number of particles
+    a := d
+    cp #0
+    jr.nz genspritestitlescreenloop
+    ret
+@@genspritesgame
+    a := [flagmode]
+    cp #2
+    jr.nz genspritesnotime2
+    de := 0x3428
+    call drawtimecount
+    push hl
+    hl := sstringbuf
+    a := 0xe4
+    [hl+] := a
+    a := 0xe5
+    [hl+] := a
+    a := 0xe1
+    [hl+] := a
+    a := 0xf4
+    [hl+] := a
+    a := 0xe8
+    [hl+] := a
+    a := 0xf3
+    [hl+] := a
+    a := 0xba
+    [hl+] := a
+    call writedeaths
+    de := 0x3230
+    bc := sstringbuf
+    pop hl
+    call drawsstring
+    push hl
+    hl := sstringbuf
+    a := 0x1a
+    [hl+] := a
+    a := 0xf8
+    [hl+] := a
+    bc := berries
+    d := 0
+    e := 0
+@genspritesberryloop
+    a := c
+    cp #((berries+30) & 0xff)
+    jr.z genspritesberryend
+    a := [bc]
+    cp #0
+    jr.z genspritesberryno
+    e++
+    a := e
+    cp #10
+    jr.nz genspritesberryno
+    e := 0
+    d++
+@genspritesberryno
+    c++
+    jr genspritesberryloop
+@genspritesberryend
+    a := d
+    cp #0
+    jr.z genspritesberry1
+    a += 0xb0
+    [hl+] := a
+@genspritesberry1
+    a := e
+    a += 0xb0
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    pop hl
+    de := 0x401c
+    bc := sstringbuf
+    call drawsstring
+@genspritesnotime2
+    a := [deadtime]
+    cp #0
+    jp.nz genspritesdead
+    a := [playery+1]
+    a += 16
+    [hl+] := a
+    a := [playerx+1]
+    a += 8
+    b := a
+    a := [wallslide]
+    cp #0
+    jp.z genspritesnopws
+    a := [playerflip]
+    cp #0
+    jr.nz genspritespwsleft
+    b++
+    jr genspritesnopws
+@genspritespwsleft
+    b--
+@genspritesnopws
+    a := b
+    [hl+] := a
+    a := [playersprite]
+    [hl+] := a
+    a := [playerflip]
+    srl a
+    srl a
+    a |= 0x10
+    [hl+] := a
+@genspriteshair
+    bc := hairs
+    e := 0
+@genspriteshairloop
+    bc++
+    a := [bc] -- x high
+    d := a
+    a := e
+    cp #2
+    hl++
+    a := [wallslide]
+    cp #0
+    jp.z genspritesnohws
+    a := [playerflip]
+    cp #0
+    jr.nz genspriteshwsleft
+    d++
+    jr genspritesnohws
+@genspriteshwsleft
+    d--
+@genspritesnohws
+    a := d
+    a += 8-2
+    [hl-] := a
+    bc++
+    bc++
+    a := [bc] -- y high
+    d := a
+    a := e
+    cp #2
+    a := d
+    a += 16-2
+    [hl+] := a
+    hl++
+    bc++
+    d := 0x94
+    a := e
+    cp #2
+    jr.nc genspriteshairnobig
+    d++
+@genspriteshairnobig
+    a := d
+    [hl+] := a
+    a := 0x10
+    [hl+] := a
+    e++
+    a := e
+    cp #5
+    jr.nz genspriteshairloop
+@hairskip1
+
+
+    jp genspritespuffsstart
+@genspritesdead
+    -- full amount: playerx + 3*(10 - deathtime)
+    a := [deadtime]
+    cp #20
+    jr.nz genspritesstarted
+    a := [playerx+1]
+    a += 4
+    [playerx+1] := a
+    a := [playery+1]
+    a += 4
+    [playery+1] := a
+    a := [deadtime]
+@genspritesstarted
+    cp #10
+    jr.nz genspritesstarted2
+    a := [playerx+1]
+    a += 2
+    [playerx+1] := a
+    a := [playery+1]
+    a += 2
+    [playery+1] := a
+    a := [deadtime]
+@genspritesstarted2
+    c := 0x97
+    cp #11
+    jr.c genspriteslate
+    c--
+    jr genspriteslate
+@genspriteslate
+    srl a
+    b := a
+    a := 10
+    a -= b
+    b := a
+    a += b
+    d := a
+    a += b
+    b := a
+    -- RIGHT death particle
+    a := [playery+1]
+    a += 16
+    [hl+] := a
+    a := [playerx+1]
+    a += 8
+    a += b
+    [hl+] := a
+    a := c
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    -- LEFT death particle
+    a := [playery+1]
+    a += 16
+    [hl+] := a
+    a := [playerx+1]
+    a += 8
+    a -= b
+    [hl+] := a
+    a := c
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    -- TOP death particle
+    a := [playery+1]
+    a += 16
+    a -= b
+    [hl+] := a
+    a := [playerx+1]
+    a += 8
+    [hl+] := a
+    a := c
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    -- BOTTOm death particle
+    a := [playery+1]
+    a += 16
+    a += b
+    [hl+] := a
+    a := [playerx+1]
+    a += 8
+    [hl+] := a
+    a := c
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    -- TOP LEFT death particle
+    a := [playery+1]
+    a += 16
+    a -= d
+    [hl+] := a
+    a := [playerx+1]
+    a += 8
+    a -= d
+    [hl+] := a
+    a := c
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    -- TOP Right death particle
+    a := [playery+1]
+    a += 16
+    a -= d
+    [hl+] := a
+    a := [playerx+1]
+    a += 8
+    a += d
+    [hl+] := a
+    a := c
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    -- BOTTOM LEFT death particle
+    a := [playery+1]
+    a += 16
+    a += d
+    [hl+] := a
+    a := [playerx+1]
+    a += 8
+    a -= d
+    [hl+] := a
+    a := c
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    -- BOTTOM RIGHT death particle
+    a := [playery+1]
+    a += 16
+    a += d
+    [hl+] := a
+    a := [playerx+1]
+    a += 8
+    a += d
+    [hl+] := a
+    a := c
+    [hl+] := a
+    a := 0
+    [hl+] := a
+
+@genspritespuffsstart
+    bc := puffs
+    a := [numpuffs]
+    d := a
+@genspritespuffs
+
+    -- x / y / timer / ...
+    a := d
+    cp #0
+    jr.z genspritespuffsend
+    a := [bc]
+    e := a
+    bc++
+    a := [bc]
+    a += 16
+    [hl+] := a
+    a := e
+    a += 8
+    [hl+] := a
+    bc++
+    a := [bc]
+    srl a
+    srl a
+    a += 29
+    [hl+] := a
+    bc++
+    a := [bc]
+    a &= 0x60
+    [hl+] := a
+    bc++
+    d--
+    jr genspritespuffs
+@genspritespuffsend
+    a := [spawnanimst]
+    cp #0
+    jr.z genspritesnotime
+    de := 0x0809
+    call drawtimecount
+@genspritesnotime
+
+    a := [altboxup]
+    cp #0
+    jp.z genspritesnoalt
+    a := [curroom]
+    cp #11
+    jr.nz genspritesaltno1
+    bc := oldsite_string
+    e := 60 + 16 + 1 -- - 4 instead
+    d := 56 + 8 - 8 -- - 4 instead
+    call drawsstring
+    --call drawalternate
+    jr genspritesnoalt
+@genspritesaltno1
+    cp #30
+    jr.nz genspritesaltno2
+    e := 60 + 16 + 1
+    d := 56 + 8 - 8
+    bc := summit_string
+    call drawsstring
+    jr genspritesnoalt
+@genspritesaltno2
+    -- row 7 column 5
+    a := 60 + 16 + 1
+    [hl+] := a
+    a := 56 + 8
+    [hl+] := a
+    a := [curroom]
+    a++
+    e := 0
+@genspritesmod10
+    cp #10
+    jr.c genspritesmod10end
+    a -= 10
+    e++
+    jr genspritesmod10
+@genspritesmod10end
+    a += 0xb0
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    a := e
+    cp #0
+    jr.z genspritesno10
+    a += 0xb0
+    e := a
+    a := 60 + 16 + 1
+    [hl+] := a
+    a := 56 + 8 - 4 -- 8?
+    [hl+] := a
+    a := e
+    [hl+] := a
+    a := 0
+    [hl+] := a
+@genspritesno10
+    a := 60 + 16 + 1
+    [hl+] := a
+    a := 56 + 8 + 8
+    [hl+] := a
+    a := 0x99
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    a := 60 + 16 + 1
+    [hl+] := a
+    a := 56 + 16 + 8
+    [hl+] := a
+    a := 0xed
+    [hl+] := a
+    a := 0
+    [hl+] := a
+@genspritesnoalt
+    bc := things
+    a := [numthings]
+    d := a
+@genspritesthings
+    a := d
+    cp #0
+    jr.z genspritesthingsend
+    a := 0
+    [tempflags] := a
+    bc++
+    bc++
+    --push hl
+    a := h
+    [temp4+1] := a
+    a := l
+    [temp4] := a
+    a := b
+    h := a
+    a := c
+    l := a
+    a := [hl+]
+    e := a
+    a := [hl+]
+    l := a
+    h := e
+    call jphl
+    a := [temp4+1]
+    h := a
+    a := [temp4]
+    l := a
+    bc--
+    bc--
+    a := [bc] -- X POSITION
+    e := a
+    bc++
+    a := [bc] -- Y POSITION
+    bc++
+    a += 16 -- offset
+    [hl+] := a -- store in sprite map
+    a := e
+    a += 8 -- offset
+    [hl+] := a
+    bc++
+    bc++
+    a := [bc] -- SPRITE INDEX
+    bc++
+    [hl+] := a
+    a := [tempflags]
+    [hl+] := a
+    bc++
+    bc++
+    bc++
+    d--
+    jr genspritesthings
+@genspritesthingsend
+    ret
+
+@genspritesclear
+@genspritesclearloop
+    a := 0
+    [hl+] := a
+    [hl+] := a
+    [hl+] := a
+    [hl+] := a
+    a := l
+    cp #160
+    jr.nz genspritesclearloop
+    ret
+
+@@oldsite_string
+    dc.b 0xef,0xec,0xe4,0xff,0xf3,0xe9,0xf4,0xe5,0x00
+
+@@summit_string
+    dc.b 0xf3,0xf5,0xed,0xed,0xe9,0xf4,0x00
+
+@@drawsstring
+    -- called from gensprites, de is starting x/y
+    -- bc is string pointer
+    -- 00 -> end, FF -> space
+@drawsstringloop
+    a := [bc]
+    bc++
+    cp #0
+    jr.z drawsstringexit
+    cp #0xff
+    jr.nz drawsstringchar
+    a := d
+    a += 4
+    d := a
+    jr drawsstringloop
+@drawsstringchar
+    [temp4] := a
+    a := e
+    [hl+] := a
+    a := d
+    [hl+] := a
+    a += 4
+    d := a
+    a := [temp4]
+    [hl+] := a
+    a := 0
+    [hl+] := a
+
+    jr drawsstringloop
+@drawsstringexit
+    ret
+
+@@drawtimecount
+    push de
+    push hl
+    bc := timecount+3
+    de := sstringbuf+1
+@drawtimecountloop
+    a := [bc]
+    l := 0
+@drawtimecountloop1
+    cp #10
+    jr.c drawtimecountend1
+    l++
+    a -= 10
+    jr drawtimecountloop1
+@drawtimecountend1
+    a += 0xb0
+    [de] := a
+    a := l
+    a += 0xb0
+    de--
+    [de] := a
+    de++
+    de++
+    a := 0xba
+    [de] := a
+    bc--
+    de++
+    de++
+    a := c
+    cp #((timecount) & 0xff)
+    jr.nz drawtimecountloop
+    de--
+    de--
+    a := 0x00
+    [de] := a
+    bc := sstringbuf
+    pop hl
+    pop de
+    call drawsstring
+    ret
+
+
+
+
+@@drawalternate
+    -- called from gensprites, de is starting x/y
+    -- bc is string pointer
+    -- 00 -> end, FF -> space
+    -- compute tile address
+    push hl
+    push bc
+    a := e
+    sla a
+    hl := temp2
+    [hl] := 0
+    rl (hl)
+    sla a
+    rl (hl)
+    h := [hl]
+    a &= 0xe0
+    l := a
+    a := d
+    srl a
+    srl a
+    srl a
+    a |= l
+    l := a
+    bc := 0x9800 - 1 - 32
+    hl += bc
+    pop bc
+    a := d -- d starts the SPRITE
+    --add a, 4
+    [temp4] := a
+    a := e
+    --sub a, 16
+    a += 8
+    [temp4+1] := a
+    push hl
+    pop de
+    pop hl
+@drawalternateloop
+    -- tile first, then sprite
+    a := [bc]
+    cp #0
+    jr.z drawalternateend
+    push hl
+    waitvram()
+    pop hl
+    [de] := a
+    de++
+    bc++
+    a := [bc]
+    cp #0
+    jr.z drawalternateend
+    cp #0xff
+    jr.nz drawalternatenoskip
+    bc++
+    a := [temp4]
+    a += 8
+    [temp4] := a
+    jr drawalternateloop
+@drawalternatenoskip
+    a := [temp4+1]
+    [hl+] := a
+    a := [temp4]
+    [hl+] := a
+    a += 8
+    [temp4] := a
+    a := [bc]
+    bc++
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    jr drawalternateloop
+@drawalternateend
+    ret
+
+
+@@writedeaths
+    push hl
+    pop bc
+    a := [deaths+1]
+    h := a
+    a := [deaths]
+    l := a
+    a := 0xb0
+    [bc] := a
+    a := h
+    cp #((1000) >> 8)
+    jr.c writedeathsskip1
+    jr.nz writedeathsgo1
+    a := l
+    cp #((1000) & 0xff)
+    jr.c writedeathsskip1
+@writedeathsgo1
+    hl := 999
+@writedeathsskip1
+
+    de := -100
+@writedeathsloop2
+    a := h
+    cp #0
+    jr.nz writedeathsgo2
+    a := l
+    cp #100
+    jr.c writedeathsend2
+@writedeathsgo2
+    a := [bc]
+    a++
+    [bc] := a
+    hl += de
+    jr writedeathsloop2
+@writedeathsend2
+    a := [bc]
+    cp #0xb0
+    jr.z writedeathsskip2
+    bc++
+    a := 0xb0
+    [bc] := a
+@writedeathsskip2
+
+    de := -10
+@writedeathsloop3
+    a := l
+    cp #10
+    jr.c writedeathsend3
+    a := [bc]
+    a++
+    [bc] := a
+    hl += de
+    jr writedeathsloop3
+@writedeathsend3
+    a := [bc]
+    cp #0xb0
+    jr.z writedeathsskip3
+    bc++
+@writedeathsskip3
+    a := 0xb0
+    a += l
+    [bc] := a
+    bc++
+    a := 0x00
+    [bc] := a
+    push bc
+    pop hl
+    ret
+
+@@updatepuffs
+    bc := puffs
+    a := [numpuffs]
+    d := a
+@updatepuffsloop
+    a := d
+    cp #0
+    jr.z updatepuffsloopend
+    bc++
+    bc++
+    a := [bc]
+    a++
+    [bc] := a
+    call genrandom
+    a &= 1
+    cp #0
+    jr.z updatepuffsnoinx
+    bc--
+    bc--
+    a := [bc]
+    a++
+    [bc] := a
+    bc++
+    bc++
+@updatepuffsnoinx
+    bc++
+    bc++
+    d--
+    jr updatepuffsloop
+@updatepuffsloopend
+    bc := puffs
+    hl := puffs
+    a := [numpuffs]
+    a--
+    sla a
+    sla a
+    e := a
+    d := 0
+    hl += de
+    a := [numpuffs]
+    d := a
+@updatepuffsloop2
+    a := d
+    cp #0
+    jr.z updatepuffsloopend2
+    bc++
+    bc++
+    a := [bc]
+    cp #12
+    jr.nz updatepuffsloop2skip
+    @puffdb
+    bc--
+    bc--
+    a := [hl+]
+    [bc] := a
+    bc++
+    a := [hl+]
+    [bc] := a
+    bc++
+    a := [hl+]
+    [bc] := a
+    bc++
+    a := [hl+]
+    [bc] := a
+    bc++
+    a := [numpuffs]
+    a--
+    [numpuffs] := a
+    jr updatepuffsloopend
+@updatepuffsloop2skip
+    d--
+    bc++
+    bc++
+    jr updatepuffsloop2
+@updatepuffsloopend2
+    ret
+
+@@spawnpuff
+    -- x and y in de
+    a := [numpuffs]
+    cp #12
+    jr.nz spawnpuffnocap
+    ret
+@spawnpuffnocap
+    hl := puffs
+    sla a
+    sla a
+    c := a
+    b := 0
+    hl += bc
+    a := d
+    [hl+] := a
+    a := e
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    push hl
+    call genrandom
+    pop hl
+    a &= 0x63
+    [hl+] := a
+    a := [numpuffs]
+    a++
+    [numpuffs] := a
+    ret
+
+@@loadborder
+    hl := 0x9800
+    de := 0x0400
+@loadborderloop
+    a := 0x28
+    [hl+] := a
+    de--
+    a := d
+    a |= e
+    cp #0
+    jp.nz loadborderloop
+    ret
+
+@@loadslice
+    -- room index in a, and slice in c
+    a += ((mapdata) >> 8)
+    b := a
+    hl := 0x9800
+    a := c
+    l := a
+    de := 32
+@loadsliceloop
+    a := [bc]
+    cp #1
+    jr.nz loadslicenoplayer
+    a := 0
+@loadslicenoplayer
+    [hl] := a
+    hl += de
+    a := c
+    a += 16
+    c := a
+    a &= 0xf0
+    cp #0
+    jr.nz loadsliceloop
+    ret
+
+@@clearslice
+    -- VALUE in a, and slice in c
+    b := a
+    hl := 0x9800
+    a := c
+    l := a
+    de := 32
+@clearsliceloop
+    a := b
+    cp #1
+    jr.nz clearslicenoplayer
+    a := 0
+@clearslicenoplayer
+    [hl] := a
+    hl += de
+    a := c
+    a += 16
+    c := a
+    a &= 0xf0
+    cp #0
+    jr.nz clearsliceloop
+    ret
+
+
+@@drawwinbox
+    hl := 36 + 0x9800
+    d := 8
+    e := 4
+    bc := 24
+@drawwinboxloop
+    a := 0x28
+    [hl+] := a
+    d--
+    a := d
+    cp #0
+    jr.nz drawwinboxloop
+    a := 8
+    d := a
+    hl += bc
+    e--
+    a := e
+    cp #0
+    jr.nz drawwinboxloop
+    ret
+
+@@loadroom
+    -- put room index in a
+    -- loads it into the tilemap
+
+    a += ((mapdata) >> 8)
+    b := a
+    a := 0
+    [numthings] := a
+    c := 0
+    push bc
+    -- this is a rly slow function so lets get this out of the way
+    call musstep
+    call musseq
+    pop bc
+    hl := 0x9800
+    de := 16
+@loadroomloop
+    a := [bc]
+    cp #1
+    jr.nz loadroomskip
+@loadroomd
+    a := c
+    a &= 0x0f
+    sla a
+    sla a
+    sla a
+    [playerx+1] := a
+    a := 0
+    [playerx] := a
+    [playery] := a
+    a := c
+    srl a
+    a &= 0xf8
+    [playery+1] := a
+    a := 0
+@loadroomskip
+    [hl+] := a
+    c++
+    a := c
+    cp #0
+    jr.z loadroomexit
+    a &= 0x0f
+    cp #0
+    jr.nz loadroomloop
+    hl += de
+    jr loadroomloop
+@loadroomexit
+    a := 1
+    [spawnanimst] := a
+    [noblocks] := a
+    a := 0
+    [dashtime] := a
+    [jbuffer] := a
+
+    a := [maxdash]
+    [havedash] := a
+    a := [gamestate]
+    cp #0
+    jr.z loadroomnosfx
+    hl := sfx_spawnst
+    call playsfx_pulse
+@loadroomnosfx
+    a := 0
+    [playervx] := a
+    [playervx+1] := a
+    [playervy] := a
+    [playervy+1] := a
+    [keyed] := a
+    [bwings] := a
+    [brkblkstate] := a
+@loadroomnoalt
+    ret
+
+@@initthings
+    -- go through room in VRAM (make sure we can)
+    -- for each byte index the table
+    -- if it's nonzero, spawn a thing
+    hl := 0x97ff
+    b := 0
+    d := 0
+@initthingsloop
+    a := b
+    [temp] := a
+    hl++
+    a := [hl]
+    [hl] := d
+    push hl
+    hl := thingfuncslo
+    e := a
+    hl += de
+    a := [hl]
+    cp #0
+    jr.nz initthingsyes
+    pop hl
+    [hl] := e
+    jr initthingsno
+@initthingsyes
+    c := a
+    push de
+    de := thingfuncshi - thingfuncslo
+    hl += de
+    a := [hl]
+    b := a
+    -- new thing entry
+    a := [numthings]
+    sla a
+    sla a
+    sla a
+    hl := things
+    e := a
+    d := 0
+    hl += de
+    a := [temp]
+    a &= 0x0f
+    sla a
+    sla a
+    sla a
+    [hl+] := a
+    a := [temp]
+    srl a
+    a &= 0xf8
+    [hl+] := a
+    a := b
+    [hl+] := a
+    a := c
+    [hl+] := a
+    pop de
+    a := e
+    [hl+] := a
+    a := d
+    [hl+] := a
+    [hl+] := a
+    [hl+] := a
+    a := [numthings]
+    a++
+    [numthings] := a
+    pop hl
+@initthingsno
+    a := [temp]
+    a++
+    b := a
+    a &= 0x0f
+    cp #0
+    jr.nz initthingsskip
+    e := 16
+    hl += de
+@initthingsskip
+    a := b
+    cp #0
+    jr.nz initthingsloop
+    ret
+
+
+@@text1
+    dc.b 0x82,0x83
+@@text2
+    dc.b 0x84,0x85,0x86,0x87,0x88,0x89,0x8a
+@@text3
+    dc.b 0x8b,0x8c,0x8d,0x8e,0x8f
+@@text4
+    dc.b 0x90,0x91,0x8d,0x86,0x92,0x93
+
+
+
+@@spritedma
+    a := ((oambuffer) >> 8)
+    [0xFF46] := a
+    a := 40
+@spritedmawait
+    a--
+    jr.nz spritedmawait
+    ret
+@spritedmaend
+
+@@collidepthing
+    -- checks collision b/w player and thing
+    -- ptr to thing in hl
+    -- tempx and tempy are offsets
+    push bc
+    a := [playerx+1]
+    b := a
+    a := [tempx]
+    a += b
+    e := [hl]
+    a -= e
+    cp #8
+    jr.c collidepthingyes1
+    cpl
+    cp #7
+    jr.c collidepthingyes1
+    a := 0
+    pop bc
+    ret
+@collidepthingyes1
+    a := [playery+1]
+    b := a
+    a := [tempy]
+    a += b
+    hl++
+    e := [hl]
+    hl--
+    a -= e
+    cp #8
+    jr.c collidepthingyes2
+    cpl
+    cp #7
+    jr.c collidepthingyes2
+    a := 0
+    pop bc
+    ret
+@collidepthingyes2
+    a := 1
+    pop bc
+    ret
+
+@@thingtileaddr
+    -- ptr to thing in bc
+    -- puts the address in vram for that thing's tile in hl
+    bc--
+    a := [bc] -- load a high byte of Y
+    bc--
+    sla a -- a = Yhi << 1
+    hl := temp2 -- hl = &temp
+    [hl] := 0 -- temp = 0
+    rl (hl) -- temp = upper bit of Yhi
+    sla a
+    rl (hl)
+    h := [hl] -- h:a = Yhi << 2
+    a &= 0xe0 -- mask off lower 3 bits of Yhi
+    l := a -- hl = (Yhi & ~7) << 2
+    a := [bc] -- a = Xhi
+    push bc
+    srl a
+    srl a
+    srl a
+    a |= l
+    l := a -- hl = ((Yhi & ~7) << 2) | (Xhi >> 3)
+    bc := 0x9800 -- essentially, hl is index of player tile
+    hl += bc
+    pop bc
+    ret
+
+@@jphl
+    jp (hl)
+
+
+@@tfuncspring
+    a := 0
+    [tempx] := a
+    [tempy] := a
+    -- detect blocks below
+    push bc
+    push de
+    bc--
+    a := [bc]
+    a += 8
+    d := a
+    bc++
+    bc++
+    bc++
+    a := [bc]
+    l := a
+    bc := things
+    a := [numthings]
+    e := a
+@tfuncspringdetloop
+    bc++
+    a := [bc] -- get the y
+    cp d
+    jr.nz tfuncspringdetno1
+    bc++
+    bc++
+    a := [bc] -- low part of pointer
+    cp #((tfuncblock) & 0xff)
+    jr.nz tfuncspringdetno2
+    bc++
+    bc++
+    a := [bc] -- timer val
+    cp #30
+    jr.nc tfuncspringdetyes
+    a := l
+    cp #0x13
+    jr.nz tfuncspringdetno3
+    a := [bc]
+    cp #10
+    jr.nc tfuncspringdetno3
+    a := 10
+    [bc] := a
+    jr tfuncspringdetno3
+@tfuncspringdetyes
+    -- found broke block
+    pop de
+    pop bc
+    bc++
+    bc++
+    a := 0
+    [bc] := a
+    bc--
+    bc--
+    ret
+@tfuncspringdetno1
+    bc++
+    bc++
+@tfuncspringdetno2
+    bc++
+    bc++
+@tfuncspringdetno3
+    bc++
+    bc++
+    bc++
+    e--
+    a := e
+    cp #0
+    jr.nz tfuncspringdetloop
+    pop de
+    pop bc
+
+
+    a := b -- load hl from bc
+    h := a
+    a := c
+    l := a
+    hl++
+    hl++
+    hl++
+    a := [hl] -- timer
+    cp #0
+    jr.z tfuncspringrun
+    a--
+    [hl] := a
+    cp #0
+    jr.nz tfuncspringcont
+@tfuncspringcont
+    jr tfuncspringskip
+@tfuncspringrun
+    hl--
+    a := 0x12
+    [hl] := a
+    hl--
+    hl--
+    hl--
+    hl--
+    call collidepthing
+    cp #0
+    jr.z tfuncspringskip
+    -- springs give you dash back,
+    -- and set your VY to -3
+    a := [maxdash]
+    [havedash] := a
+    a := 0xfd
+    [playervy+1] := a
+    a := 0x00
+    [playervy] := a
+    hl++
+    a := [hl-]
+    a -= 8
+    [playery+1] := a
+    push de
+    d := [hl]
+    hl++
+    e := [hl]
+    push hl
+    push bc
+    call spawnpuff
+    hl := sfx_boing
+    call playsfx_pulse
+    pop bc
+    pop hl
+    pop de
+    hl++
+    hl++
+    hl++
+    a := 0x13
+    [hl] := a
+    hl++
+    a := 20
+    [hl] := a
+@tfuncspringskip
+    ret
+
+
+
+-- x / y / point / er / sprite / .. / .. / ..
+-- bc: thing buffer, points to first half of pointer
+-- hl: points to thing code!
+@@tfuncberry
+    a := 0
+    [tempx] := a
+    [tempy] := a
+    push bc
+    c := ((berries) & 0xff)
+    a := [curroom]
+    a += c
+    c := a
+    b := ((berries) >> 8)
+    a := [bc] -- -> berries[curroom]
+    cp #0
+    jr.z tfuncberrydontkill
+    pop bc
+    a := ((tfuncdead) >> 8)
+    [bc] := a
+    bc++
+    a := ((tfuncdead) & 0xff)
+    [bc] := a
+    bc--
+    bc--
+    a := 0xf0
+    [bc] := a
+    bc++
+    ret
+@tfuncberrydontkill
+    pop bc
+    push bc
+    a := b
+    h := a
+    a := c
+    l := a
+    hl++
+    hl++
+    hl++
+    a := [hl] -- timer
+    cp #128
+    jr.nz tfuncberryskip0
+    a := 1 -- reset (overflow)
+    [hl] := a
+@tfuncberryskip0
+    cp #0 -- only first frame
+    jr.nz tfuncberryskip
+    bc-- -- -> y
+    a := [bc]
+    hl++
+    [hl-] := a -- -> store start y
+    a := 0
+@tfuncberryskip
+    a := 0xff
+    cp (hl)
+    jp.z tfuncberrynoinc
+    [hl]++ -- timer up
+@tfuncberrynoinc
+    a := [hl]
+    hl++
+    e := [hl] -- start y
+    push hl
+    hl := sinlut
+    c := a -- timer
+    b := 0
+    a := [bwings]
+    cp #0
+    jr.z tfuncberrynowings1
+    a := c -- float twice as fast if winged
+    sla a
+    a &= 0x7f
+    c := a
+@tfuncberrynowings1
+    hl += bc
+    a := [hl] -- compute sin
+    srl a
+    srl a
+    srl a
+    srl a
+    srl a
+    c := a -- y offset
+    a := [bwings]
+    cp #0
+    jr.z tfuncberrynowings2
+    a := c
+    srl a -- also move half as far if winged
+    c := a
+@tfuncberrynowings2
+    a := c
+    a -= 4
+    a += e -- center around zero and add
+    pop hl
+    bc := -5
+    hl += bc
+    [temp3] := a
+    a := [hl]
+    [temp3+1] := a
+    a := [temp3]
+    --ld [hl], a
+    hl--
+    call collidepthing
+    hl++
+    e := a
+    a := [temp3]
+    [hl] := a
+    a := e
+    cp #0
+    jr.z tfuncberryno
+    a := [temp3+1]
+    [hl] := a
+    hl++
+    a := ((tfunc1k) >> 8)
+    [hl+] := a
+    a := ((tfunc1k) & 0xff)
+    [hl+] := a
+    a := 0x98
+    [hl+] := a
+    a := 0
+    [hl] := a
+    a := [curroom]
+    c := ((berries) & 0xff)
+    a += c
+    c := a
+    b := ((berries) >> 8)
+    a := 1
+    [bc] := a
+    push hl
+    hl := sfx_berryget
+    call playsfx_pulse
+    pop hl
+@tfuncberryno
+    pop bc
+    ret
+
+@@tfuncwerry
+    a := 1
+    [bwings] := a
+    call tfuncberry
+    push bc
+    a := [temp4]
+    l := a
+    a := [temp4+1]
+    h := a
+    bc--
+    bc--
+    a := [bc]
+    a += 8
+    e := a
+    bc++
+    a := [bc]
+    a += 16
+    [temp3+1] := a
+    bc++
+    bc++
+    bc++
+    bc++
+    a := [bc] -- tinmer
+    cp #0xff
+    jr.nz tfuncwerrynofly
+    bc++
+    bc++
+    a := [bc] -- fly timer
+
+    a++
+    [bc] := a
+    srl a
+    push hl
+    h := ((werrysequence) >> 8)
+    a += ((werrysequence) & 0xff)
+    l := a
+    a := [hl] -- sequence idx
+    h := b
+    l := c
+    hl--
+    a += [hl] -- add start y to seq val
+    hl--
+    hl--
+    hl--
+    hl--
+    hl--
+    [hl] := a -- new y
+    a += 16
+    [temp3+1] := a
+    a -= 16
+    a &= 0x80
+    cp #0
+    bc--
+    bc--
+    jr.z tfuncwerrynodie
+    bc--
+    bc--
+    a := ((tfuncdead) & 0xff)
+    [bc] := a
+    bc--
+    a := ((tfuncdead) >> 8)
+    [bc] := a
+    bc--
+    a := 0xf0
+    [bc] := a
+    pop hl
+    pop bc
+    ret
+@tfuncwerrynodie
+
+    pop hl
+
+    a := 0x2d
+    [temp3] := a
+    jr tfuncwerrynodash
+@tfuncwerrynofly
+    a &= 0x3f
+    cp #48
+    jr.nc tfuncwerrysprno
+    cp #16
+    jp.c tfuncwerrysprno
+    cp #32
+    jp.c tfuncwerryspr47
+    a := 0x2e
+    jr tfuncwerrysprdone
+@tfuncwerryspr47
+    a := 0x2f
+    jr tfuncwerrysprdone
+@tfuncwerrysprno
+    a := 0x2d
+@tfuncwerrysprdone
+    [temp3] := a
+
+    a := [dashtime]
+    cp #0
+    jr.z tfuncwerrynodash
+    a := 0xff
+    [bc] := a
+    bc++
+    bc++
+    a := 0 -- zero out flyer timer
+    [bc] := a
+@tfuncwerrynodash
+    a := [temp3+1]
+
+    bc := 4
+    --add hl, bc
+    [hl] := a
+    hl += bc
+    [hl+] := a
+
+    a := e
+    a -= 6
+    [hl] := a
+    bc := -4
+    hl += bc
+    a += 12
+    [hl-] := a
+    a := [hl+]
+    e := a
+    hl++
+
+    a := [temp3]
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    hl++
+    hl++
+    a := [temp3]
+    [hl+] := a
+    a := 0x20
+    [hl+] := a
+    pop bc
+    a := l
+    [temp4] := a
+    a := h
+    [temp4+1] := a
+
+    ret
+
+@@tfuncblock
+    push bc
+    call thingtileaddr
+    a := 0x17
+    push hl
+    waitvram()
+    pop hl
+    [hl] := a
+    a := b
+    h := a
+    a := c
+    l := a
+    hl++
+    hl++
+    hl++
+    hl++
+    hl++
+    a := [hl]
+    cp #129+30
+    jr.nz tfuncblocknoreset
+    a := 0
+    [hl] := a
+    push hl
+    hl := sfx_brespawn
+    call playsfx_pulse
+    pop hl
+    pop bc
+    ret
+@tfuncblocknoreset
+    cp #0
+    jr.nz tfuncnocheck
+    a := 0
+    [tempx] := a
+    a++
+    [tempy] := a
+    bc := -5
+    hl += bc
+    call collidepthing
+    cp #0
+    jr.nz tfuncblockyes
+    a := [wallslide]
+    cp #0
+    jr.z tfuncblockno
+    a := 0
+    [tempy] := a
+    a := [playerflip]
+    sra a
+    sra a
+    sra a
+    sra a
+    sra a
+    sra a
+    a++
+    [tempx] := a
+    call collidepthing
+    cp #0
+    jr.z tfuncblockno
+@tfuncblockyes
+    bc := 5
+    hl += bc
+    a := 1
+    [hl] := a
+    jr tfuncblockdone
+@tfuncblockno
+
+    bc := 5
+    hl += bc
+@tfuncblockdone
+    --inc hl ; timer byte
+    a := 0
+    hl--
+    [hl] := a
+    pop bc
+    ret
+@tfuncnocheck
+    pop bc
+    push bc
+    @bkpt
+    e := a
+    a := [noblocks]
+    cp #0
+    jr.nz tfuncblockskip
+    e++
+@tfuncblockskip
+    a := e
+    [hl] := a
+    cp #10
+    jr.nc tfuncblock1
+    a := 0x17
+    [temp3] := a
+    jr tfuncblockend
+@tfuncblock1
+    cp #20
+    jr.nc tfuncblock2
+    a := 0x18
+    [temp3] := a
+    jr tfuncblockend
+@tfuncblock2
+    cp #30
+    jr.nc tfuncblock3
+    a := 0x19
+    [temp3] := a
+    jr tfuncblockend
+@tfuncblock3
+    a := 0
+    [temp3] := a
+@tfuncblockend
+    call thingtileaddr
+    a := [temp3]
+    push hl
+    waitvram()
+    pop hl
+    [hl] := a
+    pop bc
+    ret
+
+-- 40 41
+-- 50 51
+@@tfuncbreakblock
+
+    push bc
+    push de
+    a := [brkblkstate]
+    cp #0
+    jr.nz tfuncbreakblocknoinit
+
+    push bc
+    c := ((berries) & 0xff)
+    a := [curroom]
+    a += c
+    c := a
+    b := ((berries) >> 8)
+    a := [bc] -- -> berries[curroom]
+    cp #0
+    jr.z tfuncbreakblockdontkill
+    pop bc
+    a := ((tfuncdead) >> 8)
+    [bc] := a
+    bc++
+    a := ((tfuncdead) & 0xff)
+    [bc] := a
+    bc--
+    bc--
+    a := 0xf0
+    [bc] := a
+    bc++
+    pop de
+    pop bc
+    ret
+
+@tfuncbreakblockdontkill
+    pop bc
+    call thingtileaddr
+    push hl
+    waitvram()
+    pop hl
+    a := 0x40
+    [hl+] := a
+    push hl
+    waitvram()
+    pop hl
+    a := 0x41
+    [hl+] := a
+    bc := 0x1e
+    hl += bc
+    push hl
+    waitvram()
+    pop hl
+    a := 0x50
+    [hl+] := a
+    push hl
+    waitvram()
+    pop hl
+    a := 0x51
+    [hl] := a
+    a := 1
+    [brkblkstate] := a
+@tfuncbreakblocknoinit
+    cp #2
+    jr.nz tfuncbreakblocknobreak
+    hl := sfx_secret
+    call playsfx_pulse
+@tfuncbreakblockautokill
+    push bc
+    call thingtileaddr
+
+
+    push hl
+    waitvram()
+    pop hl
+    a := 0x00
+    [hl+] := a
+    [hl+] := a
+    bc := 0x1e
+    hl += bc
+    push hl
+    waitvram()
+    pop hl
+    [hl+] := a
+    [hl] := a
+    a := [curroom]
+    cp #16
+    jr.nz tfuncbreakblocknorep
+    push hl
+    waitvram()
+    pop hl
+    a := 0x21
+    [0x9800+32*15] := a
+    a := 0x23
+    [0x9801+32*15] := a
+@tfuncbreakblocknorep
+    pop bc
+    bc--
+    a := [bc]
+    e := a
+    a += 4
+    [bc] := a
+    bc--
+    a := [bc]
+    d := a
+    a += 4
+    [bc] := a
+    bc++
+    push bc
+    call spawnpuff
+    a := d
+    a += 8
+    d := a
+    call spawnpuff
+    a := e
+    a += 8
+    e := a
+    call spawnpuff
+    a := d
+    a -= 8
+    d := a
+    call spawnpuff
+    pop bc
+    bc++
+    a := ((tfuncberry) >> 8)
+    [bc] := a
+    bc++
+    a := ((tfuncberry) & 0xff)
+    [bc] := a
+    bc++
+    a := 0x1a
+    [bc] := a
+@tfuncbreakblocknobreak
+    pop de
+    pop bc
+    ret
+
+
+@@tfunc1k
+    a := [temp4]
+    l := a
+    a := [temp4+1]
+    h := a
+    push bc
+    bc++
+    bc++
+    bc++
+    a := [bc]
+    a++
+    cp #60
+    jr.nz tfunc1kno
+    bc--
+    bc--
+    a := ((tfuncdead) & 0xff)
+    [bc] := a
+    bc--
+    a := ((tfuncdead) >> 8)
+    [bc] := a
+    bc--
+    a := 0xf0
+    [bc] := a
+    e := 1
+    jr tfunc1kyes
+@tfunc1kno
+    [bc] := a
+    a &= 7
+    e := a
+    bc--
+    bc--
+    bc--
+    bc--
+@tfunc1kyes
+    a := [bc]
+    a += 16
+    [hl+] := a
+    a := e
+    cp #0
+    jr.nz tfunc1kstay
+    a := [bc]
+    a--
+    [bc] := a
+@tfunc1kstay
+    bc--
+    a := [bc]
+    a += 16
+    [hl+] := a
+    a := 0x99
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    pop bc
+    a := l
+    [temp4] := a
+    a := h
+    [temp4+1] := a
+    ret
+
+@@tfuncballoon
+    a := 0
+    [tempx] := a
+    [tempy] := a
+    push bc
+    a := b
+    h := a
+    a := c
+    l := a
+    bc := 3
+    hl += bc
+    a := [hl] -- timer byte
+    cp #0
+    jp.nz tfuncballoondead
+    hl++
+    -- vertical timer byte
+    a := [hl]
+    a++
+    cp #200
+    jr.nz tfuncballoonnoreset
+    a := 0
+@tfuncballoonnoreset
+    [hl] := a
+    srl a
+    e := a
+    bc := -5
+    hl += bc
+
+
+    a := e
+    [temp] := a
+    cp #32
+    jr.nc tfuncballoono1
+    a := -2
+    e := a
+    jr tfuncballoonoff
+@tfuncballoono1
+    cp #41
+    jr.nc tfuncballoono2
+    a := -1
+    e := a
+    jr tfuncballoonoff
+@tfuncballoono2
+    cp #50
+    jr.nc tfuncballoono3
+    a := 0
+    e := a
+    jr tfuncballoonoff
+@tfuncballoono3
+    cp #83
+    jr.nc tfuncballoono4
+    a := 1
+    e := a
+    jr tfuncballoonoff
+@tfuncballoono4
+    cp #91
+    jr.nc tfuncballoono5
+    a := 0
+    e := a
+    jr tfuncballoonoff
+@tfuncballoono5
+    a := -1
+    e := a
+@tfuncballoonoff
+    a := [hl]
+    a += 2
+    a &= 0xf8
+    a += e
+    [hl] := a
+    hl--
+    a := [maxdash]
+    e := a
+    a := [havedash]
+    cp e
+    jr.z tfuncballoonno
+    call collidepthing
+    cp #0
+    jr.z tfuncballoonno
+    a := [maxdash]
+    [havedash] := a
+    push hl
+    hl := sfx_balloon
+    call playsfx_pulse
+    pop hl
+    a := 0x0
+    hl++
+    hl++
+    hl++
+    hl++
+    [hl] := a
+    hl++
+    a := 120
+    [hl] := a
+@tfuncballoonno
+    pop bc
+    a := [temp4]
+    l := a
+    a := [temp4+1]
+    h := a
+
+    bc--
+    bc--
+    a := [bc]
+    a += 8
+    e := a
+    bc++
+    a := [bc]
+    bc++
+
+    a += 23
+    [hl+] := a
+    a := e
+    [hl+] := a
+    a := [temp]
+    srl a
+    srl a
+    srl a
+    srl a
+    cp #3
+    jr.c tfuncballoonmod1
+    a -= 3
+@tfuncballoonmod1
+    cp #3
+    jr.c tfuncballoonmod2
+    a -= 3
+@tfuncballoonmod2
+    a += 0x0d
+    [hl+] := a
+    a := 0
+    [hl+] := a
+
+    a := l
+    [temp4] := a
+    a := h
+    [temp4+1] := a
+    ret
+@tfuncballoondead
+    a--
+    [hl] := a
+    cp #0
+    jr.nz tfuncballoonskip
+    a := 0x16
+    hl--
+    [hl] := a
+    push hl
+    hl := sfx_brespawn
+    call playsfx_pulse
+    pop hl
+@tfuncballoonskip
+    pop bc
+    ret
+
+@@tfunckey
+    push bc
+    c := ((berries) & 0xff)
+    a := [curroom]
+    a += c
+    c := a
+    b := ((berries) >> 8)
+    a := [bc] -- -> berries[curroom]
+    cp #0
+    jr.z tfunckeydontkill
+    pop bc
+    a := ((tfuncdead) >> 8)
+    [bc] := a
+    bc++
+    a := ((tfuncdead) & 0xff)
+    [bc] := a
+    bc--
+    bc--
+    a := 0xf0
+    [bc] := a
+    bc++
+    ret
+@tfunckeydontkill
+    pop bc
+    push bc
+    bc++
+    bc++
+    bc++
+    a := [bc]
+    a++
+    cp #120 -- overflow, reset timer
+    jr.nz tfunckeynoreset
+    a := 0
+@tfunckeynoreset
+    [bc] := a
+    srl a
+    e := a
+    cp #30
+    jr.c tfunckeynoflip -- first half no flip
+    a := 0x20
+    [tempflags] := a -- for ourself
+    a := e
+    a -= 30
+    e := a
+@tfunckeynoflip
+    -- 0-9: 10
+    -- 10-14: 9
+    -- 15-24: 8
+    -- 25-29: 9
+    a := e
+    cp #10
+    jr.nc tfunckeynosp10
+    a := 10
+    jr tfunckeyspdone
+@tfunckeynosp10
+    cp #15
+    jr.nc tfunckeynosp9
+    a := 9
+    jr tfunckeyspdone
+@tfunckeynosp9
+    cp #25
+    jr.nc tfunckeynosp8
+    a := 8
+    jr tfunckeyspdone
+@tfunckeynosp8
+    a := 9
+@tfunckeyspdone
+    bc--
+    [bc] := a
+    pop bc
+    a := 0
+    [tempx] := a
+    a++
+    [tempy] := a
+    push bc
+    pop hl
+    hl--
+    hl--
+    call collidepthing
+    cp #0
+    jr.z tfunckeyno
+    push bc
+    pop hl
+    hl--
+    a := 0xf0
+    [hl+] := a
+    a := ((tfuncdead) >> 8)
+    [hl+] := a
+    a := ((tfuncdead) & 0xff)
+    [hl] := a
+    a := 1
+    [keyed] := a
+    push hl
+    hl := sfx_keyget
+    call playsfx_pulse
+    pop hl
+@tfunckeyno
+    ret
+
+@@tfuncchest
+    push bc
+    c := ((berries) & 0xff)
+    a := [curroom]
+    a += c
+    c := a
+    b := ((berries) >> 8)
+    a := [bc] -- -> berries[curroom]
+    cp #0
+    jr.z tfuncchestdontkill
+    pop bc
+    a := ((tfuncdead) >> 8)
+    [bc] := a
+    bc++
+    a := ((tfuncdead) & 0xff)
+    [bc] := a
+    bc--
+    bc--
+    a := 0xf0
+    [bc] := a
+    bc++
+    ret
+@tfuncchestdontkill
+    pop bc
+    push bc
+    a := [keyed]
+    cp #0
+    jr.z tfuncchestlocked
+    cp #40
+    jr.nz tfuncchestnoopen
+    bc--
+    a := [bc]
+    a -= 4
+    [bc] := a
+    bc++
+    a := ((tfuncberry) >> 8)
+    [bc] := a
+    bc++
+    a := ((tfuncberry) & 0xff)
+    [bc] := a
+    bc++
+    a := 0x1a
+    [bc] := a
+    hl := sfx_secret
+    call playsfx_pulse
+    pop bc
+    ret
+@tfuncchestnoopen
+    a &= 1
+    cp #0
+    jr.z tfuncchestlocked
+    bc--
+    bc--
+@tfuncchestrand
+    call genrandom
+    a &= 3
+    cp #3
+    jr.z tfuncchestrand
+    a--
+    e := a
+    a := [bc]
+    a++
+    a &= 0xf8
+    a += e
+    [bc] := a
+    @tfuncchestlocked
+    pop bc
+    ret
+
+@@tfunccloud
+    a := [temp4]
+    l := a
+    a := [temp4+1]
+    h := a
+
+    push bc
+    push de
+    bc++
+    bc++
+    a := [bc]
+    d := a
+    e := 0 -- horiz. offset
+    cp #0x0b
+    jr.nz tfunccloudrightsp
+    e := 16
+@tfunccloudrightsp
+    bc--
+    bc--
+    bc--
+    a := [bc] -- y pos
+    a += 16
+    [hl+] := a
+    bc--
+    a := [cloudtimer]
+    --ld a, 1
+    a &= 3
+    cp #0
+    jp.nz tfunccloudnomove -- cycle 1/4 ppf
+    a := e
+    cp #16
+    a := [bc]
+    jp.nz tfunccloudright
+    a -= 2
+@tfunccloudright
+    a++
+    cp #136
+    jp.nz tfunccloudnowrap1
+    a := -7
+@tfunccloudnowrap1
+    cp #-16
+    jp.nz tfunccloudnowrap2
+    a := 127
+@tfunccloudnowrap2
+    [bc] := a
+@tfunccloudnomove
+    a := [bc] -- x pos
+    a += e
+    [hl+] := a
+    a := d
+    a ^= 7
+    [hl+] := a
+
+    push bc
+    a := [bc]
+    [temp3] := a
+    bc++
+    a := [bc]
+    b := a
+    a := e
+    a -= 8
+    e := a
+    a := [temp3]
+    a += e
+    c := a
+    call tfunccloudmask
+    [hl+] := a
+    a := c
+    a -= e
+    c := a
+    call tfunccloudmask
+    [tempflags] := a
+    pop bc
+    a := e
+    a += 8
+    e := a
+    d := a
+    cp #16
+    a := [bc]
+    jp.z tfunccloudnoadj
+    a -= 8
+@tfunccloudnoadj
+    a += 20
+    e := a
+    a := [playerx+1]
+    a += 8
+    cp e
+    jp.nc tfunccloudnocoll
+    a += 16
+    cp e
+    jp.c tfunccloudnocoll
+    bc++
+    a := [bc]
+    --inc a
+    e := a
+    a := [playery+1]
+    a += 4
+    cp e
+    jp.nc tfunccloudnocoll
+    a += 4
+    cp e
+    jp.c tfunccloudnocoll
+    a := [playervy+1]
+    a &= 0x80
+    cp #0
+    jp.nz tfunccloudnocoll
+    a := 0
+    [playervy+1] := a
+    [playervy] := a
+    a := e
+    a -= 7 -- would be 6
+    [playery+1] := a
+    a := 0
+    [playery] := a
+    a := 1
+    [onground] := a
+    a := [maxdash]
+    [havedash] := a
+    a := [frametimer]
+    a &= 3
+    cp #0
+    jp.nz tfunccloudnomoveyou
+    a := d
+    cp #16
+    a := [playerx+1]
+    jp.nz tfunccloudrightyou
+    a -= 2
+@tfunccloudrightyou
+    a++
+    [playerx+1] := a
+@tfunccloudnomoveyou
+@tfunccloudnocoll
+    pop de
+    pop bc
+    a := l
+    [temp4] := a
+    a := h
+    [temp4+1] := a
+    ret
+
+@@tfunccloudmask
+    -- b is y, c is x
+    a := [curroom]
+    cp #17
+    jr.z tfunccloudmask1800
+    cp #10
+    jr.nz tfunccloudmask700
+    a := c
+    cp #120
+    jr.nc tfunccloudbg2
+    cp #24
+    jr.c tfunccloudbg
+    cp #72
+    jr.nc tfunccloudbg
+    jr tfunccloudbg2
+@tfunccloudmask1800
+    a := c
+    cp #48
+    jr.c tfunccloudbg2
+    cp #128
+    jr.nc tfunccloudbg2
+    jr tfunccloudbg
+@tfunccloudmask700
+    a := b
+    cp #64
+    jp.c tfunccloudbg2
+    a := c
+    cp #104
+    jp.nc tfunccloudbg2
+@tfunccloudbg
+    a := 0
+    ret
+@tfunccloudbg2
+    a := 0x80
+    ret
+
+
+
+@@tfuncdead
+    ret
+
+@@tfuncdchest
+    a := 0
+    [tempx] := a
+    a := -8
+    [tempy] := a
+    push bc
+    a := b
+    h := a
+    a := c
+    l := a
+    hl--
+    hl--
+    call collidepthing
+    cp #0
+    jp.z tfuncdchestno
+@tfuncdchestyes
+a := [onground]
+cp #0
+    jr.z tfuncdchestdone
+    a := 0
+    [playervx] := a
+    [playervx+1] := a
+    [playervy] := a
+    [playervy+1] := a
+    a := 120
+    [chestanim] := a
+    [screenshake] := a
+    hl++
+    hl++
+    a := ((tfuncorb) >> 8)
+    [hl+] := a
+    a := ((tfuncorb) & 0xff)
+    [hl+] := a
+    a := 0x66
+    [hl-] := a
+    hl--
+    push de
+    hl--
+    a := [hl-]
+    e := a
+    a := [hl]
+    d := a
+    call spawnpuff
+    a := d
+    a += 8
+    d := a
+    call spawnpuff
+    pop de
+    pop bc
+    push bc
+    call thingtileaddr
+    hl++
+    push hl
+    hl := sfx_chestopen
+    call playsfx_pulse
+    waitvram()
+    pop hl
+    a := 0
+    [hl+] := a
+    pop bc
+    bc--
+    a := 230
+    [bc] := a
+    bc++
+    ret
+@tfuncdchestno
+    a := -8
+    [tempx] := a
+    call collidepthing
+    cp #0
+    jr.nz tfuncdchestyes
+@tfuncdchestdone
+    pop bc
+    ret
+
+@@tfuncorb
+    a := [chestanim]
+    cp #0
+    jr.z tfuncorbreal
+    cp #1
+    jp.nz tfuncorbnoshow
+    push bc
+    bc--
+    a := 10*8-2
+    [bc] := a
+    bc--
+    a := 9*8-4
+    [bc] := a
+    pop bc
+@tfuncorbnoshow
+    a &= 7
+    cp #0
+    jr.nz tfuncorbnospawn
+@tfuncorbspawn
+    call genrandom
+    push bc
+    push de
+    e := a
+    hl := things
+    a := [numthings]
+    a++
+    [numthings] := a
+    a--
+    sla a
+    sla a
+    sla a
+    c := a
+    b := 0
+    hl += bc
+    a := e
+    a &= 15
+    a += 68
+    [hl+] := a
+    a := 0x48
+    [hl+] := a
+    a := ((tfunccline) >> 8)
+    [hl+] := a
+    a := ((tfunccline) & 0xff)
+    [hl+] := a
+    a := 0x9a
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    [hl+] := a
+    [hl+] := a
+    pop de
+    pop bc
+@tfuncorbnospawn
+    ret
+@tfuncorbreal
+    push bc
+
+    a := 0
+    [temp3] := a
+    a := [temp4]
+    l := a
+    a := [temp4+1]
+    h := a
+    push de
+    bc--
+
+@tfuncorbspinloop
+    a := [temp3]
+    sla a
+    sla a
+    sla a
+    d := a
+    a := [frametimer]
+    a += d
+    a &= 63
+    sla a
+    push hl
+    h := ((sinlut) >> 8)
+    l := a
+    a := [hl]
+    srl a
+    srl a
+    srl a
+    srl a
+    a += 10 -- -8 + 16 + 2 - 1
+    e := a
+    a := l
+    a += 32 -- sin -> cos
+    a &= 127
+    l := a
+    a := [hl]
+    srl a
+    srl a
+    srl a
+    srl a -- no add since +8 -8
+    a += 2
+    d := a
+    pop hl
+    a := [bc] -- get current Y
+    a += e
+    [hl+] := a
+    bc--
+    a := [bc]
+    bc++
+    a += d
+    [hl+] := a -- transfer over X
+    a := 0x94
+    [hl+] := a
+    a := 0
+    [hl+] := a
+    a := [temp3]
+    a++
+    [temp3] := a
+    cp #8
+    jr.nz tfuncorbspinloop
+
+    pop de
+    a := l
+    [temp4] := a
+    a := h
+    [temp4+1] := a
+
+
+    bc++
+    bc++
+    bc++
+    bc++
+    a := [bc]
+    cp #8
+    jr.nc tfuncorbnoup
+    a++
+    [bc] := a
+    bc--
+    bc--
+    bc--
+    bc--
+    srl a
+    l := a
+    a := 4
+    a -= l
+    l := a
+    a := [bc]
+    -- 0,1->4 2,3->3 4,5->2 6,7->1
+    a -= l
+    [bc] := a
+    jr tfuncorbnocoll
+@tfuncorbnoup
+    -- spawn some particles
+    -- particles take 64 frames to spin
+    -- so, shift left and load from sinlut -> 0 - 255
+    -- 16 pixel range, so shfit right by 4
+    -- and subtract 8
+
+    a := 0
+    [tempx] := a
+    [tempy] := a
+    a := b
+    h := a
+    a := c
+    l := a
+    bc := -5 -- timer -> x
+    hl += bc
+    call collidepthing
+    cp #0
+    jr.z tfuncorbnocoll
+    hl++
+    a := 230
+    [hl+] := a
+    a := ((tfuncdead) >> 8)
+    [hl+] := a
+    a := ((tfuncdead) & 0xff)
+    [hl] := a
+    a := 2
+    [maxdash] := a
+    [havedash] := a
+    hl := sfx_orbget
+    call playsfx_pulse
+@tfuncorbnocoll
+    pop bc
+    ret
+
+@@tfunccline
+    push bc
+    a := [chestanim]
+    cp #0
+    jr.nz tfuncclinereal
+    bc++
+    bc++
+    a := 0
+    [bc] := a
+    pop bc
+    ret
+@tfuncclinereal
+    push de
+    a := [temp4]
+    l := a
+    a := [temp4+1]
+    h := a
+    bc--
+    bc--
+    a := [bc]
+    e := a
+    bc++
+    a := [bc]
+    d := a
+    a += 8
+    [hl+] := a
+    a := e
+    [hl+] := a
+    a := 0x9a
+    [hl+] := a
+    a := 0x00
+    [hl+] := a
+
+    a := d
+    a += 16
+    [hl+] := a
+    a := e
+    [hl+] := a
+    a := 0x9a
+    [hl+] := a
+    a := 0x00
+    [hl+] := a
+
+    a := d
+    a += 24
+    [hl+] := a
+    a := e
+    [hl+] := a
+    a := 0x9a
+    [hl+] := a
+    a := 0x00
+    [hl+] := a
+
+    a := d
+    a -= 3
+    cp #0x49
+    jr.c tfuncclinenokill
+    a := 0x48
+@tfuncclinenokill
+    [bc] := a
+    a := h
+    [temp4+1] := a
+    a := l
+    [temp4] := a
+    pop de
+    pop bc
+    ret
+
+@@tfuncflag
+    a := 0
+    [tempx] := a
+    [tempy] := a
+    push bc
+    bc--
+    bc--
+    push bc
+    a := 0x40
+    [bc] := a
+    bc++
+    bc++
+    bc++
+    bc++
+    bc++
+    a := [bc]
+    cp #10
+    jr.nc tfuncflagspr1
+    a := 0x76
+    jr tfuncflagsprdone
+@tfuncflagspr1
+    cp #20
+    jr.nc tfuncflagspr2
+    a := 0x77
+    jr tfuncflagsprdone
+@tfuncflagspr2
+    a := 0x78
+@tfuncflagsprdone
+    e := a
+    a := [bc]
+    a++
+    cp #30
+    jr.nz tfuncflagnoreset
+    a := 0
+@tfuncflagnoreset
+    [bc] := a
+    bc--
+    a := e
+    [bc] := a
+    pop hl
+    call collidepthing
+    cp #0
+    jr.z tfuncflagnocoll
+    a := [flagmode]
+    cp #0
+    jr.nz tfuncflagnocoll
+    a++
+    [flagmode] := a
+@tfuncflagnocoll
+    pop bc
+    ret
+
+
+@schkSTART
+
+@@playsfx_lowpri
+    a := [pl2musp+1]
+    cp #0
+    jr.z playsfx_lowpri_ok
+    a := [pl2musp]
+    cp #((sfx_dash_pl) & 0xff)
+    jr.z playsfx_lowpri_ok
+    cp #((sfx_jump) & 0xff)
+    jr.z playsfx_lowpri_ok
+    cp #((sfx_walljump) & 0xff)
+    jr.z playsfx_lowpri_ok
+    ret
+@playsfx_lowpri_ok
+    call playsfx_pulse
+    ret
+
+@@apuenable
+    a := 0
+    [NR30] := a
+    hl := triwave
+    bc := 0xff30
+    e := 16
+@apuwriteloop
+    a := [hl]
+    hl++
+    [bc] := a
+    bc++
+    e--
+    a := e
+    cp #0
+    jr.nz apuwriteloop
+    a := 0x80
+    [NR52] := a
+    a := 0xFF
+    [NR51] := a
+    a := 0x77
+    [NR50] := a
+    a := 0x80
+    [NR30] := a
+    ret
+
+@@mussetpulse1
+    -- read in 3 bytes from [DE]
+    -- they are a note to be activated
+    -- returns new length counter in a
+    a := [de]
+    srl a
+    srl a
+    srl a
+    a &= 7
+    -- high 3 bits of pd
+    a |= 0x80
+    h := a
+    a := [de]
+    de++
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    l := a
+    a := [de]
+    srl a
+    srl a
+    srl a
+    a |= l
+    [NR13] := a
+    a := [de]
+    swap a
+    sla a
+    a &= 0xc0
+    [NR11] := a
+    a := [de]
+    de++
+    swap a
+    sla a
+    sla a
+    sla a
+    a &= 0x80
+    l := a
+    a := [de]
+    srl a
+    a &= 0x70
+    a |= l
+    [NR12] := a
+    a := h
+    [NR14] := a
+    a := [de]
+    de++
+    a &= 31
+    hl := lengthtbl
+    a += l
+    l := a
+    a := 0
+    adc a,h
+    h := a
+    a := [hl]
+    ret
+
+@@mussetpulse2
+    a := [de]
+    srl a
+    srl a
+    srl a
+    a &= 7
+    -- high 3 bits of pd
+    a |= 0x80
+    h := a
+    a := [de]
+    de++
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    l := a
+    a := [de]
+    srl a
+    srl a
+    srl a
+    a |= l
+    [NR23] := a
+    a := [de]
+    swap a
+    sla a
+    a &= 0xc0
+    [NR21] := a
+    a := [de]
+    de++
+    swap a
+    sla a
+    sla a
+    sla a
+    a &= 0x80
+    l := a
+    a := [de]
+    srl a
+    a &= 0x70
+    a |= l
+    [NR22] := a
+    a := h
+    [NR24] := a
+    a := [de]
+    de++
+    a &= 31
+    hl := lengthtbl
+    a += l
+    l := a
+    a := 0
+    adc a,h
+    h := a
+    a := [hl]
+    ret
+
+@@mussettri
+    -- read in 3 bytes from [DE]
+    -- they are a note to be activated
+    -- returns new length counter in a
+    a := [de]
+    srl a
+    srl a
+    srl a
+    a &= 7
+    -- high 3 bits of pd
+    h := a
+    a := [de]
+    de++
+    sla a
+    sla a
+    sla a
+    sla a
+    sla a
+    l := a
+    a := [de]
+    srl a
+    srl a
+    srl a
+    a |= l
+    [NR33] := a
+    a := [de]
+    de++
+    swap a
+    sla a
+    sla a
+    sla a
+    a &= 0x80
+    l := a
+    a := [de]
+    srl a
+    a &= 0x70
+    a |= l
+    -- tri correct
+    sla a
+    --add a, $18
+    [NR32] := a
+    a := h
+    [NR34] := a
+    a := [de]
+    de++
+    a &= 31
+    hl := lengthtbl
+    a += l
+    l := a
+    a := 0
+    adc a,h
+    h := a
+    a := [hl]
+    ret
+
+
+@@mussetnsm
+    a := [nsxlleft]
+    cp #0
+    jr.z mussetns
+    ret
+
+@mussetns
+    de++
+    a := [de]
+    sla a
+    a &= 0xf0
+    -- other fields not implemented
+    [NR43] := a
+    a := [de]
+    de++
+    swap a
+    sla a
+    sla a
+    sla a
+    a &= 0x80
+    l := a
+    a := [de]
+    srl a
+    a &= 0x70
+    a |= l
+    [NR42] := a
+    a := 0x80
+    [NR44] := a
+    a := [de]
+    de++
+    a &= 31
+    hl := lengthtbl
+    a += l
+    l := a
+    a := 0
+    adc a,h
+    h := a
+    a := [hl]
+    ret
+
+
+
+
+
+@@musstep
+    a := 5
+    [temp] := a
+@mussteploop
+    b := ((musstate) >> 8)
+    a := [temp]
+    a--
+    sla a
+    sla a
+    a += 2
+    c := a
+    push bc
+    a := [bc] -- get lleft
+    a--
+    [bc] := a
+    cp #0
+    jr.nz musstepnotdone
+    bc--
+    a := [bc]
+    cp #0
+    jr.z musstepdisa
+    d := a
+    bc--
+    a := [bc]
+    e := a
+    push bc
+    a := [de]
+    a &= 0xc0
+    cp #0
+    jr.nz musstepnoend
+@musstepBP
+    bc++
+    a := 0
+    [bc] := a
+    pop bc
+
+    jr musstepdisa
+@musstepnoend
+    a := [temp]
+    a--
+    hl := mussetslo
+    -- this could break if alignment is bad
+    -- so we check that at compile time
+    b := 0
+    c := a
+    hl += bc
+    a := [hl]
+    b := 0
+    c := mussetshi - mussetslo
+    hl += bc
+    b := a
+    a := [hl]
+    h := a
+    a := b
+    l := a
+    call jphl
+    pop bc
+    bc++
+    bc++
+    [bc] := a
+    bc--
+    a := d
+    [bc] := a
+    bc--
+    a := e
+    [bc] := a
+@musstepdisa
+@musstepnotdone
+    -- avoid channels getting desynced
+    pop bc
+    a := [bc]
+    cp #1
+    jr.nz musstepnoprep
+    bc--
+    a := [bc]
+    cp #0
+    jr.z musstepnoprep
+    d := a
+    bc--
+    a := [bc]
+    e := a
+    a := [de]
+    a &= 0xc0
+    cp #0
+    jr.nz musstepnoprep
+    bc++
+    a := 0
+    [bc] := a
+@musstepnoprep
+    a := [temp]
+    a--
+    [temp] := a
+    cp #0
+    jr.nz mussteploop
+    ret
+
+@@musseq
+    a := 5
+    [temp] := a
+    bc := musstate+1
+    de := musstateseq
+@musseqloop
+    a := [bc]
+    cp #0
+    jr.z musseqtryagain
+    de++
+    jr musseqnoread
+@musseqtryagain
+    a := [de]
+    de++
+    l := a
+    a := [de]
+    cp #0
+    jr.z musseqnoread
+    h := a
+    push bc
+    a := [hl+]
+    c := a
+    a := [hl+]
+    b := a
+    cp #0
+    jr.nz musseqnoloop
+@musseqBP
+    a := c
+    cp #0
+    jr.nz musseqdoloop
+    pop bc
+    jr musseqnoread
+@musseqdoloop
+    sla a
+    a += 1
+    cpl
+    c := a
+    a := 0xff
+    b := a
+    hl += bc
+    pop bc
+    a := h
+    [de] := a
+    de--
+    a := l
+    [de] := a
+    jr musseqtryagain
+@musseqnoloop
+    a := h
+    [de] := a
+    de--
+    a := l
+    [de] := a
+    de++
+    de++
+    push bc
+    pop hl
+    pop bc
+    a := h
+    [bc] := a
+    bc--
+    a := l
+    [bc] := a
+    bc++
+    bc++
+    a := 1
+    [bc] := a
+    bc++
+    bc++
+    bc++
+    jr musseqdone
+@musseqnoread
+    de++
+    bc++
+    bc++
+    bc++
+    bc++
+@musseqdone
+    a := [temp]
+    a--
+    [temp] := a
+    cp #0
+    jr.nz musseqloop
+    ret
+
+@@playsfx_pulse
+    -- sfx in hl
+    a := l
+    [pl2musp] := a
+    a := h
+    [pl2musp+1] := a
+    a := 1
+    [pl2lleft] := a
+    ret
+
+@@playsfx_noise
+    -- sfx in hl
+    a := l
+    [nsxmusp] := a
+    a := h
+    [nsxmusp+1] := a
+    a := 1
+    [nsxlleft] := a
+    ret
+
+@@playsong
+    -- index in a
+    sla a
+    c := a
+    b := 0
+    hl := songsp1
+    hl += bc
+    a := [hl+]
+    [pl1seq] := a
+    a := [hl]
+    [pl1seq+1] := a
+    hl := songstr
+    hl += bc
+    a := [hl+]
+    [triseq] := a
+    a := [hl]
+    [triseq+1] := a
+    hl := songsns
+    hl += bc
+    a := [hl+]
+    [nsseq] := a
+    a := [hl]
+    [nsseq+1] := a
+    a := 0x80
+    [NR34] := a
+    a := ((quick_end) & 0xff)
+    [pl1musp] := a
+    [nsmusp] := a
+    [trimusp] := a
+    a := ((quick_end) >> 8)
+    [pl1musp+1] := a
+    [nsmusp+1] := a
+    [trimusp+1] := a
+    a := 1
+    [pl1lleft] := a
+    [nslleft] := a
+    [trilleft] := a
+
+    ret
+
+@schkEND
+
+@@copybytes
+-- hl destination
+-- de source
+-- bc count
+@copybytesloop
+    a := [de]
+    [hl+] := a
+    de++
+    bc--
+    a := b
+    a |= c
+    jr.nz copybytesloop
+    ret
+
+-- padding to fit alignment constraints
+
+section{ "mussetslo", align = 0x100 }
+    dc.b ((mussetpulse1) & 0xff)
+    dc.b ((mussetpulse2) & 0xff)
+    dc.b ((mussettri) & 0xff)
+    dc.b ((mussetnsm) & 0xff)
+    dc.b ((mussetns) & 0xff)
+
+@mussetshi
+    dc.b ((mussetpulse1) >> 8)
+    dc.b ((mussetpulse2) >> 8)
+    dc.b ((mussettri) >> 8)
+    dc.b ((mussetnsm) >> 8)
+    dc.b ((mussetns) >> 8)
+
+
+section{ "sinlut", align = 0x100 }
+    dc.b 0x0,0x0,0x0,0x1,0x2,0x3,0x5,0x7,0x9,0xc,0xf,0x12,0x15,0x19,0x1d,0x21,0x25,0x2a,0x2e,0x33,0x38,0x3e,0x43,0x49
+    dc.b 0x4f,0x54,0x5a,0x60,0x67,0x6d,0x73,0x79,0x7f,0x86,0x8c,0x92,0x98,0x9f,0xa5,0xab,0xb0,0xb6,0xbc,0xc1,0xc7,0xcc,0xd1,0xd5
+    dc.b 0xda,0xde,0xe2,0xe6,0xea,0xed,0xf0,0xf3,0xf6,0xf8,0xfa,0xfc,0xfd,0xfe,0xff,0xff,0xff,0xff,0xff,0xfe,0xfd,0xfc,0xfa,0xf8
+    dc.b 0xf6,0xf3,0xf0,0xed,0xea,0xe6,0xe2,0xde,0xda,0xd5,0xd1,0xcc,0xc7,0xc1,0xbc,0xb6,0xb0,0xab,0xa5,0x9f,0x98,0x92,0x8c,0x86
+    dc.b 0x80,0x79,0x73,0x6d,0x67,0x60,0x5a,0x54,0x4f,0x49,0x43,0x3e,0x38,0x33,0x2e,0x2a,0x25,0x21,0x1d,0x19,0x15,0x12,0xf,0xc
+    dc.b 0x9,0x7,0x5,0x3,0x2,0x1,0x0,0x0
+@@dashlut --DULR
+    dc.b 0x05,0x00,0x00,0x00 --.... R
+    dc.b 0x05,0x00,0x00,0x00 --...R R
+    dc.b 0xfb,0x00,0x00,0x00 --..L. L
+    dc.b 0x00,0x00,0x00,0x00 --..LR .
+    dc.b 0x00,0x00,0xfb,0x00 --.U.. U
+    dc.b 0x03,0x89,0xfc,0x77 --.U.R UR
+    dc.b 0xfc,0x77,0xfc,0x77 --.UL. UL
+    dc.b 0x00,0x00,0x00,0x00 --.ULR .
+    dc.b 0x00,0x00,0x05,0x00 --D... D
+    dc.b 0x03,0x89,0x03,0x89 --D..R DR
+    dc.b 0xfc,0x77,0x03,0x89 --D.L. DL
+    dc.b 0x00,0x00,0x00,0x00 --D.LR .
+    dc.b 0x00,0x00,0x00,0x00 --DU.. .
+    dc.b 0x00,0x00,0x00,0x00 --DU.R .
+    dc.b 0x00,0x00,0x00,0x00 --DUL. .
+    dc.b 0x00,0x00,0x00,0x00 --DULR .
+
+@@collision
+    dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+    dc.b 4,10,0,0,0,0,0,3,3,3,0,10,0,0,0,0
+    dc.b 3,3,3,3,3,3,3,3,4,4,4,10,2,0,0,0
+    dc.b 3,3,3,3,3,3,3,3,4,4,4,10,2,2,2,2
+    dc.b 35,35,19,19,19,19,2,2,3,2,2,2,2,2,0,2
+    dc.b 35,35,19,19,19,19,2,2,4,2,2,2,2,2,2,2
+    dc.b 0,0,19,19,19,19,0,4,4,2,2,2,2,2,2,2
+    dc.b 0,0,19,19,19,19,0,0,0,2,2,2,2,2,2,2
+
+@@thingfuncslo
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,((tfunckey) & 0xff),0x00,0x00,((tfunccloud) & 0xff),((tfunccloud) & 0xff),0x00,0x00,0x00
+    dc.b 0x00,0x00,((tfuncspring) & 0xff),0x00,((tfuncchest) & 0xff),0x00,((tfuncballoon) & 0xff),((tfuncblock) & 0xff),0x00,0x00,((tfuncberry) & 0xff),0x00,((tfuncwerry) & 0xff),0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b ((tfuncbreakblock) & 0xff),0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b ((tfuncdchest) & 0xff),0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,((tfuncflag) & 0xff),0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+@thingfuncshi
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,((tfunckey) >> 8),0x00,0x00,((tfunccloud) >> 8),((tfunccloud) >> 8),0x00,0x00,0x00
+    dc.b 0x00,0x00,((tfuncspring) >> 8),0x00,((tfuncchest) >> 8),0x00,((tfuncballoon) >> 8),((tfuncblock) >> 8),0x00,0x00,((tfuncberry) >> 8),0x00,((tfuncwerry) >> 8),0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b ((tfuncbreakblock) >> 8),0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b ((tfuncdchest) >> 8),0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,((tfuncflag) >> 8),0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    dc.b 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+
+
+@@twothirdslut
+    dc.w 0x0,0xaa,0x155,0x200,0x2aa,0x355,0x400,0x4aa,0x555,0x600,0x6aa,0x755,0x800,0x8aa,0x955,0xa00,0xaaa,0xb55,0xc00,0xcaa,0xd55,0xe00,0xeaa,0xf55
+    dc.w 0x1000,0x10aa,0x1155,0x1200,0x12aa,0x1355,0x1400,0x14aa,0x1555,0x1600,0x16aa,0x1755,0x1800,0x18aa,0x1955,0x1a00,0x1aaa,0x1b55,0x1c00,0x1caa,0x1d55,0x1e00,0x1eaa,0x1f55
+    dc.w 0x2000,0x20aa,0x2155,0x2200,0x22aa,0x2355,0x2400,0x24aa,0x2555,0x2600,0x26aa,0x2755,0x2800,0x28aa,0x2955,0x2a00,0x2aaa,0x2b55,0x2c00,0x2caa,0x2d55,0x2e00,0x2eaa,0x2f55
+    dc.w 0x3000,0x30aa,0x3155,0x3200,0x32aa,0x3355,0x3400,0x34aa,0x3555,0x3600,0x36aa,0x3755,0x3800,0x38aa,0x3955,0x3a00,0x3aaa,0x3b55,0x3c00,0x3caa,0x3d55,0x3e00,0x3eaa,0x3f55
+    dc.w 0x4000,0x40aa,0x4155,0x4200,0x42aa,0x4355,0x4400,0x44aa,0x4555,0x4600,0x46aa,0x4755,0x4800,0x48aa,0x4955,0x4a00,0x4aaa,0x4b55,0x4c00,0x4caa,0x4d55,0x4e00,0x4eaa,0x4f55
+    dc.w 0x5000,0x50aa,0x5155,0x5200,0x52aa,0x5355,0x5400,0x54aa,0x5555,0x5600,0x56aa,0x5755,0x5800,0x58aa,0x5955,0x5a00,0x5aaa,0x5b55,0x5c00,0x5caa,0x5d55,0x5e00,0x5eaa,0x5f55
+    dc.w 0x6000,0x60aa,0x6155,0x6200,0x62aa,0x6355,0x6400,0x64aa,0x6555,0x6600,0x66aa,0x6755,0x6800,0x68aa,0x6955,0x6a00,0x6aaa,0x6b55,0x6c00,0x6caa,0x6d55,0x6e00,0x6eaa,0x6f55
+    dc.w 0x7000,0x70aa,0x7155,0x7200,0x72aa,0x7355,0x7400,0x74aa,0x7555,0x7600,0x76aa,0x7755,0x7800,0x78aa,0x7955,0x7a00,0x7aaa,0x7b55,0x7c00,0x7caa,0x7d55,0x7e00,0x7eaa,0x7f55
+    dc.w 0x8000,0x80aa,0x8155,0x8200,0x82aa,0x8355,0x8400,0x84aa,0x8555,0x8600,0x86aa,0x8755,0x8800,0x88aa,0x8955,0x8a00,0x8aaa,0x8b55,0x8c00,0x8caa,0x8d55,0x8e00,0x8eaa,0x8f55
+    dc.w 0x9000,0x90aa,0x9155,0x9200,0x92aa,0x9355,0x9400,0x94aa,0x9555,0x9600,0x96aa,0x9755,0x9800,0x98aa,0x9955,0x9a00,0x9aaa,0x9b55,0x9c00,0x9caa,0x9d55,0x9e00,0x9eaa,0x9f55
+    dc.w 0xa000,0xa0aa,0xa155,0xa200,0xa2aa,0xa355,0xa400,0xa4aa,0xa555,0xa600,0xa6aa,0xa755,0xa800,0xa8aa,0xa955,0xaa00
+
+section{ "werrysequence", align = 0x100 }
+    dc.b 0,0,(-1 & 0xff),(-2 & 0xff),(-2 & 0xff),(-4 & 0xff),(-5 & 0xff),(-7 & 0xff),(-9 & 0xff),(-11 & 0xff),(-14 & 0xff),(-16 & 0xff),(-20 & 0xff),(-23 & 0xff),(-26 & 0xff),(-30 & 0xff),(-33 & 0xff),(-37 & 0xff),(-40 & 0xff),(-44 & 0xff),(-47 & 0xff),(-51 & 0xff),(-54 & 0xff),(-58 & 0xff)
+    dc.b (-61 & 0xff),(-65 & 0xff),(-68 & 0xff),(-72 & 0xff),(-75 & 0xff),(-79 & 0xff),(-82 & 0xff),(-86 & 0xff),(-89 & 0xff),(-93 & 0xff),(-96 & 0xff),(-100 & 0xff),(-103 & 0xff),(-107 & 0xff),(-110 & 0xff),(-114 & 0xff),(-117 & 0xff),(-121 & 0xff),(-124 & 0xff),(-128 & 0xff),(-131 & 0xff),(-135 & 0xff),(-138 & 0xff),(-142 & 0xff)
+    dc.b (-145 & 0xff),(-149 & 0xff),(-152 & 0xff),(-156 & 0xff),(-159 & 0xff),(-163 & 0xff),(-166 & 0xff),(-170 & 0xff),(-173 & 0xff),(-177 & 0xff),(-180 & 0xff),(-184 & 0xff),(-187 & 0xff),(-191 & 0xff),(-194 & 0xff),(-198 & 0xff)
+
+
+
+@@chrdata_pb16
+    byte(packed_chrdata)
+
+section{ "mapdata", align = 0x100 }
+    byte(read_asset("gb_celeste_map.dat"))
+
+local function note_raw(pitch, duty, volume, length)
+    byte((pitch >> 5) | 0x40,
+        ((pitch & 0x1f) << 3) | (duty << 1) | (volume >> 3),
+        ((volume & 0x07) << 5) | length)
+end
+
+local function note(pitch, duty, volume, length)
+    if length < 9 then length = length - 1
+    elseif length % 8 == 0 then length = 6 + length // 8
+    elseif length == 12 then length = 22
+    elseif length == 18 then length = 23
+    elseif length == 36 then length = 24
+    elseif length == 60 then length = 25
+    elseif length == 42 then length = 26
+    elseif length == 102 then length = 27
+    else error("invalid note length") end
+    note_raw(pitch, duty, volume, length)
+end
+
+local function endnote() byte(0, 0, 0) end
+
+@@songsp1
+-- Octaves +2 (2,3,4,5,6)
+-- Note Pitch, Duty, Volume, Length
+    dc.w mus0_p1seq
+    dc.w nomus_seq
+    dc.w mus1_p1seq
+    dc.w mus2_p1seq
+    dc.w mus3_p1seq
+    dc.w mus_wind_p1seq
+@@songstr
+    dc.w mus0_triseq
+    dc.w nomus_seq
+    dc.w mus1_triseq
+    dc.w mus2_triseq
+    dc.w mus3_triseq
+    dc.w nomus_seq
+@@songsns
+    dc.w mus0_nsseq
+    dc.w nomus_seq
+    dc.w mus1_nsseq
+    dc.w mus2_nsseq
+    dc.w mus3_nsseq
+    dc.w mus_wind_nsseq
+@@triwave
+    dc.b 0x12,0x34,0x56,0x78,0x9a,0xbc,0xde,0xff,0xed,0xcb,0xa9,0x87,0x65,0x43,0x21,0x11
+@@lengthtbl
+    dc.b 1,2,3,4,5,6,7,8
+    dc.b 16,24,32,40,48,56,64
+    dc.b 72,80,88,96,104,112,120
+    dc.b 12,18,36,60,42,102
+@@sfx_death
+    note(0x7a7, 2, 15, 1)
+    note(0x6f7, 3, 15, 1)
+    note(0x77b, 2, 15, 1)
+    note(0x689, 3, 15, 1)
+    note(0x74f, 2, 15, 1)
+    note(0x5ed, 3, 15, 1)
+    note(0x72d, 2, 15, 1)
+    note(0x563, 3, 15, 1)
+    note(0x6f7, 2, 15, 1)
+    note(0x511, 3, 15, 1)
+    note(0x69e, 2, 15, 1)
+    note(0x483, 3, 15, 1)
+    note(0x642, 2, 12, 1)
+    note(0x416, 3, 12, 1)
+    note(0x5ce, 2, 10, 1)
+    note(0x312, 3, 8, 1)
+    note(0x53b, 2, 6, 1)
+    note(0x223, 3, 4, 1)
+    note(0, 0, 0, 1)
+@quick_end
+    endnote()
+
+@@sfx_jump
+    note(0x511, 2, 15, 1)
+    note(0x563, 2, 15, 1)
+    note(0x642, 2, 15, 1)
+    note(0x706, 2, 15, 1)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_walljump
+    note(0x44e, 2, 15, 1)
+    note(0x4e5, 2, 15, 1)
+    note(0x5ce, 2, 15, 1)
+    note(0x6e7, 2, 15, 1)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_dash_pl
+    note(0x277, 1, 4, 1)
+    note(0x312, 1, 4, 1)
+    note(0x358, 1, 4, 1)
+    note(0x3da, 1, 4, 1)
+    note(0x6e7, 1, 8, 1)
+    note(0x74f, 1, 10, 1)
+    note(0, 0, 0, 1)
+    endnote()
+
+
+@@sfx_dash_ns
+    note(0, 0, 0, 6)
+    note(0x3, 2, 10, 1)
+    note(0x4, 2, 10, 3)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 8, 1)
+    note(0x6, 2, 8, 3)
+    note(0x7, 2, 6, 3)
+    note(0x8, 2, 4, 2)
+    note(0x9, 2, 2, 2)
+    note(0, 0, 0, 1)
+    endnote()
+
+
+
+@@sfx_gamestart
+    note(0x706, 1, 14, 3)
+    note(0x706, 1, 7, 3)
+    note(0x759, 1, 14, 3)
+    note(0x759, 1, 7, 3)
+    note(0x783, 1, 14, 3)
+    note(0x783, 1, 7, 3)
+    note(0x706, 1, 12, 3)
+    note(0x706, 1, 6, 3)
+    note(0x759, 1, 12, 3)
+    note(0x759, 1, 6, 3)
+    note(0x783, 1, 12, 3)
+    note(0x783, 1, 6, 3)
+    note(0x706, 1, 10, 3)
+    note(0x706, 1, 5, 3)
+    note(0x759, 1, 10, 3)
+    note(0x759, 1, 5, 3)
+    note(0x783, 1, 10, 3)
+    note(0x783, 1, 5, 3)
+    note(0x706, 1, 8, 3)
+    note(0x706, 1, 4, 3)
+    note(0x759, 1, 8, 3)
+    note(0x759, 1, 4, 3)
+    note(0x783, 1, 8, 3)
+    note(0x783, 1, 4, 3)
+    note(0x706, 1, 6, 3)
+    note(0x706, 1, 3, 3)
+    note(0x759, 1, 6, 3)
+    note(0x759, 1, 3, 3)
+    note(0x783, 1, 6, 3)
+    note(0x783, 1, 3, 3)
+    note(0x706, 1, 4, 3)
+    note(0x706, 1, 2, 3)
+    note(0x759, 1, 4, 3)
+    note(0x759, 1, 2, 3)
+    note(0x783, 1, 4, 3)
+    note(0x783, 1, 2, 3)
+    note(0x706, 1, 2, 3)
+    note(0x706, 1, 1, 3)
+    note(0x759, 1, 2, 3)
+    note(0x759, 1, 1, 3)
+    note(0x783, 1, 2, 3)
+    note(0x783, 1, 1, 3)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_berryget
+    note(0x416, 1, 10, 2)
+    note(0x672, 1, 12, 2)
+    note(0x4e5, 1, 14, 2)
+    note(0x6f7, 1, 14, 2)
+    note(0x627, 1, 14, 2)
+    note(0x762, 1, 14, 2)
+    note(0x6d6, 1, 14, 2)
+    note(0x7ac, 1, 14, 2)
+    note(0x739, 1, 14, 2)
+    note(0x7be, 1, 14, 2)
+    note(0x762, 1, 14, 2)
+    note(0x7c8, 1, 12, 2)
+    note(0x78a, 1, 10, 2)
+    note(0x7c8, 1, 8, 2)
+    note(0x78a, 1, 6, 2)
+    note(0x7c8, 1, 6, 2)
+    note(0x78a, 1, 4, 2)
+    note(0x7cb, 1, 4, 2)
+    note(0x78a, 1, 4, 2)
+    note(0x7cb, 1, 4, 2)
+    note(0x78a, 1, 2, 2)
+    note(0x7cb, 1, 2, 2)
+    note(0x78a, 1, 2, 2)
+    note(0x7cb, 1, 2, 2)
+    note(0x78a, 1, 2, 2)
+    note(0x7cb, 1, 2, 2)
+    note(0x78a, 1, 2, 2)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_keyget
+    note(0x60b, 2, 14, 3)
+    note(0x7a2, 2, 14, 6)
+    note(0x7a2, 2, 12, 3)
+    note(0x7a2, 2, 10, 3)
+    note(0x7a2, 2, 8, 3)
+    note(0x7a2, 2, 6, 3)
+    note(0x7a2, 2, 4, 3)
+    note(0x7a2, 2, 2, 3)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_spawnst
+    note(0x4b5, 2, 15, 2)
+    note(0x69e, 2, 15, 2)
+    note(0x53b, 2, 15, 2)
+    note(0x6e7, 2, 15, 2)
+    note(0x5ed, 2, 15, 2)
+    note(0x721, 2, 15, 2)
+    note(0x65b, 2, 12, 2)
+    note(0x6c4, 2, 12, 2)
+    note(0x6d6, 2, 10, 2)
+    note(0x78a, 2, 10, 2)
+    note(0x72d, 2, 8, 2)
+    note(0x7a7, 2, 8, 2)
+    note(0x759, 2, 6, 2)
+    note(0x7ba, 2, 6, 2)
+    note(0x783, 2, 4, 2)
+    note(0x7c8, 2, 4, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0, 0, 0, 1)
+    endnote()
+
+
+@@sfx_boing
+    note(0x2c7, 2, 15, 2)
+    note(0x39b, 2, 15, 2)
+    note(0x483, 2, 15, 2)
+    note(0x4e5, 2, 15, 2)
+    note(0x5ce, 2, 15, 2)
+    note(0x6e7, 2, 15, 2)
+    note(0x77b, 2, 15, 2)
+    note(0x77b, 2, 12, 2)
+    note(0x762, 2, 12, 2)
+    note(0x762, 2, 10, 2)
+    note(0x77b, 2, 10, 2)
+    note(0x77b, 2, 8, 2)
+    note(0x762, 2, 8, 2)
+    note(0x762, 2, 6, 2)
+    note(0x77b, 2, 4, 2)
+    note(0x77b, 2, 2, 2)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_dashback
+    note(0x6b2, 2, 6, 2)
+    note(0x759, 2, 6, 2)
+    note(0x6e7, 1, 6, 2)
+    note(0x644, 1, 6, 2)
+    note(0x6b2, 2, 4, 2)
+    note(0x759, 2, 4, 2)
+    note(0x6e7, 1, 4, 2)
+    note(0x644, 1, 4, 2)
+    note(0x6b2, 2, 2, 2)
+    note(0x759, 2, 2, 2)
+    note(0x6e7, 1, 2, 2)
+    note(0x644, 1, 2, 2)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_chestopen
+    note(0x416, 2, 10, 8)
+    note(0x416, 2, 8, 8)
+    note(0x416, 2, 6, 8)
+    note(0x416, 2, 4, 8)
+    note(0x4b5, 2, 10, 8)
+    note(0x4b5, 2, 8, 8)
+    note(0x4b5, 2, 6, 8)
+    note(0x4b5, 2, 4, 8)
+    note(0x60b, 2, 10, 8)
+    note(0x60b, 2, 8, 8)
+    note(0x563, 2, 10, 8)
+    note(0x563, 2, 8, 8)
+    note(0x60b, 2, 10, 8)
+    note(0x563, 2, 10, 8)
+    note(0x5ce, 2, 8, 8)
+    note(0x689, 2, 12, 8)
+    note(0x6e7, 2, 15, 16)
+    note(0x6e7, 2, 12, 8)
+    note(0x6e7, 2, 10, 8)
+    note(0x6e7, 2, 8, 8)
+    note(0x6e7, 2, 4, 8)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_orbget
+    note(0x16b, 1, 6, 3)
+    note(0x223, 1, 6, 3)
+    note(0x2c7, 1, 8, 3)
+    note(0x416, 1, 8, 3)
+    note(0x563, 1, 10, 3)
+    note(0x65b, 1, 12, 3)
+    note(0x706, 1, 15, 3)
+    note(0x730, 1, 15, 1)
+    note(0x759, 1, 15, 1)
+    note(0x783, 1, 15, 1)
+    note(0x72d, 1, 15, 3)
+    note(0x744, 1, 15, 1)
+    note(0x75c, 1, 15, 1)
+    note(0x773, 1, 15, 1)
+    note(0x706, 1, 15, 3)
+    note(0x730, 1, 15, 1)
+    note(0x759, 1, 15, 1)
+    note(0x783, 1, 15, 1)
+    note(0x72d, 1, 15, 3)
+    note(0x744, 1, 15, 1)
+    note(0x75c, 1, 15, 1)
+    note(0x773, 1, 15, 1)
+    note(0x706, 1, 12, 3)
+    note(0x730, 1, 12, 1)
+    note(0x759, 1, 12, 1)
+    note(0x783, 1, 12, 1)
+    note(0x72d, 1, 12, 3)
+    note(0x744, 1, 12, 1)
+    note(0x75c, 1, 12, 1)
+    note(0x773, 1, 12, 1)
+    note(0x706, 1, 10, 3)
+    note(0x730, 1, 10, 1)
+    note(0x759, 1, 10, 1)
+    note(0x783, 1, 10, 1)
+    note(0x72d, 1, 10, 3)
+    note(0x744, 1, 10, 1)
+    note(0x75c, 1, 10, 1)
+    note(0x773, 1, 10, 1)
+    note(0x706, 1, 8, 3)
+    note(0x730, 1, 8, 1)
+    note(0x759, 1, 8, 1)
+    note(0x783, 1, 8, 1)
+    note(0x72d, 1, 8, 3)
+    note(0x744, 1, 8, 1)
+    note(0x75c, 1, 8, 1)
+    note(0x773, 1, 8, 1)
+    note(0x706, 1, 6, 3)
+    note(0x730, 1, 6, 1)
+    note(0x759, 1, 6, 1)
+    note(0x783, 1, 6, 1)
+    note(0x72d, 1, 4, 3)
+    note(0x744, 1, 4, 1)
+    note(0x75c, 1, 4, 1)
+    note(0x773, 1, 4, 1)
+    note(0x706, 1, 2, 3)
+    note(0x730, 1, 2, 1)
+    note(0x759, 1, 2, 1)
+    note(0x783, 1, 2, 1)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_flag
+    note(0x744, 2, 10, 2)
+    note(0x744, 2, 7, 2)
+    note(0x744, 2, 3, 2)
+    note(0x0, 2, 0, 6)
+    note(0x744, 2, 10, 2)
+    note(0x744, 2, 7, 2)
+    note(0x744, 2, 3, 2)
+    note(0x783, 2, 15, 6)
+    note(0x783, 2, 12, 6)
+    note(0x783, 2, 10, 2)
+    note(0x783, 2, 7, 2)
+    note(0x783, 2, 3, 2)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_balloon
+    note(0x706, 2, 15, 2)
+    note(0x483, 2, 15, 2)
+    note(0x76b, 2, 15, 2)
+    note(0x5ce, 2, 15, 2)
+    note(0x79d, 2, 15, 2)
+    note(0x6c4, 2, 12, 2)
+    note(0x7be, 2, 12, 2)
+    note(0x739, 2, 10, 2)
+    note(0x7cb, 2, 8, 2)
+    note(0x77b, 2, 4, 2)
+    note(0x739, 2, 2, 2)
+    note(0x689, 2, 2, 2)
+    note(0x4e5, 2, 2, 2)
+    note(0x16b, 2, 2, 2)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_brespawn
+    note(0x4e5, 2, 2, 1)
+    note(0x53b, 2, 2, 1)
+    note(0x589, 2, 2, 1)
+    note(0x5ce, 2, 2, 1)
+    note(0x642, 2, 4, 1)
+    note(0x6c4, 2, 4, 1)
+    note(0x721, 2, 6, 1)
+    note(0x790, 2, 8, 2)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@sfx_secret
+    note(0x6b2, 2, 15, 1)
+    note(0x6b2, 2, 13, 1)
+    note(0x6b2, 2, 11, 1)
+    note(0x6b2, 2, 9, 1)
+    note(0x6b2, 2, 8, 1)
+    note(0x6b2, 2, 6, 1)
+    note(0x6b2, 2, 4, 1)
+    note(0x6b2, 2, 2, 1)
+    note(0x60b, 2, 15, 1)
+    note(0x60b, 2, 13, 1)
+    note(0x60b, 2, 11, 1)
+    note(0x60b, 2, 9, 1)
+    note(0x60b, 2, 8, 1)
+    note(0x60b, 2, 6, 1)
+    note(0x60b, 2, 4, 1)
+    note(0x60b, 2, 2, 1)
+    note(0x72d, 2, 15, 1)
+    note(0x72d, 2, 13, 1)
+    note(0x72d, 2, 11, 1)
+    note(0x72d, 2, 9, 1)
+    note(0x72d, 2, 8, 1)
+    note(0x72d, 2, 6, 1)
+    note(0x72d, 2, 4, 1)
+    note(0x72d, 2, 2, 1)
+    note(0, 0, 0, 1)
+    endnote()
+
+@@mus0_pulse0 -- speed 32
+
+    note(0x39b, 2, 8, 16)
+    note(0x39b, 2, 6, 16)
+    note(0x39b, 2, 4, 16)
+    note(0x511, 2, 6, 16)
+    note(0x511, 2, 4, 16)
+    note(0x511, 2, 2, 16)
+    note(0x65b, 2, 8, 16)
+    note(0x65b, 2, 6, 16)
+    note(0x60b, 2, 10, 16)
+    note(0x60b, 2, 8, 16)
+    note(0x60b, 2, 6, 16)
+    note(0x563, 2, 8, 32)
+    note(0x563, 2, 6, 16)
+    note(0x563, 2, 4, 16)
+    note(0x563, 2, 2, 16)
+    note(0x4b5, 2, 8, 16)
+    note(0x4b5, 2, 6, 16)
+    note(0x4b5, 2, 4, 16)
+    note(0x511, 2, 6, 16)
+    note(0x511, 2, 4, 16)
+    note(0x511, 2, 2, 16)
+    note(0x5ce, 2, 8, 16)
+    note(0x5ce, 2, 6, 16)
+    note(0x563, 2, 10, 16)
+    note(0x563, 2, 8, 16)
+    note(0x563, 2, 6, 16)
+    note(0x563, 2, 4, 16)
+    note(0x563, 2, 2, 48)
+    note(0, 0, 0, 16)
+    endnote()
+
+@@mus0_ns0 -- speed 16
+    note(6, 0, 0, 32)
+    note(6, 2, 10, 4)
+    note(6, 2, 5, 4)
+    note(6, 0, 0, 56)
+    note(6, 2, 10, 4)
+    note(6, 2, 5, 4)
+    note(6, 0, 0, 56)
+    note(6, 2, 10, 4)
+    note(6, 2, 5, 4)
+    note(6, 0, 0, 56)
+    note(6, 2, 10, 4)
+    note(6, 2, 5, 4)
+    note(6, 0, 0, 16)
+    note(6, 2, 10, 4)
+    note(6, 2, 5, 4)
+    endnote()
+
+@@mus0_ns1 -- speed 8
+    note(0, 0, 0, 8)
+    note(4, 0, 10, 2)
+    note(4, 0, 5, 2)
+    note(0, 0, 0, 8)
+    note(0, 0, 0, 4)
+    note(4, 0, 10, 2)
+    note(4, 0, 5, 2)
+    note(0, 0, 0, 4)
+    note(6, 0, 10, 4)
+    note(6, 0, 5, 4)
+    note(0, 0, 0, 8)
+    note(4, 0, 10, 2)
+    note(4, 0, 5, 2)
+    note(0, 0, 0, 24)
+    note(0, 0, 0, 4)
+    note(4, 0, 10, 2)
+    note(4, 0, 5, 2)
+    note(0, 0, 0, 4)
+    note(4, 0, 10, 2)
+    note(4, 0, 5, 2)
+    note(0, 0, 0, 4)
+    note(6, 0, 10, 4)
+    note(6, 0, 5, 4)
+    note(0, 0, 0, 8)
+    note(4, 0, 10, 2)
+    note(4, 0, 5, 2)
+    note(0, 0, 0, 8)
+    note(0, 0, 0, 4)
+    endnote()
+
+@@mus0_triangle0 -- speed 16
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 8)
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 16)
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 16)
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 40)
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 8)
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 8)
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 16)
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 16)
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 40)
+    note(0x44e, 0, 1, 8)
+    note(0, 0, 0, 8)
+    endnote()
+
+@@mus0_pulse1 -- speed 16
+    note(0x773, 1, 10, 8)
+    note(0x7ac, 1, 10, 8)
+    note(0x773, 1, 6, 8)
+    note(0x7ac, 1, 6, 8)
+    note(0x773, 1, 4, 8)
+    note(0x7ac, 1, 4, 8)
+    note(0x773, 1, 2, 8)
+    note(0x7ac, 1, 2, 8)
+
+    note(0x6e7, 1, 10, 8)
+    note(0x759, 1, 10, 8)
+    note(0x6e7, 1, 6, 8)
+    note(0x759, 1, 6, 8)
+    note(0x689, 1, 10, 8)
+    note(0x706, 1, 10, 8)
+    note(0x689, 1, 6, 8)
+    note(0x706, 1, 6, 8)
+
+    note(0x6b2, 1, 10, 8)
+    note(0x72d, 1, 10, 8)
+    note(0x6b2, 1, 6, 8)
+    note(0x72d, 1, 6, 8)
+    note(0x6b2, 1, 4, 8)
+    note(0x72d, 1, 4, 8)
+
+    note(0x744, 1, 10, 8)
+    note(0x783, 1, 10, 8)
+    note(0x744, 1, 6, 8)
+    note(0x783, 1, 6, 8)
+    note(0x744, 1, 4, 8)
+    note(0x783, 1, 4, 8)
+    note(0x744, 1, 2, 8)
+    note(0x783, 1, 2, 8)
+    note(0x744, 1, 2, 8)
+    note(0x783, 1, 2, 8)
+    endnote()
+
+@@mus0_triangle1 -- speed 16
+    note(0x563, 2, 1, 24)
+    note(0x0, 2, 0, 8)
+    note(0x563, 2, 1, 16)
+    note(0x538, 2, 1, 2)
+    note(0x50c, 2, 1, 2)
+    note(0x4e0, 2, 1, 2)
+    note(0x4b5, 2, 1, 2)
+    note(0x65b, 2, 1, 8)
+    note(0x5ce, 2, 1, 24)
+    note(0x0, 2, 0, 8)
+    note(0x5ce, 2, 1, 16)
+    note(0x511, 2, 1, 16)
+    note(0x4b5, 2, 1, 16)
+    note(0x0, 2, 0, 8)
+    note(0x4b5, 2, 1, 8)
+    note(0x60b, 2, 1, 24)
+    note(0x6e7, 2, 1, 16)
+    note(0x6c4, 2, 1, 2)
+    note(0x6a1, 2, 1, 2)
+    note(0x67e, 2, 1, 2)
+    note(0x65b, 2, 1, 2)
+    note(0x511, 2, 1, 8)
+    note(0x5ce, 2, 1, 8)
+    note(0x511, 2, 1, 8)
+    note(0x4fa, 2, 1, 2)
+    note(0x4e3, 2, 1, 2)
+    note(0x4cc, 2, 1, 2)
+    note(0x4b5, 2, 1, 2)
+    note(0x5ce, 2, 1, 16)
+    endnote()
+
+@@mus0_triangle2 -- speed 16
+
+    note(0x5ce, 2, 1, 16)
+    note(0x5e0, 2, 1, 1)
+    note(0x5f1, 2, 1, 1)
+    note(0x603, 2, 1, 1)
+    note(0x614, 2, 1, 1)
+    note(0x626, 2, 1, 1)
+    note(0x638, 2, 1, 1)
+    note(0x649, 2, 1, 1)
+    note(0x65b, 2, 1, 1)
+    note(0x65b, 2, 1, 8)
+    note(0x5ce, 2, 1, 16)
+    note(0x689, 2, 1, 16)
+    note(0x0, 2, 0, 16)
+    note(0x689, 2, 1, 16)
+    note(0x563, 2, 1, 16)
+    note(0x0, 2, 0, 16)
+    note(0x5ce, 2, 1, 16)
+    note(0x65b, 2, 1, 16)
+    note(0x5ce, 2, 1, 16)
+    note(0x5ea, 2, 1, 1)
+    note(0x607, 2, 1, 1)
+    note(0x624, 2, 1, 1)
+    note(0x640, 2, 1, 1)
+    note(0x65c, 2, 1, 1)
+    note(0x679, 2, 1, 1)
+    note(0x696, 2, 1, 1)
+    note(0x6b2, 2, 1, 1)
+    note(0x6b2, 2, 1, 8)
+    note(0x0, 2, 0, 16)
+    note(0x6b2, 2, 1, 16)
+    note(0x65b, 2, 1, 16)
+    note(0x0, 2, 0, 16)
+    endnote()
+
+@@mus0_triangle1blank
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    endnote()
+
+@@mus0_pulse2 -- speed 32
+    note(0x689, 2, 8, 32)
+    note(0x689, 2, 6, 16)
+    note(0x689, 2, 4, 16)
+    note(0x60b, 2, 8, 32)
+    note(0x60b, 2, 6, 16)
+    note(0x60b, 2, 4, 16)
+    note(0x65b, 2, 6, 16)
+    note(0x65b, 2, 4, 16)
+    note(0x6e7, 2, 8, 16)
+    note(0x6e7, 2, 8, 4)
+    note(0x6b2, 2, 8, 4)
+    note(0x6e7, 2, 8, 4)
+    note(0x6b2, 2, 8, 4)
+    note(0x6b2, 2, 6, 4)
+    note(0x6b2, 2, 4, 4)
+    note(0x6b2, 2, 3, 4)
+    note(0x6b2, 2, 2, 4)
+    note(0x6b2, 2, 6, 16)
+    note(0x5ce, 2, 8, 32)
+    note(0x689, 2, 8, 32)
+    note(0x689, 2, 0, 16)
+    note(0x677, 2, 12, 1)
+    note(0x664, 2, 12, 1)
+    note(0x652, 2, 12, 1)
+    note(0x640, 2, 12, 1)
+    note(0x62d, 2, 12, 1)
+    note(0x61b, 2, 12, 1)
+    note(0x608, 2, 12, 1)
+    note(0x5f6, 2, 12, 1)
+    note(0x5e4, 2, 12, 1)
+    note(0x5d1, 2, 12, 1)
+    note(0x5bf, 2, 12, 1)
+    note(0x5ac, 2, 12, 1)
+    note(0x59a, 2, 12, 1)
+    note(0x588, 2, 12, 1)
+    note(0x575, 2, 12, 1)
+    note(0x563, 2, 12, 1)
+    note(0x60b, 2, 6, 32)
+    note(0x60b, 2, 0, 16)
+    note(0x615, 2, 12, 1)
+    note(0x620, 2, 12, 1)
+    note(0x62a, 2, 12, 1)
+    note(0x635, 2, 12, 1)
+    note(0x63f, 2, 12, 1)
+    note(0x64a, 2, 12, 1)
+    note(0x654, 2, 12, 1)
+    note(0x65e, 2, 12, 1)
+    note(0x669, 2, 12, 1)
+    note(0x673, 2, 12, 1)
+    note(0x67e, 2, 12, 1)
+    note(0x688, 2, 12, 1)
+    note(0x693, 2, 12, 1)
+    note(0x69d, 2, 12, 1)
+    note(0x6a8, 2, 12, 1)
+    note(0x6b2, 2, 12, 1)
+    note(0x706, 2, 10, 16)
+    note(0x6e7, 2, 4, 16)
+    note(0x5ce, 2, 8, 16)
+    note(0x563, 2, 4, 16)
+    note(0x689, 2, 8, 16)
+    note(0x65b, 2, 4, 16)
+    note(0x60b, 2, 8, 32)
+    endnote()
+
+
+
+@@mus0_pulse3
+    note(0x6e7, 2, 8, 16)
+    note(0x6e7, 2, 6, 16)
+    note(0x6e7, 2, 4, 16)
+    note(0x6d6, 2, 2, 2)
+    note(0x6c4, 2, 2, 2)
+    note(0x6b2, 2, 2, 2)
+    note(0x6a1, 2, 2, 2)
+    note(0x690, 2, 2, 2)
+    note(0x67e, 2, 2, 2)
+    note(0x66c, 2, 2, 2)
+    note(0x65b, 2, 2, 2)
+    note(0x706, 2, 8, 16)
+    note(0x706, 2, 6, 16)
+    note(0x72d, 2, 10, 16)
+    note(0x6b2, 2, 4, 16)
+    note(0x759, 2, 8, 16)
+    note(0x6e7, 2, 4, 16)
+    note(0x72d, 2, 10, 16)
+    note(0x6e7, 2, 4, 16)
+    note(0x744, 2, 8, 16)
+    note(0x744, 2, 6, 16)
+    note(0x744, 2, 4, 16)
+    note(0x5ce, 2, 2, 16)
+    note(0x6e7, 2, 8, 16)
+    note(0x6e7, 2, 6, 16)
+    note(0x759, 2, 8, 16)
+    note(0x65b, 2, 6, 16)
+    note(0x706, 2, 8, 16)
+    note(0x706, 2, 6, 16)
+    note(0x72d, 2, 8, 16)
+    note(0x60b, 2, 6, 16)
+    note(0x689, 2, 8, 32)
+    note(0x6b2, 2, 10, 16)
+    note(0x6b2, 2, 8, 16)
+    note(0x6b2, 2, 6, 16)
+    note(0x6ad, 2, 4, 2)
+    note(0x6a8, 2, 4, 2)
+    note(0x6a3, 2, 4, 2)
+    note(0x69e, 2, 4, 2)
+    note(0x698, 2, 4, 2)
+    note(0x693, 2, 4, 2)
+    note(0x68e, 2, 4, 2)
+    note(0x689, 2, 4, 2)
+    note(0x689, 2, 8, 16)
+    note(0x689, 2, 6, 16)
+    endnote()
+
+
+@@mus0_pulse4
+
+    note(0x744, 2, 2, 2)
+    note(0x744, 2, 3, 2)
+    note(0x744, 2, 4, 2)
+    note(0x744, 2, 6, 2)
+    note(0x744, 2, 2, 2)
+    note(0x744, 2, 5, 2)
+    note(0x744, 2, 8, 2)
+    note(0x744, 2, 10, 2)
+    note(0x744, 2, 4, 2)
+    note(0x744, 2, 8, 2)
+    note(0x744, 2, 11, 2)
+    note(0x744, 2, 15, 2)
+    note(0x689, 2, 8, 8)
+    note(0x6e7, 2, 15, 8)
+    note(0x6e7, 2, 12, 8)
+    note(0x60b, 2, 15, 16)
+    note(0x60b, 2, 12, 8)
+    note(0x0, 2, 0, 8)
+    note(0x60b, 2, 15, 8)
+    note(0x60b, 2, 12, 8)
+    note(0x0, 2, 0, 8)
+    note(0x5ce, 2, 15, 16)
+    note(0x5ce, 2, 12, 8)
+    note(0x72d, 2, 0, 2)
+    note(0x72d, 2, 1, 2)
+    note(0x72d, 2, 2, 2)
+    note(0x72d, 2, 2, 2)
+    note(0x72d, 2, 2, 2)
+    note(0x72d, 2, 3, 2)
+    note(0x72d, 2, 4, 2)
+    note(0x72d, 2, 6, 2)
+    note(0x72d, 2, 2, 2)
+    note(0x72d, 2, 5, 2)
+    note(0x72d, 2, 8, 2)
+    note(0x72d, 2, 10, 2)
+    note(0x72d, 2, 4, 2)
+    note(0x72d, 2, 8, 2)
+    note(0x72d, 2, 11, 2)
+    note(0x72d, 2, 15, 2)
+    note(0x6b2, 2, 15, 8)
+    note(0x6b2, 2, 12, 8)
+    note(0x0, 2, 0, 8)
+    note(0x563, 2, 4, 8)
+    note(0x582, 2, 10, 1)
+    note(0x5a1, 2, 10, 1)
+    note(0x5c0, 2, 10, 1)
+    note(0x5df, 2, 10, 1)
+    note(0x5fe, 2, 10, 1)
+    note(0x61d, 2, 10, 1)
+    note(0x63c, 2, 10, 1)
+    note(0x65b, 2, 10, 1)
+    note(0x7a2, 2, 6, 8)
+    note(0x783, 2, 12, 8)
+    note(0x706, 2, 8, 8)
+    note(0x744, 2, 15, 8)
+    note(0x744, 2, 12, 8)
+    note(0x6e7, 2, 15, 8)
+    note(0x6e7, 2, 12, 8)
+    endnote()
+
+
+
+@@mus0_p1seq
+    dc.w mus0_pulse0 -- 0
+    dc.w mus0_pulse1 -- 1
+    dc.w mus0_pulse1 -- 2
+    dc.w mus0_pulse2 -- 3
+    dc.w mus0_pulse3 -- 4
+    dc.w mus0_pulse1 -- 5
+    dc.w mus0_pulse1 -- 6
+    dc.w mus0_pulse4 -- 7
+    dc.b 8,0
+
+@@nomus_seq
+    dc.w mus0_triangle1blank
+    dc.b 1,0
+
+@@mus0_nsseq
+    dc.w mus0_ns0 -- 0
+    dc.w mus0_ns0 -- 0
+    dc.w mus0_ns0 -- 1
+    dc.w mus0_ns0 -- 2
+    dc.w mus0_ns0 -- 3
+    dc.w mus0_ns0 -- 3
+    dc.w mus0_ns1 -- 4
+    dc.w mus0_ns1 -- 4
+    dc.w mus0_ns1 -- 4
+    dc.w mus0_ns1 -- 4
+    dc.w mus0_ns0 -- 5
+    dc.w mus0_ns0 -- 6
+    dc.w mus0_ns0 -- 7
+    dc.b 13,0
+
+@@mus0_triseq
+    dc.w mus0_triangle0 -- 0
+    dc.w mus0_triangle0 -- 0
+    dc.w mus0_triangle1 -- 1
+    dc.w mus0_triangle1 -- 2
+    dc.w mus0_triangle1 -- 3
+    dc.w mus0_triangle1blank -- 3
+    dc.w mus0_triangle2 -- 4
+    dc.w mus0_triangle2 -- 4
+    dc.w mus0_triangle1 -- 5
+    dc.w mus0_triangle1 -- 6
+    dc.w mus0_triangle2 -- 7
+    dc.b 11,0
+
+@@mus1_pulse0
+    note(0x7c1, 2, 15, 2)
+    note(0x7c1, 2, 11, 2)
+    note(0x7c1, 2, 8, 2)
+    note(0x7c1, 2, 4, 2)
+    note(0x7c1, 2, 8, 2)
+    note(0x7c1, 2, 6, 2)
+    note(0x7c1, 2, 4, 2)
+    note(0x7c1, 2, 2, 2)
+    note(0x7c1, 2, 6, 2)
+    note(0x7c1, 2, 4, 2)
+    note(0x7c1, 2, 3, 2)
+    note(0x7c1, 2, 2, 2)
+    note(0x7c1, 2, 4, 2)
+    note(0x7c1, 2, 3, 2)
+    note(0x7c1, 2, 2, 2)
+    note(0x7c1, 2, 1, 2)
+    note(0x7c1, 2, 2, 4)
+    note(0x7c1, 2, 1, 4)
+    note(0x7c1, 2, 2, 4)
+    note(0x7c1, 2, 1, 4)
+    note(0x7ac, 2, 10, 2)
+    note(0x7ac, 2, 8, 2)
+    note(0x7ac, 2, 5, 2)
+    note(0x7ac, 2, 2, 2)
+    note(0x7ac, 2, 8, 2)
+    note(0x7ac, 2, 6, 2)
+    note(0x7ac, 2, 4, 2)
+    note(0x7ac, 2, 2, 2)
+    note(0x7ba, 2, 15, 2)
+    note(0x7ba, 2, 11, 2)
+    note(0x7ba, 2, 8, 2)
+    note(0x7ba, 2, 4, 2)
+    note(0x7ba, 2, 10, 2)
+    note(0x7ba, 2, 8, 2)
+    note(0x7ba, 2, 5, 2)
+    note(0x7ba, 2, 2, 2)
+    note(0x7ba, 2, 8, 2)
+    note(0x7ba, 2, 6, 2)
+    note(0x7ba, 2, 4, 2)
+    note(0x7ba, 2, 2, 2)
+    note(0x7ba, 2, 6, 2)
+    note(0x7ba, 2, 4, 2)
+    note(0x7ba, 2, 3, 2)
+    note(0x7ba, 2, 2, 2)
+    note(0x7ba, 2, 4, 2)
+    note(0x7ba, 2, 3, 2)
+    note(0x7ba, 2, 2, 2)
+    note(0x7ba, 2, 1, 2)
+    note(0x7ba, 2, 4, 2)
+    note(0x7ba, 2, 3, 2)
+    note(0x7ba, 2, 2, 2)
+    note(0x7ba, 2, 1, 2)
+    note(0x7ba, 2, 2, 4)
+    note(0x7ba, 2, 1, 4)
+    note(0x7ba, 2, 2, 4)
+    note(0x7ba, 2, 1, 4)
+    note(0x7a2, 2, 15, 2)
+    note(0x7a2, 2, 11, 2)
+    note(0x7a2, 2, 8, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 10, 2)
+    note(0x7a2, 2, 8, 2)
+    note(0x7a2, 2, 5, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 8, 2)
+    note(0x7a2, 2, 6, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 8, 2)
+    note(0x7a2, 2, 6, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 6, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 3, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 6, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 3, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 3, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 1, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 3, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 1, 2)
+    note(0x7a2, 2, 2, 4)
+    note(0x7a2, 2, 1, 4)
+    note(0x7a2, 2, 2, 4)
+    note(0x7a2, 2, 1, 4)
+    note(0x797, 2, 15, 2)
+    note(0x797, 2, 11, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 10, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 5, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 6, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 6, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 3, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 3, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 1, 2)
+    note(0x797, 2, 2, 4)
+    note(0x797, 2, 1, 4)
+    endnote()
+
+@@mus1_pulse1
+    note(0x7a2, 2, 15, 2)
+    note(0x7a2, 2, 11, 2)
+    note(0x7a2, 2, 8, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 10, 2)
+    note(0x7a2, 2, 8, 2)
+    note(0x7a2, 2, 5, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 8, 2)
+    note(0x7a2, 2, 6, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 6, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 3, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 3, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 1, 2)
+    note(0x7a2, 2, 4, 2)
+    note(0x7a2, 2, 3, 2)
+    note(0x7a2, 2, 2, 2)
+    note(0x7a2, 2, 1, 2)
+    note(0x7a2, 2, 2, 4)
+    note(0x7a2, 2, 1, 4)
+    note(0x7a2, 2, 2, 4)
+    note(0x7a2, 2, 1, 4)
+    note(0x7ac, 2, 10, 2)
+    note(0x7ac, 2, 8, 2)
+    note(0x7ac, 2, 5, 2)
+    note(0x7ac, 2, 2, 2)
+    note(0x7ac, 2, 6, 2)
+    note(0x7ac, 2, 4, 2)
+    note(0x7ac, 2, 3, 2)
+    note(0x7ac, 2, 2, 2)
+    note(0x797, 2, 15, 2)
+    note(0x797, 2, 11, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 10, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 5, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 6, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 6, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 3, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 3, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 1, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 3, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 1, 2)
+    note(0x7ba, 2, 15, 2)
+    note(0x7ba, 2, 11, 2)
+    note(0x7ba, 2, 8, 2)
+    note(0x7ba, 2, 4, 2)
+    note(0x7ba, 2, 8, 2)
+    note(0x7ba, 2, 6, 2)
+    note(0x7ba, 2, 4, 2)
+    note(0x7ba, 2, 2, 2)
+    note(0x7ba, 2, 6, 2)
+    note(0x7ba, 2, 4, 2)
+    note(0x7ba, 2, 3, 2)
+    note(0x7ba, 2, 2, 2)
+    note(0x7ba, 2, 4, 2)
+    note(0x7ba, 2, 3, 2)
+    note(0x7ba, 2, 2, 2)
+    note(0x7ba, 2, 1, 2)
+    note(0x7ba, 2, 2, 4)
+    note(0x7ba, 2, 1, 4)
+    note(0x7ba, 2, 2, 4)
+    note(0x7ba, 2, 1, 4)
+    note(0x797, 2, 15, 2)
+    note(0x797, 2, 11, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 10, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 5, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 6, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 8, 2)
+    note(0x797, 2, 6, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 6, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 3, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 6, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 3, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 3, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 1, 2)
+    note(0x797, 2, 4, 2)
+    note(0x797, 2, 3, 2)
+    note(0x797, 2, 2, 2)
+    note(0x797, 2, 1, 2)
+    note(0x797, 2, 2, 4)
+    note(0x797, 2, 1, 4)
+    note(0x797, 2, 2, 4)
+    note(0x797, 2, 1, 4)
+    endnote()
+
+@@mus1_triangle0
+    note(0x60b, 2, 2, 56)
+    note(0x0, 2, 0, 8)
+    note(0x60b, 2, 2, 56)
+    note(0x0, 2, 0, 8)
+    note(0x689, 2, 2, 40)
+    note(0x0, 2, 0, 8)
+    note(0x5ce, 2, 2, 72)
+    note(0x0, 2, 0, 8)
+    endnote()
+
+@@mus1_triangle1
+    note(0x511, 2, 2, 40)
+    note(0x0, 2, 0, 8)
+    note(0x563, 2, 2, 40)
+    note(0x0, 2, 0, 8)
+    note(0x65b, 2, 2, 24)
+    note(0x0, 2, 0, 8)
+    note(0x60b, 2, 2, 88)
+    note(0x0, 2, 0, 8)
+    note(0x60b, 2, 2, 24)
+    note(0x0, 2, 0, 8)
+    endnote()
+
+@@mus1_ns0
+    note(0x9, 2, 4, 4)
+    note(0x9, 2, 2, 4)
+    note(0x5, 2, 2, 4)
+    note(0x5, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x9, 2, 2, 4)
+    note(0x9, 2, 1, 4)
+    note(0x5, 2, 4, 4)
+    note(0x5, 2, 2, 4)
+    note(0x7, 2, 2, 4)
+    note(0x7, 2, 1, 4)
+    note(0x6, 2, 4, 4)
+    note(0x6, 2, 2, 4)
+    note(0x9, 2, 2, 4)
+    note(0x9, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x9, 2, 2, 4)
+    note(0x9, 2, 1, 4)
+    note(0x8, 2, 4, 4)
+    note(0x8, 2, 2, 4)
+    note(0x5, 2, 2, 4)
+    note(0x5, 2, 1, 4)
+    note(0x6, 2, 4, 4)
+    note(0x6, 2, 2, 4)
+    note(0x0, 2, 0, 8)
+    note(0x7, 2, 4, 4)
+    note(0x7, 2, 2, 4)
+    note(0x8, 2, 2, 4)
+    note(0x8, 2, 1, 4)
+    note(0x4, 2, 4, 4)
+    note(0x4, 2, 2, 4)
+    note(0x6, 2, 2, 4)
+    note(0x6, 2, 1, 4)
+    note(0x5, 2, 4, 4)
+    note(0x5, 2, 2, 4)
+    note(0x7, 2, 2, 4)
+    note(0x7, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x4, 2, 4, 4)
+    note(0x4, 2, 2, 4)
+    note(0x6, 2, 2, 4)
+    note(0x6, 2, 1, 4)
+    note(0x5, 2, 4, 4)
+    note(0x5, 2, 2, 4)
+    note(0x7, 2, 2, 4)
+    note(0x7, 2, 1, 4)
+    note(0x8, 2, 4, 4)
+    note(0x8, 2, 2, 4)
+    note(0x9, 2, 2, 4)
+    note(0x9, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x9, 2, 2, 4)
+    note(0x9, 2, 1, 4)
+    note(0x5, 2, 4, 4)
+    note(0x5, 2, 2, 4)
+    note(0x7, 2, 2, 4)
+    note(0x7, 2, 1, 4)
+    endnote()
+
+@@mus2_triangle0
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x5fc, 2, 1, 4)
+    note(0x5ec, 2, 1, 4)
+    note(0x5dd, 2, 1, 4)
+    note(0x5ce, 2, 1, 4)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x67e, 2, 1, 4)
+    note(0x6a1, 2, 1, 4)
+    note(0x6c4, 2, 1, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x563, 2, 1, 16)
+    note(0x6e7, 2, 1, 16)
+    note(0x6da, 2, 1, 4)
+    note(0x6cc, 2, 1, 4)
+    note(0x6bf, 2, 1, 4)
+    note(0x6b2, 2, 1, 4)
+    note(0x6b2, 2, 1, 32)
+    note(0x65b, 2, 1, 32)
+    endnote()
+
+@@mus2_ns0
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x0, 2, 0, 16)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x0, 2, 0, 16)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    endnote()
+
+@@mus2_pulse0
+    note(0x706, 2, 15, 2)
+    note(0x706, 2, 8, 2)
+    note(0x783, 2, 15, 2)
+    note(0x783, 2, 8, 2)
+    note(0x706, 2, 8, 2)
+    note(0x706, 2, 4, 2)
+    note(0x783, 2, 8, 2)
+    note(0x783, 2, 4, 2)
+    note(0x65b, 2, 12, 2)
+    note(0x65b, 2, 6, 2)
+    note(0x72d, 2, 12, 2)
+    note(0x72d, 2, 6, 2)
+    note(0x6b2, 2, 15, 2)
+    note(0x6b2, 2, 8, 2)
+    note(0x759, 2, 15, 2)
+    note(0x759, 2, 8, 2)
+    note(0x6b2, 2, 8, 2)
+    note(0x6b2, 2, 4, 2)
+    note(0x759, 2, 8, 2)
+    note(0x759, 2, 4, 2)
+    note(0x6b2, 2, 6, 2)
+    note(0x6b2, 2, 3, 2)
+    note(0x759, 2, 6, 2)
+    note(0x759, 2, 3, 2)
+    note(0x6b2, 2, 4, 2)
+    note(0x6b2, 2, 2, 2)
+    note(0x759, 2, 4, 2)
+    note(0x759, 2, 2, 2)
+    note(0x6b2, 2, 2, 2)
+    note(0x6b2, 2, 1, 2)
+    note(0x759, 2, 2, 2)
+    note(0x759, 2, 1, 2)
+    note(0x65b, 2, 15, 2)
+    note(0x65b, 2, 8, 2)
+    note(0x72d, 2, 15, 2)
+    note(0x72d, 2, 8, 2)
+    note(0x65b, 2, 8, 2)
+    note(0x65b, 2, 4, 2)
+    note(0x72d, 2, 8, 2)
+    note(0x72d, 2, 4, 2)
+    note(0x65b, 2, 6, 2)
+    note(0x65b, 2, 3, 2)
+    note(0x72d, 2, 6, 2)
+    note(0x72d, 2, 3, 2)
+    note(0x689, 2, 15, 2)
+    note(0x689, 2, 8, 2)
+    note(0x744, 2, 15, 2)
+    note(0x744, 2, 8, 2)
+    note(0x689, 2, 8, 2)
+    note(0x689, 2, 4, 2)
+    note(0x744, 2, 8, 2)
+    note(0x744, 2, 4, 2)
+    note(0x689, 2, 6, 2)
+    note(0x689, 2, 3, 2)
+    note(0x744, 2, 6, 2)
+    note(0x744, 2, 3, 2)
+    note(0x6b2, 2, 15, 2)
+    note(0x6b2, 2, 8, 2)
+    note(0x759, 2, 15, 2)
+    note(0x759, 2, 8, 2)
+    note(0x6b2, 2, 8, 2)
+    note(0x6b2, 2, 4, 2)
+    note(0x759, 2, 8, 2)
+    note(0x759, 2, 4, 2)
+    endnote()
+
+@@mus2_triangle1
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x65b, 2, 1, 4)
+    note(0x65b, 2, 0, 4)
+    note(0x65b, 2, 1, 4)
+    note(0x65b, 2, 0, 4)
+    note(0x60b, 2, 1, 4)
+    note(0x60b, 2, 0, 4)
+    note(0x60b, 2, 1, 4)
+    note(0x60b, 2, 0, 4)
+    note(0x60b, 2, 1, 4)
+    note(0x60b, 2, 0, 4)
+    note(0x60b, 2, 1, 4)
+    note(0x60b, 2, 0, 4)
+    note(0x60b, 2, 1, 4)
+    note(0x60b, 2, 0, 4)
+    note(0x60b, 2, 1, 4)
+    note(0x60b, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x563, 2, 1, 4)
+    note(0x563, 2, 0, 4)
+    note(0x60b, 2, 1, 4)
+    note(0x60b, 2, 0, 4)
+    note(0x60b, 2, 1, 4)
+    note(0x60b, 2, 0, 4)
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x6b2, 2, 1, 4)
+    note(0x6b2, 2, 0, 4)
+    note(0x6b2, 2, 1, 4)
+    note(0x6b2, 2, 0, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6e7, 2, 0, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6e7, 2, 0, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6e7, 2, 0, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6e7, 2, 0, 4)
+    endnote()
+
+@@mus2_ns1
+    note(0x0, 2, 0, 24)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x0, 2, 0, 16)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    endnote()
+
+@@mus2_pulse1
+    note(0x6b2, 2, 15, 4)
+    note(0x759, 2, 15, 4)
+    note(0x6b2, 2, 8, 4)
+    note(0x759, 2, 8, 4)
+    note(0x60b, 2, 10, 4)
+    note(0x706, 2, 10, 4)
+    note(0x65b, 2, 15, 4)
+    note(0x72d, 2, 15, 4)
+    note(0x65b, 2, 8, 4)
+    note(0x72d, 2, 8, 4)
+    note(0x60b, 2, 15, 4)
+    note(0x706, 2, 15, 4)
+    note(0x60b, 2, 8, 4)
+    note(0x706, 2, 8, 4)
+    note(0x60b, 2, 6, 4)
+    note(0x706, 2, 6, 4)
+    note(0x65b, 2, 15, 4)
+    note(0x72d, 2, 15, 4)
+    note(0x65b, 2, 8, 4)
+    note(0x72d, 2, 8, 4)
+    note(0x689, 2, 6, 4)
+    note(0x744, 2, 6, 4)
+    note(0x689, 2, 4, 4)
+    note(0x744, 2, 4, 4)
+    note(0x6b2, 2, 15, 4)
+    note(0x759, 2, 15, 4)
+    note(0x6b2, 2, 8, 4)
+    note(0x759, 2, 8, 4)
+    note(0x6b2, 2, 6, 4)
+    note(0x759, 2, 6, 4)
+    note(0x65b, 2, 10, 4)
+    note(0x72d, 2, 10, 4)
+    endnote()
+
+@@mus2_pulse2
+    note(0x744, 2, 8, 32)
+    note(0x744, 2, 6, 16)
+    note(0x747, 2, 6, 2)
+    note(0x749, 2, 6, 2)
+    note(0x74c, 2, 6, 2)
+    note(0x74e, 2, 6, 2)
+    note(0x751, 2, 6, 2)
+    note(0x754, 2, 6, 2)
+    note(0x756, 2, 6, 2)
+    note(0x759, 2, 6, 2)
+    note(0x744, 2, 3, 8)
+    note(0x744, 2, 6, 8)
+    note(0x747, 2, 6, 2)
+    note(0x749, 2, 6, 2)
+    note(0x74c, 2, 6, 2)
+    note(0x74e, 2, 6, 2)
+    note(0x751, 2, 6, 2)
+    note(0x754, 2, 6, 2)
+    note(0x756, 2, 6, 2)
+    note(0x759, 2, 6, 2)
+    note(0x744, 2, 3, 8)
+    note(0x744, 2, 6, 8)
+    note(0x747, 2, 6, 2)
+    note(0x749, 2, 6, 2)
+    note(0x74c, 2, 6, 2)
+    note(0x74e, 2, 6, 2)
+    note(0x751, 2, 6, 2)
+    note(0x754, 2, 6, 2)
+    note(0x756, 2, 6, 2)
+    note(0x759, 2, 6, 2)
+    note(0x797, 2, 4, 8)
+    note(0x797, 2, 8, 8)
+    note(0x794, 2, 8, 2)
+    note(0x792, 2, 8, 2)
+    note(0x790, 2, 8, 2)
+    note(0x78d, 2, 8, 2)
+    note(0x78a, 2, 8, 2)
+    note(0x788, 2, 8, 2)
+    note(0x786, 2, 8, 2)
+    note(0x783, 2, 8, 2)
+    note(0x773, 2, 4, 8)
+    note(0x773, 2, 8, 8)
+    note(0x773, 2, 6, 16)
+    note(0x783, 2, 4, 8)
+    note(0x783, 2, 8, 8)
+    note(0x783, 2, 6, 16)
+    note(0x77e, 2, 8, 2)
+    note(0x778, 2, 8, 2)
+    note(0x773, 2, 8, 2)
+    note(0x76e, 2, 8, 2)
+    note(0x769, 2, 8, 2)
+    note(0x764, 2, 8, 2)
+    note(0x75e, 2, 8, 2)
+    note(0x759, 2, 8, 2)
+    note(0x759, 2, 6, 16)
+    note(0x773, 2, 4, 8)
+    note(0x773, 2, 8, 8)
+    note(0x773, 2, 8, 16)
+    note(0x773, 2, 6, 16)
+    note(0x775, 2, 6, 2)
+    note(0x777, 2, 6, 2)
+    note(0x779, 2, 6, 2)
+    note(0x77b, 2, 6, 2)
+    note(0x77d, 2, 6, 2)
+    note(0x77f, 2, 6, 2)
+    note(0x781, 2, 6, 2)
+    note(0x783, 2, 6, 2)
+    note(0x773, 2, 2, 8)
+    note(0x773, 2, 4, 8)
+    note(0x775, 2, 4, 2)
+    note(0x777, 2, 4, 2)
+    note(0x779, 2, 4, 2)
+    note(0x77b, 2, 4, 2)
+    note(0x77d, 2, 4, 2)
+    note(0x77f, 2, 4, 2)
+    note(0x781, 2, 4, 2)
+    note(0x783, 2, 4, 2)
+    note(0x773, 2, 2, 8)
+    note(0x773, 2, 4, 8)
+    note(0x775, 2, 4, 2)
+    note(0x777, 2, 4, 2)
+    note(0x779, 2, 4, 2)
+    note(0x77b, 2, 4, 2)
+    note(0x77d, 2, 4, 2)
+    note(0x77f, 2, 4, 2)
+    note(0x781, 2, 4, 2)
+    note(0x783, 2, 4, 2)
+    note(0x759, 2, 4, 8)
+    note(0x759, 2, 8, 8)
+    note(0x75c, 2, 8, 2)
+    note(0x760, 2, 8, 2)
+    note(0x763, 2, 8, 2)
+    note(0x766, 2, 8, 2)
+    note(0x769, 2, 8, 2)
+    note(0x76c, 2, 8, 2)
+    note(0x770, 2, 8, 2)
+    note(0x773, 2, 8, 2)
+    note(0x759, 2, 3, 8)
+    note(0x759, 2, 6, 8)
+    note(0x75c, 2, 4, 2)
+    note(0x760, 2, 4, 2)
+    note(0x763, 2, 4, 2)
+    note(0x766, 2, 4, 2)
+    note(0x769, 2, 4, 2)
+    note(0x76c, 2, 4, 2)
+    note(0x770, 2, 4, 2)
+    note(0x773, 2, 4, 2)
+    note(0x759, 2, 4, 8)
+    note(0x759, 2, 8, 8)
+    note(0x759, 2, 8, 16)
+    note(0x744, 2, 4, 16)
+    note(0x0, 2, 0, 16)
+    endnote()
+
+
+@@mus2_pulse3
+    note(0x706, 2, 2, 2)
+    note(0x706, 2, 1, 2)
+    note(0x706, 2, 2, 2)
+    note(0x706, 2, 1, 2)
+    note(0x706, 2, 4, 2)
+    note(0x706, 2, 2, 2)
+    note(0x706, 2, 4, 2)
+    note(0x706, 2, 2, 2)
+    note(0x706, 2, 6, 2)
+    note(0x706, 2, 3, 2)
+    note(0x706, 2, 6, 2)
+    note(0x706, 2, 3, 2)
+    note(0x706, 2, 8, 2)
+    note(0x706, 2, 4, 2)
+    note(0x706, 2, 8, 2)
+    note(0x706, 2, 4, 2)
+    note(0x706, 2, 10, 2)
+    note(0x706, 2, 5, 2)
+    note(0x706, 2, 10, 2)
+    note(0x706, 2, 5, 2)
+    note(0x706, 2, 12, 2)
+    note(0x706, 2, 6, 2)
+    note(0x706, 2, 12, 2)
+    note(0x706, 2, 6, 2)
+    note(0x706, 2, 15, 2)
+    note(0x706, 2, 8, 2)
+    note(0x0, 2, 0, 4)
+    note(0x706, 2, 15, 2)
+    note(0x706, 2, 8, 2)
+    note(0x0, 2, 0, 4)
+    note(0x706, 2, 12, 2)
+    note(0x706, 2, 6, 2)
+    note(0x0, 2, 0, 4)
+    note(0x706, 2, 12, 2)
+    note(0x706, 2, 6, 2)
+    note(0x0, 2, 0, 4)
+    note(0x706, 2, 10, 2)
+    note(0x706, 2, 5, 2)
+    note(0x0, 2, 0, 4)
+    note(0x706, 2, 10, 2)
+    note(0x706, 2, 5, 2)
+    note(0x0, 2, 0, 4)
+    note(0x706, 2, 8, 2)
+    note(0x706, 2, 4, 2)
+    note(0x0, 2, 0, 4)
+    note(0x706, 2, 6, 2)
+    note(0x706, 2, 3, 2)
+    note(0x0, 2, 0, 4)
+    note(0x706, 2, 4, 2)
+    note(0x706, 2, 2, 2)
+    note(0x0, 2, 0, 4)
+    note(0x706, 2, 2, 2)
+    note(0x706, 2, 1, 2)
+    note(0x0, 2, 0, 4)
+    endnote()
+
+@@mus2_pulse4
+    note(0x6b2, 2, 2, 2)
+    note(0x6b2, 2, 1, 2)
+    note(0x6b2, 2, 2, 2)
+    note(0x6b2, 2, 1, 2)
+    note(0x6b2, 2, 4, 2)
+    note(0x6b2, 2, 2, 2)
+    note(0x6b2, 2, 4, 2)
+    note(0x6b2, 2, 2, 2)
+    note(0x6b2, 2, 6, 2)
+    note(0x6b2, 2, 3, 2)
+    note(0x6b2, 2, 6, 2)
+    note(0x6b2, 2, 3, 2)
+    note(0x6b2, 2, 8, 2)
+    note(0x6b2, 2, 4, 2)
+    note(0x6b2, 2, 8, 2)
+    note(0x6b2, 2, 4, 2)
+    note(0x6b2, 2, 10, 2)
+    note(0x6b2, 2, 5, 2)
+    note(0x6b2, 2, 10, 2)
+    note(0x6b2, 2, 5, 2)
+    note(0x6b2, 2, 12, 2)
+    note(0x6b2, 2, 6, 2)
+    note(0x6b2, 2, 12, 2)
+    note(0x6b2, 2, 6, 2)
+    note(0x6b2, 2, 15, 2)
+    note(0x6b2, 2, 8, 2)
+    note(0x0, 2, 0, 4)
+    note(0x6b2, 2, 15, 2)
+    note(0x6b2, 2, 8, 2)
+    note(0x0, 2, 0, 4)
+    note(0x6b2, 2, 12, 2)
+    note(0x6b2, 2, 6, 2)
+    note(0x0, 2, 0, 4)
+    note(0x6b2, 2, 12, 2)
+    note(0x6b2, 2, 6, 2)
+    note(0x0, 2, 0, 4)
+    note(0x6b2, 2, 10, 2)
+    note(0x6b2, 2, 5, 2)
+    note(0x0, 2, 0, 4)
+    note(0x6b2, 2, 10, 2)
+    note(0x6b2, 2, 5, 2)
+    note(0x0, 2, 0, 4)
+    note(0x6b2, 2, 8, 2)
+    note(0x6b2, 2, 4, 2)
+    note(0x0, 2, 0, 4)
+    note(0x6b2, 2, 6, 2)
+    note(0x6b2, 2, 3, 2)
+    note(0x0, 2, 0, 4)
+    note(0x6b2, 2, 4, 2)
+    note(0x6b2, 2, 2, 2)
+    note(0x0, 2, 0, 4)
+    note(0x6b2, 2, 2, 2)
+    note(0x6b2, 2, 1, 2)
+    note(0x0, 2, 0, 4)
+    endnote()
+
+@@mus2_triangle2
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x6b2, 2, 1, 4)
+    note(0x6b2, 2, 0, 4)
+    note(0x6b2, 2, 1, 4)
+    note(0x6b2, 2, 0, 4)
+    note(0x706, 2, 1, 4)
+    note(0x706, 2, 0, 4)
+    note(0x706, 2, 1, 4)
+    note(0x706, 2, 0, 4)
+    note(0x706, 2, 1, 4)
+    note(0x706, 2, 0, 4)
+    note(0x706, 2, 1, 4)
+    note(0x706, 2, 0, 4)
+    note(0x744, 2, 1, 4)
+    note(0x744, 2, 0, 4)
+    note(0x744, 2, 1, 4)
+    note(0x744, 2, 0, 4)
+    note(0x65b, 2, 1, 4)
+    note(0x65b, 2, 0, 4)
+    note(0x706, 2, 1, 4)
+    note(0x706, 2, 0, 4)
+    note(0x6b2, 2, 1, 4)
+    note(0x6b2, 2, 0, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6e7, 2, 0, 4)
+    note(0x65b, 2, 1, 4)
+    note(0x65b, 2, 0, 4)
+    note(0x65b, 2, 1, 4)
+    note(0x65b, 2, 0, 4)
+    note(0x65b, 2, 1, 4)
+    note(0x65b, 2, 0, 4)
+    note(0x65b, 2, 1, 4)
+    note(0x65b, 2, 0, 4)
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x689, 2, 1, 4)
+    note(0x689, 2, 0, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6e7, 2, 0, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6e7, 2, 0, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6e7, 2, 0, 4)
+    note(0x6e7, 2, 1, 4)
+    note(0x6e7, 2, 0, 4)
+    note(0x72d, 2, 1, 4)
+    note(0x72d, 2, 0, 4)
+    note(0x72d, 2, 1, 4)
+    note(0x72d, 2, 0, 4)
+    note(0x773, 2, 1, 4)
+    note(0x773, 2, 0, 4)
+    note(0x759, 2, 1, 4)
+    note(0x759, 2, 0, 4)
+    note(0x706, 2, 1, 4)
+    note(0x706, 2, 0, 4)
+    note(0x6b2, 2, 1, 4)
+    note(0x6b2, 2, 0, 4)
+    endnote()
+
+@@mus2_triangle3
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x5ce, 2, 1, 8)
+    note(0x5ce, 2, 0, 8)
+    note(0x5ce, 2, 1, 8)
+    note(0x5ce, 2, 0, 8)
+    note(0x5ce, 2, 1, 8)
+    note(0x5ce, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    note(0x5ce, 2, 1, 8)
+    note(0x5ce, 2, 0, 8)
+    note(0x5ce, 2, 1, 8)
+    note(0x5ce, 2, 0, 8)
+    note(0x5ce, 2, 1, 8)
+    note(0x5ce, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x689, 2, 1, 8)
+    note(0x689, 2, 0, 8)
+    note(0x689, 2, 1, 8)
+    note(0x689, 2, 0, 8)
+    note(0x689, 2, 1, 8)
+    note(0x689, 2, 0, 8)
+    endnote()
+
+@@mus2_triangle4
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x689, 2, 1, 8)
+    note(0x689, 2, 0, 8)
+    note(0x689, 2, 1, 8)
+    note(0x689, 2, 0, 8)
+    note(0x689, 2, 1, 8)
+    note(0x689, 2, 0, 8)
+    note(0x6e7, 2, 1, 8)
+    note(0x6e7, 2, 0, 8)
+    note(0x6e7, 2, 1, 8)
+    note(0x6e7, 2, 0, 8)
+    note(0x6e7, 2, 1, 8)
+    note(0x6e7, 2, 0, 8)
+    note(0x6e7, 2, 1, 8)
+    note(0x6e7, 2, 0, 8)
+    note(0x6e7, 2, 1, 8)
+    note(0x6e7, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x6b2, 2, 1, 8)
+    note(0x6b2, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x60b, 2, 1, 16)
+    note(0x61b, 2, 1, 2)
+    note(0x62a, 2, 1, 2)
+    note(0x63a, 2, 1, 2)
+    note(0x64a, 2, 1, 2)
+    note(0x65a, 2, 1, 2)
+    note(0x66a, 2, 1, 2)
+    note(0x679, 2, 1, 2)
+    note(0x689, 2, 1, 2)
+    note(0x6e7, 2, 1, 8)
+    note(0x6e7, 2, 0, 8)
+    note(0x65b, 2, 1, 8)
+    note(0x65b, 2, 0, 8)
+    note(0x6e7, 2, 1, 32)
+    note(0x60b, 2, 1, 16)
+    note(0x60b, 2, 1, 8)
+    note(0x60b, 2, 0, 8)
+    endnote()
+
+@@mus2_ns2
+    note(0x0, 2, 0, 8)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x0, 2, 0, 8)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x0, 2, 0, 8)
+    note(0x5, 2, 10, 4)
+    note(0x5, 2, 5, 4)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    note(0x0, 2, 0, 8)
+    note(0x4, 2, 2, 4)
+    note(0x4, 2, 1, 4)
+    endnote()
+
+@@mus3_pulse0
+    note(0x744, 1, 10, 12)
+    note(0x7a2, 1, 2, 12)
+    note(0x744, 1, 8, 12)
+    note(0x7a2, 1, 2, 12)
+    note(0x744, 1, 6, 12)
+    note(0x7ac, 1, 2, 12)
+    note(0x744, 1, 4, 12)
+    note(0x7ac, 1, 2, 12)
+    note(0x6e7, 1, 10, 12)
+    note(0x7a2, 1, 2, 12)
+    note(0x6e7, 1, 8, 12)
+    note(0x72d, 1, 10, 12)
+    note(0x7c1, 1, 2, 12)
+    note(0x72d, 1, 8, 12)
+    note(0x7c1, 1, 2, 12)
+    note(0x72d, 1, 4, 12)
+    note(0x773, 1, 10, 12)
+    note(0x7a2, 1, 2, 12)
+    note(0x773, 1, 8, 12)
+    note(0x7a2, 1, 2, 12)
+    note(0x773, 1, 6, 12)
+    note(0x7ac, 1, 2, 12)
+    note(0x773, 1, 4, 12)
+    note(0x7ac, 1, 2, 12)
+    note(0x773, 1, 2, 12)
+    note(0x706, 1, 8, 12)
+    note(0x759, 1, 10, 12)
+    note(0x7a2, 1, 2, 12)
+    note(0x744, 1, 10, 12)
+    note(0x7c1, 1, 2, 12)
+    note(0x744, 1, 8, 12)
+    note(0x7c1, 1, 2, 12)
+    endnote()
+
+@@mus3_pulse1
+    note(0x706, 1, 10, 6)
+    note(0x783, 1, 2, 6)
+    note(0x759, 1, 10, 6)
+    note(0x783, 1, 2, 6)
+    note(0x706, 1, 8, 6)
+    note(0x0, 1, 0, 6)
+    note(0x759, 1, 8, 6)
+    note(0x0, 1, 0, 6)
+    note(0x706, 1, 4, 6)
+    note(0x7ba, 1, 2, 6)
+    note(0x759, 1, 4, 6)
+    note(0x7ba, 1, 2, 6)
+    note(0x706, 1, 2, 6)
+    note(0x7a2, 1, 2, 6)
+    note(0x759, 1, 2, 6)
+    note(0x7a2, 1, 2, 6)
+    note(0x689, 1, 10, 6)
+    note(0x797, 1, 2, 6)
+    note(0x706, 1, 10, 6)
+    note(0x7c1, 1, 2, 6)
+    note(0x689, 1, 8, 6)
+    note(0x7ac, 1, 2, 6)
+    note(0x706, 1, 8, 6)
+    note(0x0, 1, 0, 6)
+    note(0x689, 1, 4, 6)
+    note(0x0, 1, 0, 6)
+    note(0x706, 1, 4, 6)
+    note(0x773, 1, 2, 6)
+    note(0x689, 1, 2, 6)
+    note(0x773, 1, 2, 6)
+    note(0x706, 1, 2, 6)
+    note(0x0, 1, 0, 6)
+    endnote()
+
+@@mus3_pulse2
+    note(0x12c, 2, 15, 1)
+    note(0x257, 2, 15, 1)
+    note(0x383, 2, 15, 1)
+    note(0x4af, 2, 15, 1)
+    note(0x5da, 2, 15, 1)
+    note(0x706, 2, 15, 1)
+    note(0x706, 2, 15, 6)
+    note(0x706, 2, 12, 6)
+    note(0x706, 2, 10, 6)
+    note(0x7ba, 2, 2, 12)
+    note(0x60b, 2, 10, 6)
+    note(0x7ba, 2, 2, 6)
+    note(0x7a2, 2, 2, 12)
+    note(0x60b, 2, 10, 6)
+    note(0x783, 2, 2, 6)
+    note(0x60b, 2, 10, 6)
+    note(0x0, 2, 0, 12)
+    note(0x2c, 2, 0, 6)
+    note(0x142, 2, 15, 1)
+    note(0x259, 2, 15, 1)
+    note(0x36f, 2, 15, 1)
+    note(0x485, 2, 15, 1)
+    note(0x59c, 2, 15, 1)
+    note(0x6b2, 2, 15, 1)
+    note(0x6b2, 2, 15, 6)
+    note(0x6b2, 2, 12, 6)
+    note(0x6b2, 2, 10, 6)
+    note(0x0, 2, 0, 6)
+    note(0x2c, 2, 0, 6)
+    note(0x126, 2, 10, 1)
+    note(0x221, 2, 10, 1)
+    note(0x31c, 2, 10, 1)
+    note(0x416, 2, 10, 1)
+    note(0x510, 2, 10, 1)
+    note(0x60b, 2, 10, 1)
+    note(0x65b, 2, 0, 6)
+    note(0x672, 2, 15, 1)
+    note(0x68a, 2, 15, 1)
+    note(0x6a1, 2, 15, 1)
+    note(0x6b8, 2, 15, 1)
+    note(0x6d0, 2, 15, 1)
+    note(0x6e7, 2, 15, 1)
+    note(0x6e7, 2, 15, 6)
+    note(0x6e7, 2, 12, 6)
+    note(0x6e7, 2, 10, 6)
+    note(0x7ac, 2, 2, 18)
+    note(0x0, 2, 0, 6)
+    endnote()
+
+@@mus3_pulse3
+    note(0x12c, 2, 15, 1)
+    note(0x257, 2, 15, 1)
+    note(0x383, 2, 15, 1)
+    note(0x4af, 2, 15, 1)
+    note(0x5da, 2, 15, 1)
+    note(0x706, 2, 15, 1)
+    note(0x706, 2, 15, 6)
+    note(0x706, 2, 12, 6)
+    note(0x706, 2, 10, 6)
+    note(0x7ba, 2, 2, 12)
+    note(0x60b, 2, 10, 6)
+    note(0x7ba, 2, 2, 6)
+    note(0x7a2, 2, 2, 12)
+    note(0x60b, 2, 10, 6)
+    note(0x7a2, 2, 2, 6)
+    note(0x60b, 2, 10, 6)
+    note(0x0, 2, 0, 12)
+    note(0x7ac, 2, 0, 6)
+    note(0x78b, 2, 15, 1)
+    note(0x76a, 2, 15, 1)
+    note(0x74a, 2, 15, 1)
+    note(0x729, 2, 15, 1)
+    note(0x708, 2, 15, 1)
+    note(0x6e7, 2, 15, 1)
+    note(0x6e7, 2, 15, 6)
+    note(0x6e7, 2, 12, 6)
+    note(0x6e7, 2, 0, 6)
+    note(0x6de, 2, 15, 1)
+    note(0x6d5, 2, 15, 1)
+    note(0x6cc, 2, 15, 1)
+    note(0x6c4, 2, 15, 1)
+    note(0x6bb, 2, 15, 1)
+    note(0x6b2, 2, 15, 1)
+    note(0x6b2, 2, 15, 6)
+    note(0x6b2, 2, 12, 6)
+    note(0x706, 2, 0, 6)
+    note(0x701, 2, 15, 1)
+    note(0x6fc, 2, 15, 1)
+    note(0x6f6, 2, 15, 1)
+    note(0x6f1, 2, 15, 1)
+    note(0x6ec, 2, 15, 1)
+    note(0x6e7, 2, 15, 1)
+    note(0x6e7, 2, 15, 6)
+    note(0x6e7, 2, 12, 6)
+    note(0x2c, 2, 0, 6)
+    note(0x157, 2, 15, 1)
+    note(0x282, 2, 15, 1)
+    note(0x3ac, 2, 15, 1)
+    note(0x4d7, 2, 15, 1)
+    note(0x602, 2, 15, 1)
+    note(0x72d, 2, 15, 1)
+    note(0x72d, 2, 15, 6)
+    note(0x72d, 2, 12, 6)
+    note(0x0, 2, 0, 6)
+    endnote()
+
+@@mus3_pulse4
+    note(0x12c, 2, 15, 1)
+    note(0x257, 2, 15, 1)
+    note(0x383, 2, 15, 1)
+    note(0x4af, 2, 15, 1)
+    note(0x5da, 2, 15, 1)
+    note(0x706, 2, 15, 1)
+    note(0x706, 2, 15, 18)
+    note(0x706, 2, 12, 6)
+    note(0x706, 2, 10, 6)
+    note(0x706, 2, 8, 6)
+    note(0x706, 2, 6, 6)
+    note(0x706, 2, 4, 6)
+    note(0x706, 2, 2, 6)
+    note(0x0, 2, 0, 48)
+    note(0x773, 2, 2, 12)
+    note(0x7a2, 2, 2, 12)
+    note(0x7a0, 2, 2, 1)
+    note(0x79e, 2, 2, 1)
+    note(0x79c, 2, 2, 1)
+    note(0x79b, 2, 2, 1)
+    note(0x799, 2, 2, 1)
+    note(0x797, 2, 2, 1)
+    note(0x797, 2, 2, 6)
+    note(0x759, 2, 2, 18)
+    note(0x0, 2, 0, 6)
+    note(0x783, 2, 2, 24)
+    endnote()
+
+@@mus3_triangle0
+    note(0x511, 2, 1, 60)
+    note(0x0, 2, 0, 12)
+    note(0x511, 2, 1, 12)
+    note(0x563, 2, 1, 12)
+    note(0x5ce, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x5ce, 2, 1, 12)
+    note(0x0, 2, 0, 12)
+    note(0x5ce, 2, 1, 12)
+    note(0x4b5, 2, 1, 12)
+    note(0x511, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x511, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x5ce, 2, 1, 12)
+    note(0x563, 2, 1, 12)
+    note(0x60b, 2, 1, 24)
+    note(0x65b, 2, 1, 12)
+    note(0x0, 2, 0, 12)
+    note(0x5ce, 2, 1, 12)
+    note(0x563, 2, 1, 12)
+    endnote()
+
+@@mus3_triangle1
+    note(0x60b, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x689, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x60b, 2, 1, 24)
+    note(0x618, 2, 1, 2)
+    note(0x626, 2, 1, 2)
+    note(0x633, 2, 1, 2)
+    note(0x640, 2, 1, 2)
+    note(0x64e, 2, 1, 2)
+    note(0x65b, 2, 1, 2)
+    note(0x65b, 2, 1, 12)
+    note(0x6b2, 2, 1, 24)
+    note(0x5ce, 2, 1, 12)
+    note(0x5ce, 2, 0, 12)
+    note(0x60b, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x65b, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x5ce, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x689, 2, 1, 24)
+    note(0x5ce, 2, 1, 24)
+    endnote()
+
+@@mus3_triangle2
+    note(0x60b, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x689, 2, 1, 36)
+    note(0x0, 2, 0, 12)
+    note(0x60b, 2, 1, 24)
+    note(0x618, 2, 1, 2)
+    note(0x626, 2, 1, 2)
+    note(0x633, 2, 1, 2)
+    note(0x640, 2, 1, 2)
+    note(0x64e, 2, 1, 2)
+    note(0x65b, 2, 1, 2)
+    note(0x65b, 2, 1, 12)
+    note(0x6b2, 2, 1, 24)
+    note(0x65b, 2, 1, 24)
+    note(0x60b, 2, 1, 72)
+    note(0x0, 2, 0, 120)
+    endnote()
+
+@@mus3_triangle3
+    note(0x60b, 2, 1, 42)
+    note(0x0, 2, 0, 6)
+    note(0x60b, 2, 1, 42)
+    note(0x0, 2, 0, 6)
+    note(0x563, 2, 1, 42)
+    note(0x0, 2, 0, 6)
+    note(0x5ce, 2, 1, 42)
+    note(0x0, 2, 0, 6)
+    endnote()
+
+@@mus3_triangle4
+    note(0x60b, 2, 1, 42)
+    note(0x0, 2, 0, 6)
+    note(0x60b, 2, 1, 42)
+    note(0x0, 2, 0, 6)
+    note(0x5ce, 2, 1, 12)
+    note(0x6b2, 2, 1, 12)
+    note(0x563, 2, 1, 18)
+    note(0x0, 2, 0, 6)
+    note(0x5ce, 2, 1, 18)
+    note(0x0, 2, 0, 6)
+    note(0x65b, 2, 1, 18)
+    note(0x0, 2, 0, 6)
+    endnote()
+
+@@mus3_triangle5
+    note(0x60b, 2, 1, 60)
+    note(0x0, 2, 0, 102)
+    note(0x5ce, 2, 0, 6)
+    note(0x5ce, 2, 1, 1)
+    note(0x5ce, 2, 1, 1)
+    note(0x5ce, 2, 1, 1)
+    note(0x5ce, 2, 1, 1)
+    note(0x5ce, 2, 1, 1)
+    note(0x5ce, 2, 1, 1)
+    note(0x5ce, 2, 1, 6)
+    note(0x59f, 2, 1, 1)
+    note(0x570, 2, 1, 1)
+    note(0x542, 2, 1, 1)
+    note(0x513, 2, 1, 1)
+    note(0x4e4, 2, 1, 1)
+    note(0x4b5, 2, 1, 1)
+    note(0x4b5, 2, 1, 6)
+    endnote()
+
+@@mus3_ns0
+    note(0x4, 2, 6, 2)
+    note(0x4, 2, 4, 2)
+    note(0x4, 2, 2, 2)
+    note(0x0, 2, 0, 6)
+    note(0x4, 2, 4, 2)
+    note(0x4, 2, 3, 2)
+    note(0x4, 2, 1, 2)
+    note(0x0, 2, 0, 6)
+    note(0x4, 2, 2, 2)
+    note(0x4, 2, 1, 2)
+    note(0x4, 2, 1, 2)
+    note(0x0, 2, 0, 18)
+    note(0x5, 2, 8, 6)
+    note(0x5, 2, 6, 6)
+    note(0x5, 2, 4, 6)
+    note(0x5, 2, 2, 12)
+    note(0x0, 2, 0, 6)
+    note(0x5, 2, 2, 2)
+    note(0x5, 2, 1, 2)
+    note(0x5, 2, 1, 2)
+    note(0x0, 2, 0, 6)
+    endnote()
+
+@@mus_wind_ns
+    note(0x5, 2, 2, 48)
+    note(0x6, 2, 2, 32)
+    note(0x7, 2, 2, 16)
+    note(0x8, 2, 2, 64)
+    note(0x7, 2, 2, 16)
+    note(0x6, 2, 2, 32)
+    note(0x5, 2, 2, 48)
+    endnote()
+
+@@mus_wind_pl
+    note(0x783, 2, 8, 8)
+    note(0x783, 2, 6, 8)
+    note(0x783, 2, 4, 8)
+    note(0x783, 2, 2, 8)
+    note(0x0, 2, 0, 32)
+    note(0x783, 2, 6, 8)
+    note(0x783, 2, 4, 8)
+    note(0x783, 2, 3, 8)
+    note(0x783, 2, 2, 8)
+    note(0x797, 2, 4, 8)
+    note(0x797, 2, 3, 8)
+    note(0x797, 2, 2, 8)
+    note(0x797, 2, 1, 8)
+    note(0x759, 2, 6, 8)
+    note(0x759, 2, 4, 8)
+    note(0x759, 2, 3, 8)
+    note(0x759, 2, 2, 8)
+    note(0x0, 2, 0, 32)
+    note(0x783, 2, 4, 8)
+    note(0x783, 2, 3, 8)
+    note(0x783, 2, 2, 8)
+    note(0x783, 2, 1, 8)
+    note(0x0, 2, 0, 64)
+    note(0x783, 2, 4, 8)
+    note(0x783, 2, 3, 8)
+    note(0x783, 2, 2, 8)
+    note(0x783, 2, 1, 8)
+    note(0x0, 2, 0, 64)
+    note(0x783, 2, 2, 16)
+    note(0x783, 2, 1, 16)
+    note(0x0, 2, 0, 64)
+    note(0x783, 2, 2, 16)
+    note(0x783, 2, 1, 16)
+    note(0x759, 2, 8, 8)
+    note(0x759, 2, 6, 8)
+    note(0x759, 2, 4, 8)
+    note(0x759, 2, 2, 8)
+    note(0x0, 2, 0, 32)
+    note(0x759, 2, 6, 8)
+    note(0x759, 2, 4, 8)
+    note(0x759, 2, 3, 8)
+    note(0x759, 2, 2, 8)
+    note(0x72d, 2, 4, 8)
+    note(0x72d, 2, 3, 8)
+    note(0x72d, 2, 2, 8)
+    note(0x72d, 2, 1, 8)
+    note(0x744, 2, 6, 8)
+    note(0x744, 2, 4, 8)
+    note(0x744, 2, 3, 8)
+    note(0x744, 2, 2, 8)
+    note(0x0, 2, 0, 32)
+    note(0x759, 2, 4, 8)
+    note(0x759, 2, 3, 8)
+    note(0x759, 2, 2, 8)
+    note(0x759, 2, 1, 8)
+    note(0x0, 2, 0, 64)
+    note(0x759, 2, 4, 8)
+    note(0x759, 2, 3, 8)
+    note(0x759, 2, 2, 8)
+    note(0x759, 2, 1, 8)
+    note(0x0, 2, 0, 64)
+    note(0x759, 2, 2, 16)
+    note(0x759, 2, 1, 16)
+    note(0x0, 2, 0, 64)
+    note(0x563, 2, 2, 16)
+    note(0x563, 2, 1, 16)
+    endnote()
+
+@@mus_wind_plblank
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    note(0, 0, 0, 64)
+    endnote()
+
+@@mus_wind_nsseq
+    dc.w mus_wind_ns
+    dc.b 1,0
+
+@@mus_wind_p1seq
+    dc.w mus_wind_plblank
+    dc.w mus_wind_pl
+    dc.b 2,0
+
+
+@@mus3_p1seq
+    dc.w mus3_pulse0
+    dc.w mus3_pulse0
+    dc.w mus3_pulse1
+    dc.w mus3_pulse1
+    dc.w mus3_pulse1
+    dc.w mus3_pulse1
+
+    dc.w mus3_pulse2
+    dc.w mus3_pulse2
+    dc.w mus3_pulse3
+    dc.w mus3_pulse4
+    dc.b 10,0
+
+@@mus3_triseq
+    dc.w mus3_triangle0
+    dc.w mus3_triangle0
+    dc.w mus3_triangle1
+    dc.w mus3_triangle2
+
+    dc.w mus3_triangle3
+    dc.w mus3_triangle3
+    dc.w mus3_triangle4
+    dc.w mus3_triangle5
+
+
+    dc.b 8,0
+
+@@mus3_nsseq
+    dc.w mus3_ns0
+    dc.b 1,0
+
+
+
+
+
+@@mus1_p1seq
+    dc.w mus1_pulse0
+    dc.w mus1_pulse1
+    dc.b 2,0
+
+
+@@mus1_triseq
+    dc.w mus1_triangle0
+    dc.w mus1_triangle1
+    dc.b 2,0
+
+@@mus1_nsseq
+    dc.w mus1_ns0
+    dc.b 1,0
+
+@@mus2_p1seq
+    dc.w mus2_pulse0
+    dc.w mus2_pulse0
+    dc.w mus2_pulse0
+    dc.w mus2_pulse0
+    dc.w mus2_pulse0
+    dc.w mus2_pulse0
+    dc.w mus2_pulse0
+    dc.w mus2_pulse0
+
+    dc.w mus2_pulse0
+    dc.w mus2_pulse0
+
+    dc.w mus2_pulse1
+    dc.w mus2_pulse1
+
+    dc.w mus2_pulse0
+    dc.w mus2_pulse0
+
+    dc.w mus2_pulse1
+    dc.w mus2_pulse1
+
+    dc.w mus2_pulse2
+
+    dc.w mus2_pulse3
+    dc.w mus2_pulse3
+    dc.w mus2_pulse3
+    dc.w mus2_pulse3
+
+    dc.w mus2_pulse4
+    dc.w mus2_pulse4
+    dc.w mus2_pulse4
+    dc.w mus2_pulse4
+
+    dc.b 25,0
+
+@@mus2_triseq
+    dc.w mus2_triangle0
+    dc.w mus2_triangle0
+    dc.w mus2_triangle1
+    dc.w mus2_triangle1
+    dc.w mus2_triangle1
+
+    dc.w mus2_triangle1
+
+    dc.w mus2_triangle2
+    dc.w mus2_triangle2
+
+    dc.w mus2_triangle3
+
+    dc.w mus2_triangle4
+
+
+    dc.b 10,0
+
+@@mus2_nsseq
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+
+    dc.w mus2_ns1
+    dc.w mus2_ns1
+
+    dc.w mus2_ns1
+    dc.w mus2_ns1
+
+    dc.w mus2_ns1
+    dc.w mus2_ns1
+
+    dc.w mus2_ns1
+    dc.w mus2_ns1
+
+    dc.w mus2_ns2
+    dc.w mus2_ns2
+    dc.w mus2_ns2
+    dc.w mus2_ns2
+
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+    dc.w mus2_ns0
+
+    dc.b 28,0
+
+
+-- pico-8 notes
+-- * 21 -> mus0_pulse0
+-- * 10 -> mus0_ns0 (mus0_triangle0)
+-- * 22 -> mus0_pulse1
+-- * 12 -> mus0_triangle1
+-- * 11 -> mus0_pulse2
+-- * 18 -> mus0_triangle2
+-- * 19 -> mus0_pulse3
+-- * 20 -> mus0_ns1
+-- * 17 -> mus0_pulse4
+-- title screen song
+--   56 -> mus1_pulse0
+--   58 -> mus1_triangle0
+--   60 -> mus1_ns0
+--   57 -> mus1_pulse1
+--   58 -> mus1_triangle1
+-- song2
+--   42 -> mus2_triangle0
+--   39 -> mus2_ns0
+--   41 -> mus2_pulse0
+--   43 -> mus2_triangle1
+--   47 -> mus2_ns1
+--   44 -> mus2_pulse1
+--   45 -> mus2_triangle2
+--   46 -> mus2_ns2
+--   48 -> mus2_pulse2
+--   52 -> mus2_triangle3
+--   49 -> mus2_pulse3
+--   53 -> mus2_triangle4
+--   50 -> mus2_pulse4
+-- song3
+--	24 -> mus3_pulse0
+--	25 -> mus3_triangle0
+--   26 -> mus3_ns0
+--   28 -> mus3_triangle1
+--   27 -> mus3_pulse1
+--   29 -> mus3_triangle2
+--   31 -> mus3_pulse2
+--   33 -> mus3_triangle3
+--   30 -> mus3_pulse3
+--   34 -> mus3_triangle4
+--   36 -> mus3_triangle5
+--   32 -> mus3_pulse4
+-- sound effects:
+-- 0 * death
+-- 1 * normal jump
+-- 2 * wall jump
+-- 3 * dash
+-- 4 * begin player spawn (?)
+-- 5 x player spawn landed
+-- 6 - recovered dash with balloon
+-- 7 - balloon or fall floor respawned
+-- 8 * boing
+-- 9 x try to dash unsuccessfully
+-- 13 * berry collected
+-- 14 - flying berry leaving
+-- 15 - break fall floor
+-- 16 - break fake wall, or open chest
+-- 23 * key collected
+-- 35 - text readout
+-- 37 - open big chest
+-- 38 * game started
+-- 51 - orb collected
+-- 54 * dash recovered
+-- 55 - flag collect
+
+pb16_unpacker()
+
+writebin(filename..'.gb')
+local mussets_lo_address = op_resolve("mussetslo")
+local mussets_hi_address = op_resolve("mussetshi")
+assert((mussets_lo_address >> 8) == (mussets_hi_address >> 8))
+assert(((mussets_hi_address + mussets_hi_address - mussets_lo_address) >> 8)
+    == (mussets_hi_address >> 8))
+writesym(filename..'.sym', 'rgbds')
+print(stats)

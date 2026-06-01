@@ -1,0 +1,51 @@
+require 'hUGEDriver'
+
+mappers.ROM{ title = "FISHNCHIPS" }
+huge.driver()
+
+local function read_asset(name)
+    for _, path in ipairs{ name, "samples/" .. name } do
+        local file = io.open(path, "rb")
+        if file then
+            local data = file:read("*all")
+            file:close()
+            return data
+        end
+    end
+    error("unable to open hUGETracker asset: " .. name)
+end
+
+-- "Fish 'n Chips" by Jester, converted by SuperDisk, from hUGETracker's
+-- bundled sample songs:
+-- https://github.com/SuperDisk/hUGETracker/tree/hUGETracker/sample-songs
+-- The .uge editor module is converted to ROM data by huge.read_uge/huge.song.
+local song = huge.read_uge(read_asset("FishNChips.uge"))
+@@song_data
+local demo_song = huge.song(song, "demo_song")
+
+@@main
+    di
+    sp := 0xfffe
+    huge.init_sound()
+    hl := demo_song
+    call hUGE_init
+
+@_loop
+    call wait_vblank
+    call hUGE_dosound
+    jr _loop
+
+@@wait_vblank
+    ldh a,LY
+    cp #144
+    jr c,wait_vblank
+
+@_end
+    ldh a,LY
+    cp #144
+    jr nc,_end
+    ret
+
+writesym(filename .. '.sym', 'rgbds')
+writebin(filename .. '.gb')
+print(stats)

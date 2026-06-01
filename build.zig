@@ -49,6 +49,7 @@ pub fn build(b: *std.Build) !void {
     embed.addFileArg(b.path("6502.lua"));
     embed.addFileArg(b.path("dkjson.lua"));
     embed.addFileArg(b.path("l65.lua"));
+    embed.addFileArg(b.path("pb.lua"));
     embed.addFileArg(b.path("re.lua"));
     embed.addFileArg(b.path("nes.l65"));
     embed.addFileArg(b.path("pce.l65"));
@@ -62,8 +63,22 @@ pub fn build(b: *std.Build) !void {
     embed_7801.addFileArg(b.path("dkjson.lua"));
     embed_7801.addFileArg(b.path("l7801.lua"));
     embed_7801.addFileArg(b.path("l65cfg.lua"));
+    embed_7801.addFileArg(b.path("pb.lua"));
     embed_7801.addFileArg(b.path("re.lua"));
     embed_7801.addFileArg(b.path("scv.l7801"));
+
+    const embed_z80 = b.addRunArtifact(embed_exe);
+    embed_z80.addArg("-o");
+    const embed_z80_output = embed_z80.addOutputFileArg("scripts_z80.h");
+    embed_z80.addFileArg(b.path("asm.lua"));
+    embed_z80.addFileArg(b.path("z80.lua"));
+    embed_z80.addFileArg(b.path("dkjson.lua"));
+    embed_z80.addFileArg(b.path("lz80.lua"));
+    embed_z80.addFileArg(b.path("l65cfg.lua"));
+    embed_z80.addFileArg(b.path("pb.lua"));
+    embed_z80.addFileArg(b.path("re.lua"));
+    embed_z80.addFileArg(b.path("gb.lz80"));
+    embed_z80.addFileArg(b.path("hUGEDriver.lz80"));
 
     ///////////////////////////////////////////////////////////////////////////
     // Build for current machine
@@ -79,6 +94,12 @@ pub fn build(b: *std.Build) !void {
     exe_7801.step.dependOn(&embed_7801.step);
     try setupExe(exe_7801, "l7801.c", &embed_7801_output);
     b.installArtifact(exe_7801);
+
+    var exe_z80 = addCExecutable(b, "lz80", target, optimize);
+
+    exe_z80.step.dependOn(&embed_z80.step);
+    try setupExe(exe_z80, "lz80.c", &embed_z80_output);
+    b.installArtifact(exe_z80);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -116,6 +137,18 @@ pub fn build(b: *std.Build) !void {
         rel_exe_7801.step.dependOn(&embed_7801.step);
         try setupExe(rel_exe_7801, "l7801.c", &embed_7801_output);
         release_step.dependOn(&target_output_7801.step);
+
+        const rel_exe_z80 = addCExecutable(b, "lz80", b.resolveTargetQuery(t), .ReleaseSmall);
+        const target_output_z80 = b.addInstallArtifact(rel_exe_z80, .{
+            .dest_dir = .{
+                .override = .{
+                    .custom = try t.zigTriple(b.allocator),
+                },
+            },
+        });
+        rel_exe_z80.step.dependOn(&embed_z80.step);
+        try setupExe(rel_exe_z80, "lz80.c", &embed_z80_output);
+        release_step.dependOn(&target_output_z80.step);
     }
 
     ///////////////////////////////////////////////////////////////////////////

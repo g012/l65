@@ -145,8 +145,41 @@ set_property(TARGET l7801 PROPERTY C_STANDARD 99)
 target_include_directories(l7801 PRIVATE "${L7801_SOURCE_DIR}" "${L65_BINARY_DIR}")
 target_link_libraries(l7801 ${LINKLIBS})
 
+set(LZ80_SOURCES
+        ${L65_SOURCE_DIR}/lfs.c
+        ${L65_SOURCE_DIR}/lpeg.c
+        ${L65_SOURCE_DIR}/lz80.c
+    )
+set(LZ80_HEADERS
+        ${L65_SOURCE_DIR}/lua.h
+        ${L65_BINARY_DIR}/scripts_z80.h
+        ${L65_SOURCE_DIR}/stb_image.h
+    )
 
-install(TARGETS l65 l7801
+set(LZ80_SCRIPTS
+        ${L65_SOURCE_DIR}/asm.lua
+        ${L65_SOURCE_DIR}/z80.lua
+        ${L65_SOURCE_DIR}/dkjson.lua
+        ${L65_SOURCE_DIR}/lz80.lua
+        ${L65_SOURCE_DIR}/l65cfg.lua
+        ${L65_SOURCE_DIR}/re.lua
+        ${L65_SOURCE_DIR}/gb.lz80
+        ${L65_SOURCE_DIR}/hUGEDriver.lz80
+    )
+
+add_custom_command(
+    OUTPUT ${L65_BINARY_DIR}/scripts_z80.h
+    COMMAND embed -o ${L65_BINARY_DIR}/scripts_z80.h ${LZ80_SCRIPTS}
+    DEPENDS embed ${LZ80_SCRIPTS}
+)
+add_custom_target(prereq_z80 DEPENDS ${L65_BINARY_DIR}/scripts_z80.h)
+add_executable(lz80 ${LZ80_SOURCES} ${LZ80_HEADERS})
+add_dependencies(lz80 prereq_z80)
+set_property(TARGET lz80 PROPERTY C_STANDARD 99)
+target_include_directories(lz80 PRIVATE "${L65_SOURCE_DIR}" "${L65_BINARY_DIR}")
+target_link_libraries(lz80 ${LINKLIBS})
+
+install(TARGETS l65 l7801 lz80
         RUNTIME DESTINATION bin)
 install(DIRECTORY samples DESTINATION doc)
 install(FILES README.md DESTINATION doc)

@@ -1,0 +1,1777 @@
+require'gb'
+
+assert(LCDC_DEFAULT == (LCDC_ON | LCDC_BLOCK01 | LCDC_BG_ON))
+assert(PAD_A == 0x01 and PAD_DOWN == 0x80)
+assert((RP_ENABLE | RP_WRITE_HIGH) == 0xc1)
+assert(OAM_SIZE == OBJ_SIZE * OAM_COUNT)
+assert(TILEMAP_AREA == TILEMAP_WIDTH * TILEMAP_HEIGHT)
+
+mappers.ROM{ title = "LZ80 OPS", entry = "main" }
+
+section{ "rom", org = 0x0150 }
+@main
+    jr main
+
+-- Every valid unprefixed SM83 opcode, in opcode order.
+-- The 11 lock-up opcodes are intentionally omitted.
+
+@op_00
+    nop                      -- 00
+@op_01
+    ld bc,#0x1234            -- 01
+@op_02
+    ld (bc),a                -- 02
+@op_03
+    inc bc                   -- 03
+@op_04
+    inc b                    -- 04
+@op_05
+    dec b                    -- 05
+@op_06
+    ld b,#0x12               -- 06
+@op_07
+    rlca                     -- 07
+@op_08
+    ld 0xc123,sp             -- 08
+@op_09
+    add hl,bc                -- 09
+@op_0a
+    ld a,(bc)                -- 0A
+@op_0b
+    dec bc                   -- 0B
+@op_0c
+    inc c                    -- 0C
+@op_0d
+    dec c                    -- 0D
+@op_0e
+    ld c,#0x12               -- 0E
+@op_0f
+    rrca                     -- 0F
+@op_10
+    stop                     -- 10
+@op_11
+    ld de,#0x1234            -- 11
+@op_12
+    ld (de),a                -- 12
+@op_13
+    inc de                   -- 13
+@op_14
+    inc d                    -- 14
+@op_15
+    dec d                    -- 15
+@op_16
+    ld d,#0x12               -- 16
+@op_17
+    rla                      -- 17
+@op_18
+    jr op_18                 -- 18
+@op_19
+    add hl,de                -- 19
+@op_1a
+    ld a,(de)                -- 1A
+@op_1b
+    dec de                   -- 1B
+@op_1c
+    inc e                    -- 1C
+@op_1d
+    dec e                    -- 1D
+@op_1e
+    ld e,#0x12               -- 1E
+@op_1f
+    rra                      -- 1F
+@op_20
+    jr nz,op_20              -- 20
+@op_21
+    ld hl,#0x1234            -- 21
+@op_22
+    ldi (hl),a               -- 22
+@op_23
+    inc hl                   -- 23
+@op_24
+    inc h                    -- 24
+@op_25
+    dec h                    -- 25
+@op_26
+    ld h,#0x12               -- 26
+@op_27
+    daa                      -- 27
+@op_28
+    jr z,op_28               -- 28
+@op_29
+    add hl,hl                -- 29
+@op_2a
+    ldi a,(hl)               -- 2A
+@op_2b
+    dec hl                   -- 2B
+@op_2c
+    inc l                    -- 2C
+@op_2d
+    dec l                    -- 2D
+@op_2e
+    ld l,#0x12               -- 2E
+@op_2f
+    cpl                      -- 2F
+@op_30
+    jr nc,op_30              -- 30
+@op_31
+    ld sp,#0x1234            -- 31
+@op_32
+    ldd (hl),a               -- 32
+@op_33
+    inc sp                   -- 33
+@op_34
+    inc (hl)                 -- 34
+@op_35
+    dec (hl)                 -- 35
+@op_36
+    ld (hl),#0x12            -- 36
+@op_37
+    scf                      -- 37
+@op_38
+    jr c,op_38               -- 38
+@op_39
+    add hl,sp                -- 39
+@op_3a
+    ldd a,(hl)               -- 3A
+@op_3b
+    dec sp                   -- 3B
+@op_3c
+    inc a                    -- 3C
+@op_3d
+    dec a                    -- 3D
+@op_3e
+    ld a,#0x12               -- 3E
+@op_3f
+    ccf                      -- 3F
+@op_40
+    ld b,b                   -- 40
+@op_41
+    ld b,c                   -- 41
+@op_42
+    ld b,d                   -- 42
+@op_43
+    ld b,e                   -- 43
+@op_44
+    ld b,h                   -- 44
+@op_45
+    ld b,l                   -- 45
+@op_46
+    ld b,(hl)                -- 46
+@op_47
+    ld b,a                   -- 47
+@op_48
+    ld c,b                   -- 48
+@op_49
+    ld c,c                   -- 49
+@op_4a
+    ld c,d                   -- 4A
+@op_4b
+    ld c,e                   -- 4B
+@op_4c
+    ld c,h                   -- 4C
+@op_4d
+    ld c,l                   -- 4D
+@op_4e
+    ld c,(hl)                -- 4E
+@op_4f
+    ld c,a                   -- 4F
+@op_50
+    ld d,b                   -- 50
+@op_51
+    ld d,c                   -- 51
+@op_52
+    ld d,d                   -- 52
+@op_53
+    ld d,e                   -- 53
+@op_54
+    ld d,h                   -- 54
+@op_55
+    ld d,l                   -- 55
+@op_56
+    ld d,(hl)                -- 56
+@op_57
+    ld d,a                   -- 57
+@op_58
+    ld e,b                   -- 58
+@op_59
+    ld e,c                   -- 59
+@op_5a
+    ld e,d                   -- 5A
+@op_5b
+    ld e,e                   -- 5B
+@op_5c
+    ld e,h                   -- 5C
+@op_5d
+    ld e,l                   -- 5D
+@op_5e
+    ld e,(hl)                -- 5E
+@op_5f
+    ld e,a                   -- 5F
+@op_60
+    ld h,b                   -- 60
+@op_61
+    ld h,c                   -- 61
+@op_62
+    ld h,d                   -- 62
+@op_63
+    ld h,e                   -- 63
+@op_64
+    ld h,h                   -- 64
+@op_65
+    ld h,l                   -- 65
+@op_66
+    ld h,(hl)                -- 66
+@op_67
+    ld h,a                   -- 67
+@op_68
+    ld l,b                   -- 68
+@op_69
+    ld l,c                   -- 69
+@op_6a
+    ld l,d                   -- 6A
+@op_6b
+    ld l,e                   -- 6B
+@op_6c
+    ld l,h                   -- 6C
+@op_6d
+    ld l,l                   -- 6D
+@op_6e
+    ld l,(hl)                -- 6E
+@op_6f
+    ld l,a                   -- 6F
+@op_70
+    ld (hl),b                -- 70
+@op_71
+    ld (hl),c                -- 71
+@op_72
+    ld (hl),d                -- 72
+@op_73
+    ld (hl),e                -- 73
+@op_74
+    ld (hl),h                -- 74
+@op_75
+    ld (hl),l                -- 75
+@op_76
+    halt                     -- 76
+@op_77
+    ld (hl),a                -- 77
+@op_78
+    ld a,b                   -- 78
+@op_79
+    ld a,c                   -- 79
+@op_7a
+    ld a,d                   -- 7A
+@op_7b
+    ld a,e                   -- 7B
+@op_7c
+    ld a,h                   -- 7C
+@op_7d
+    ld a,l                   -- 7D
+@op_7e
+    ld a,(hl)                -- 7E
+@op_7f
+    ld a,a                   -- 7F
+@op_80
+    add a,b                  -- 80
+@op_81
+    add a,c                  -- 81
+@op_82
+    add a,d                  -- 82
+@op_83
+    add a,e                  -- 83
+@op_84
+    add a,h                  -- 84
+@op_85
+    add a,l                  -- 85
+@op_86
+    add a,(hl)               -- 86
+@op_87
+    add a,a                  -- 87
+@op_88
+    adc a,b                  -- 88
+@op_89
+    adc a,c                  -- 89
+@op_8a
+    adc a,d                  -- 8A
+@op_8b
+    adc a,e                  -- 8B
+@op_8c
+    adc a,h                  -- 8C
+@op_8d
+    adc a,l                  -- 8D
+@op_8e
+    adc a,(hl)               -- 8E
+@op_8f
+    adc a,a                  -- 8F
+@op_90
+    sub b                    -- 90
+@op_91
+    sub c                    -- 91
+@op_92
+    sub d                    -- 92
+@op_93
+    sub e                    -- 93
+@op_94
+    sub h                    -- 94
+@op_95
+    sub l                    -- 95
+@op_96
+    sub (hl)                 -- 96
+@op_97
+    sub a                    -- 97
+@op_98
+    sbc a,b                  -- 98
+@op_99
+    sbc a,c                  -- 99
+@op_9a
+    sbc a,d                  -- 9A
+@op_9b
+    sbc a,e                  -- 9B
+@op_9c
+    sbc a,h                  -- 9C
+@op_9d
+    sbc a,l                  -- 9D
+@op_9e
+    sbc a,(hl)               -- 9E
+@op_9f
+    sbc a,a                  -- 9F
+@op_a0
+    ana b                    -- A0
+@op_a1
+    ana c                    -- A1
+@op_a2
+    ana d                    -- A2
+@op_a3
+    ana e                    -- A3
+@op_a4
+    ana h                    -- A4
+@op_a5
+    ana l                    -- A5
+@op_a6
+    ana (hl)                 -- A6
+@op_a7
+    ana a                    -- A7
+@op_a8
+    xor b                    -- A8
+@op_a9
+    xor c                    -- A9
+@op_aa
+    xor d                    -- AA
+@op_ab
+    xor e                    -- AB
+@op_ac
+    xor h                    -- AC
+@op_ad
+    xor l                    -- AD
+@op_ae
+    xor (hl)                 -- AE
+@op_af
+    xor a                    -- AF
+@op_b0
+    ora b                    -- B0
+@op_b1
+    ora c                    -- B1
+@op_b2
+    ora d                    -- B2
+@op_b3
+    ora e                    -- B3
+@op_b4
+    ora h                    -- B4
+@op_b5
+    ora l                    -- B5
+@op_b6
+    ora (hl)                 -- B6
+@op_b7
+    ora a                    -- B7
+@op_b8
+    cp b                     -- B8
+@op_b9
+    cp c                     -- B9
+@op_ba
+    cp d                     -- BA
+@op_bb
+    cp e                     -- BB
+@op_bc
+    cp h                     -- BC
+@op_bd
+    cp l                     -- BD
+@op_be
+    cp (hl)                  -- BE
+@op_bf
+    cp a                     -- BF
+@op_c0
+    ret nz                   -- C0
+@op_c1
+    pop bc                   -- C1
+@op_c2
+    jp nz,main               -- C2
+@op_c3
+    jp main                  -- C3
+@op_c4
+    call nz,main             -- C4
+@op_c5
+    push bc                  -- C5
+@op_c6
+    add a,#0x12              -- C6
+@op_c7
+    rst #0x00                -- C7
+@op_c8
+    ret z                    -- C8
+@op_c9
+    ret                      -- C9
+@op_ca
+    jp z,main                -- CA
+@op_cb
+    rlc b                    -- CB
+@op_cc
+    call z,main              -- CC
+@op_cd
+    call main                -- CD
+@op_ce
+    adc a,#0x12              -- CE
+@op_cf
+    rst #0x08                -- CF
+@op_d0
+    ret nc                   -- D0
+@op_d1
+    pop de                   -- D1
+@op_d2
+    jp nc,main               -- D2
+-- D3 is an SM83 lock-up opcode.
+@op_d4
+    call nc,main             -- D4
+@op_d5
+    push de                  -- D5
+@op_d6
+    sub #0x12                -- D6
+@op_d7
+    rst #0x10                -- D7
+@op_d8
+    ret c                    -- D8
+@op_d9
+    reti                     -- D9
+@op_da
+    jp c,main                -- DA
+-- DB is an SM83 lock-up opcode.
+@op_dc
+    call c,main              -- DC
+-- DD is an SM83 lock-up opcode.
+@op_de
+    sbc a,#0x12              -- DE
+@op_df
+    rst #0x18                -- DF
+@op_e0
+    ldh 0xff42,a             -- E0
+@op_e1
+    pop hl                   -- E1
+@op_e2
+    ldh (c),a                -- E2
+-- E3 is an SM83 lock-up opcode.
+-- E4 is an SM83 lock-up opcode.
+@op_e5
+    push hl                  -- E5
+@op_e6
+    ana #0x12                -- E6
+@op_e7
+    rst #0x20                -- E7
+@op_e8
+    add sp,#-4               -- E8
+@op_e9
+    jp (hl)                  -- E9
+@op_ea
+    ld 0xc123,a              -- EA
+-- EB is an SM83 lock-up opcode.
+-- EC is an SM83 lock-up opcode.
+-- ED is an SM83 lock-up opcode.
+@op_ee
+    xor #0x12                -- EE
+@op_ef
+    rst #0x28                -- EF
+@op_f0
+    ldh a,0xff42             -- F0
+@op_f1
+    pop af                   -- F1
+@op_f2
+    ldh a,(c)                -- F2
+@op_f3
+    di                       -- F3
+-- F4 is an SM83 lock-up opcode.
+@op_f5
+    push af                  -- F5
+@op_f6
+    ora #0x12                -- F6
+@op_f7
+    rst #0x30                -- F7
+@op_f8
+    ld hl,sp+#4              -- F8
+@op_f9
+    ld sp,hl                 -- F9
+@op_fa
+    ld a,0xc123              -- FA
+@op_fb
+    ei                       -- FB
+-- FC is an SM83 lock-up opcode.
+-- FD is an SM83 lock-up opcode.
+@op_fe
+    cp #0x12                 -- FE
+@op_ff
+    rst #0x38                -- FF
+@mnemonic_end
+
+-- Every CB-prefixed opcode, in opcode order.
+
+@cb_00
+    rlc b                    -- 00
+@cb_01
+    rlc c                    -- 01
+@cb_02
+    rlc d                    -- 02
+@cb_03
+    rlc e                    -- 03
+@cb_04
+    rlc h                    -- 04
+@cb_05
+    rlc l                    -- 05
+@cb_06
+    rlc (hl)                 -- 06
+@cb_07
+    rlc a                    -- 07
+@cb_08
+    rrc b                    -- 08
+@cb_09
+    rrc c                    -- 09
+@cb_0a
+    rrc d                    -- 0A
+@cb_0b
+    rrc e                    -- 0B
+@cb_0c
+    rrc h                    -- 0C
+@cb_0d
+    rrc l                    -- 0D
+@cb_0e
+    rrc (hl)                 -- 0E
+@cb_0f
+    rrc a                    -- 0F
+@cb_10
+    rl b                     -- 10
+@cb_11
+    rl c                     -- 11
+@cb_12
+    rl d                     -- 12
+@cb_13
+    rl e                     -- 13
+@cb_14
+    rl h                     -- 14
+@cb_15
+    rl l                     -- 15
+@cb_16
+    rl (hl)                  -- 16
+@cb_17
+    rl a                     -- 17
+@cb_18
+    rr b                     -- 18
+@cb_19
+    rr c                     -- 19
+@cb_1a
+    rr d                     -- 1A
+@cb_1b
+    rr e                     -- 1B
+@cb_1c
+    rr h                     -- 1C
+@cb_1d
+    rr l                     -- 1D
+@cb_1e
+    rr (hl)                  -- 1E
+@cb_1f
+    rr a                     -- 1F
+@cb_20
+    sla b                    -- 20
+@cb_21
+    sla c                    -- 21
+@cb_22
+    sla d                    -- 22
+@cb_23
+    sla e                    -- 23
+@cb_24
+    sla h                    -- 24
+@cb_25
+    sla l                    -- 25
+@cb_26
+    sla (hl)                 -- 26
+@cb_27
+    sla a                    -- 27
+@cb_28
+    sra b                    -- 28
+@cb_29
+    sra c                    -- 29
+@cb_2a
+    sra d                    -- 2A
+@cb_2b
+    sra e                    -- 2B
+@cb_2c
+    sra h                    -- 2C
+@cb_2d
+    sra l                    -- 2D
+@cb_2e
+    sra (hl)                 -- 2E
+@cb_2f
+    sra a                    -- 2F
+@cb_30
+    swap b                   -- 30
+@cb_31
+    swap c                   -- 31
+@cb_32
+    swap d                   -- 32
+@cb_33
+    swap e                   -- 33
+@cb_34
+    swap h                   -- 34
+@cb_35
+    swap l                   -- 35
+@cb_36
+    swap (hl)                -- 36
+@cb_37
+    swap a                   -- 37
+@cb_38
+    srl b                    -- 38
+@cb_39
+    srl c                    -- 39
+@cb_3a
+    srl d                    -- 3A
+@cb_3b
+    srl e                    -- 3B
+@cb_3c
+    srl h                    -- 3C
+@cb_3d
+    srl l                    -- 3D
+@cb_3e
+    srl (hl)                 -- 3E
+@cb_3f
+    srl a                    -- 3F
+@cb_40
+    bit 0,b                  -- 40
+@cb_41
+    bit 0,c                  -- 41
+@cb_42
+    bit 0,d                  -- 42
+@cb_43
+    bit 0,e                  -- 43
+@cb_44
+    bit 0,h                  -- 44
+@cb_45
+    bit 0,l                  -- 45
+@cb_46
+    bit 0,(hl)               -- 46
+@cb_47
+    bit 0,a                  -- 47
+@cb_48
+    bit 1,b                  -- 48
+@cb_49
+    bit 1,c                  -- 49
+@cb_4a
+    bit 1,d                  -- 4A
+@cb_4b
+    bit 1,e                  -- 4B
+@cb_4c
+    bit 1,h                  -- 4C
+@cb_4d
+    bit 1,l                  -- 4D
+@cb_4e
+    bit 1,(hl)               -- 4E
+@cb_4f
+    bit 1,a                  -- 4F
+@cb_50
+    bit 2,b                  -- 50
+@cb_51
+    bit 2,c                  -- 51
+@cb_52
+    bit 2,d                  -- 52
+@cb_53
+    bit 2,e                  -- 53
+@cb_54
+    bit 2,h                  -- 54
+@cb_55
+    bit 2,l                  -- 55
+@cb_56
+    bit 2,(hl)               -- 56
+@cb_57
+    bit 2,a                  -- 57
+@cb_58
+    bit 3,b                  -- 58
+@cb_59
+    bit 3,c                  -- 59
+@cb_5a
+    bit 3,d                  -- 5A
+@cb_5b
+    bit 3,e                  -- 5B
+@cb_5c
+    bit 3,h                  -- 5C
+@cb_5d
+    bit 3,l                  -- 5D
+@cb_5e
+    bit 3,(hl)               -- 5E
+@cb_5f
+    bit 3,a                  -- 5F
+@cb_60
+    bit 4,b                  -- 60
+@cb_61
+    bit 4,c                  -- 61
+@cb_62
+    bit 4,d                  -- 62
+@cb_63
+    bit 4,e                  -- 63
+@cb_64
+    bit 4,h                  -- 64
+@cb_65
+    bit 4,l                  -- 65
+@cb_66
+    bit 4,(hl)               -- 66
+@cb_67
+    bit 4,a                  -- 67
+@cb_68
+    bit 5,b                  -- 68
+@cb_69
+    bit 5,c                  -- 69
+@cb_6a
+    bit 5,d                  -- 6A
+@cb_6b
+    bit 5,e                  -- 6B
+@cb_6c
+    bit 5,h                  -- 6C
+@cb_6d
+    bit 5,l                  -- 6D
+@cb_6e
+    bit 5,(hl)               -- 6E
+@cb_6f
+    bit 5,a                  -- 6F
+@cb_70
+    bit 6,b                  -- 70
+@cb_71
+    bit 6,c                  -- 71
+@cb_72
+    bit 6,d                  -- 72
+@cb_73
+    bit 6,e                  -- 73
+@cb_74
+    bit 6,h                  -- 74
+@cb_75
+    bit 6,l                  -- 75
+@cb_76
+    bit 6,(hl)               -- 76
+@cb_77
+    bit 6,a                  -- 77
+@cb_78
+    bit 7,b                  -- 78
+@cb_79
+    bit 7,c                  -- 79
+@cb_7a
+    bit 7,d                  -- 7A
+@cb_7b
+    bit 7,e                  -- 7B
+@cb_7c
+    bit 7,h                  -- 7C
+@cb_7d
+    bit 7,l                  -- 7D
+@cb_7e
+    bit 7,(hl)               -- 7E
+@cb_7f
+    bit 7,a                  -- 7F
+@cb_80
+    res 0,b                  -- 80
+@cb_81
+    res 0,c                  -- 81
+@cb_82
+    res 0,d                  -- 82
+@cb_83
+    res 0,e                  -- 83
+@cb_84
+    res 0,h                  -- 84
+@cb_85
+    res 0,l                  -- 85
+@cb_86
+    res 0,(hl)               -- 86
+@cb_87
+    res 0,a                  -- 87
+@cb_88
+    res 1,b                  -- 88
+@cb_89
+    res 1,c                  -- 89
+@cb_8a
+    res 1,d                  -- 8A
+@cb_8b
+    res 1,e                  -- 8B
+@cb_8c
+    res 1,h                  -- 8C
+@cb_8d
+    res 1,l                  -- 8D
+@cb_8e
+    res 1,(hl)               -- 8E
+@cb_8f
+    res 1,a                  -- 8F
+@cb_90
+    res 2,b                  -- 90
+@cb_91
+    res 2,c                  -- 91
+@cb_92
+    res 2,d                  -- 92
+@cb_93
+    res 2,e                  -- 93
+@cb_94
+    res 2,h                  -- 94
+@cb_95
+    res 2,l                  -- 95
+@cb_96
+    res 2,(hl)               -- 96
+@cb_97
+    res 2,a                  -- 97
+@cb_98
+    res 3,b                  -- 98
+@cb_99
+    res 3,c                  -- 99
+@cb_9a
+    res 3,d                  -- 9A
+@cb_9b
+    res 3,e                  -- 9B
+@cb_9c
+    res 3,h                  -- 9C
+@cb_9d
+    res 3,l                  -- 9D
+@cb_9e
+    res 3,(hl)               -- 9E
+@cb_9f
+    res 3,a                  -- 9F
+@cb_a0
+    res 4,b                  -- A0
+@cb_a1
+    res 4,c                  -- A1
+@cb_a2
+    res 4,d                  -- A2
+@cb_a3
+    res 4,e                  -- A3
+@cb_a4
+    res 4,h                  -- A4
+@cb_a5
+    res 4,l                  -- A5
+@cb_a6
+    res 4,(hl)               -- A6
+@cb_a7
+    res 4,a                  -- A7
+@cb_a8
+    res 5,b                  -- A8
+@cb_a9
+    res 5,c                  -- A9
+@cb_aa
+    res 5,d                  -- AA
+@cb_ab
+    res 5,e                  -- AB
+@cb_ac
+    res 5,h                  -- AC
+@cb_ad
+    res 5,l                  -- AD
+@cb_ae
+    res 5,(hl)               -- AE
+@cb_af
+    res 5,a                  -- AF
+@cb_b0
+    res 6,b                  -- B0
+@cb_b1
+    res 6,c                  -- B1
+@cb_b2
+    res 6,d                  -- B2
+@cb_b3
+    res 6,e                  -- B3
+@cb_b4
+    res 6,h                  -- B4
+@cb_b5
+    res 6,l                  -- B5
+@cb_b6
+    res 6,(hl)               -- B6
+@cb_b7
+    res 6,a                  -- B7
+@cb_b8
+    res 7,b                  -- B8
+@cb_b9
+    res 7,c                  -- B9
+@cb_ba
+    res 7,d                  -- BA
+@cb_bb
+    res 7,e                  -- BB
+@cb_bc
+    res 7,h                  -- BC
+@cb_bd
+    res 7,l                  -- BD
+@cb_be
+    res 7,(hl)               -- BE
+@cb_bf
+    res 7,a                  -- BF
+@cb_c0
+    set 0,b                  -- C0
+@cb_c1
+    set 0,c                  -- C1
+@cb_c2
+    set 0,d                  -- C2
+@cb_c3
+    set 0,e                  -- C3
+@cb_c4
+    set 0,h                  -- C4
+@cb_c5
+    set 0,l                  -- C5
+@cb_c6
+    set 0,(hl)               -- C6
+@cb_c7
+    set 0,a                  -- C7
+@cb_c8
+    set 1,b                  -- C8
+@cb_c9
+    set 1,c                  -- C9
+@cb_ca
+    set 1,d                  -- CA
+@cb_cb
+    set 1,e                  -- CB
+@cb_cc
+    set 1,h                  -- CC
+@cb_cd
+    set 1,l                  -- CD
+@cb_ce
+    set 1,(hl)               -- CE
+@cb_cf
+    set 1,a                  -- CF
+@cb_d0
+    set 2,b                  -- D0
+@cb_d1
+    set 2,c                  -- D1
+@cb_d2
+    set 2,d                  -- D2
+@cb_d3
+    set 2,e                  -- D3
+@cb_d4
+    set 2,h                  -- D4
+@cb_d5
+    set 2,l                  -- D5
+@cb_d6
+    set 2,(hl)               -- D6
+@cb_d7
+    set 2,a                  -- D7
+@cb_d8
+    set 3,b                  -- D8
+@cb_d9
+    set 3,c                  -- D9
+@cb_da
+    set 3,d                  -- DA
+@cb_db
+    set 3,e                  -- DB
+@cb_dc
+    set 3,h                  -- DC
+@cb_dd
+    set 3,l                  -- DD
+@cb_de
+    set 3,(hl)               -- DE
+@cb_df
+    set 3,a                  -- DF
+@cb_e0
+    set 4,b                  -- E0
+@cb_e1
+    set 4,c                  -- E1
+@cb_e2
+    set 4,d                  -- E2
+@cb_e3
+    set 4,e                  -- E3
+@cb_e4
+    set 4,h                  -- E4
+@cb_e5
+    set 4,l                  -- E5
+@cb_e6
+    set 4,(hl)               -- E6
+@cb_e7
+    set 4,a                  -- E7
+@cb_e8
+    set 5,b                  -- E8
+@cb_e9
+    set 5,c                  -- E9
+@cb_ea
+    set 5,d                  -- EA
+@cb_eb
+    set 5,e                  -- EB
+@cb_ec
+    set 5,h                  -- EC
+@cb_ed
+    set 5,l                  -- ED
+@cb_ee
+    set 5,(hl)               -- EE
+@cb_ef
+    set 5,a                  -- EF
+@cb_f0
+    set 6,b                  -- F0
+@cb_f1
+    set 6,c                  -- F1
+@cb_f2
+    set 6,d                  -- F2
+@cb_f3
+    set 6,e                  -- F3
+@cb_f4
+    set 6,h                  -- F4
+@cb_f5
+    set 6,l                  -- F5
+@cb_f6
+    set 6,(hl)               -- F6
+@cb_f7
+    set 6,a                  -- F7
+@cb_f8
+    set 7,b                  -- F8
+@cb_f9
+    set 7,c                  -- F9
+@cb_fa
+    set 7,d                  -- FA
+@cb_fb
+    set 7,e                  -- FB
+@cb_fc
+    set 7,h                  -- FC
+@cb_fd
+    set 7,l                  -- FD
+@cb_fe
+    set 7,(hl)               -- FE
+@cb_ff
+    set 7,a                  -- FF
+@cb_end
+
+-- Operator-syntax equivalents. These intentionally duplicate opcodes above.
+
+@alt_01
+    bc := 0x1234             -- 01
+@alt_02
+    [bc] := a                -- 02
+@alt_03
+    bc++                     -- 03
+@alt_04
+    b++                      -- 04
+@alt_05
+    b--                      -- 05
+@alt_06
+    b := 0x12                -- 06
+@alt_08
+    [0xc123] := sp           -- 08
+@alt_09
+    hl += bc                 -- 09
+@alt_0a
+    a := [bc]                -- 0A
+@alt_0b
+    bc--                     -- 0B
+@alt_0c
+    c++                      -- 0C
+@alt_0d
+    c--                      -- 0D
+@alt_0e
+    c := 0x12                -- 0E
+@alt_11
+    de := 0x1234             -- 11
+@alt_12
+    [de] := a                -- 12
+@alt_13
+    de++                     -- 13
+@alt_14
+    d++                      -- 14
+@alt_15
+    d--                      -- 15
+@alt_16
+    d := 0x12                -- 16
+@alt_19
+    hl += de                 -- 19
+@alt_1a
+    a := [de]                -- 1A
+@alt_1b
+    de--                     -- 1B
+@alt_1c
+    e++                      -- 1C
+@alt_1d
+    e--                      -- 1D
+@alt_1e
+    e := 0x12                -- 1E
+@alt_20
+    jr.nz alt_20             -- 20
+@alt_21
+    hl := 0x1234             -- 21
+@alt_22
+    [hl+] := a               -- 22
+@alt_23
+    hl++                     -- 23
+@alt_24
+    h++                      -- 24
+@alt_25
+    h--                      -- 25
+@alt_26
+    h := 0x12                -- 26
+@alt_28
+    jr.z alt_28              -- 28
+@alt_29
+    hl += hl                 -- 29
+@alt_2a
+    a := [hl+]               -- 2A
+@alt_2b
+    hl--                     -- 2B
+@alt_2c
+    l++                      -- 2C
+@alt_2d
+    l--                      -- 2D
+@alt_2e
+    l := 0x12                -- 2E
+@alt_30
+    jr.nc alt_30             -- 30
+@alt_31
+    sp := 0x1234             -- 31
+@alt_32
+    [hl-] := a               -- 32
+@alt_33
+    sp++                     -- 33
+@alt_34
+    [hl]++                   -- 34
+@alt_35
+    [hl]--                   -- 35
+@alt_36
+    [hl] := 0x12             -- 36
+@alt_38
+    jr.c alt_38              -- 38
+@alt_39
+    hl += sp                 -- 39
+@alt_3a
+    a := [hl-]               -- 3A
+@alt_3b
+    sp--                     -- 3B
+@alt_3c
+    a++                      -- 3C
+@alt_3d
+    a--                      -- 3D
+@alt_3e
+    a := 0x12                -- 3E
+@alt_40
+    b := b                   -- 40
+@alt_41
+    b := c                   -- 41
+@alt_42
+    b := d                   -- 42
+@alt_43
+    b := e                   -- 43
+@alt_44
+    b := h                   -- 44
+@alt_45
+    b := l                   -- 45
+@alt_46
+    b := [hl]                -- 46
+@alt_47
+    b := a                   -- 47
+@alt_48
+    c := b                   -- 48
+@alt_49
+    c := c                   -- 49
+@alt_4a
+    c := d                   -- 4A
+@alt_4b
+    c := e                   -- 4B
+@alt_4c
+    c := h                   -- 4C
+@alt_4d
+    c := l                   -- 4D
+@alt_4e
+    c := [hl]                -- 4E
+@alt_4f
+    c := a                   -- 4F
+@alt_50
+    d := b                   -- 50
+@alt_51
+    d := c                   -- 51
+@alt_52
+    d := d                   -- 52
+@alt_53
+    d := e                   -- 53
+@alt_54
+    d := h                   -- 54
+@alt_55
+    d := l                   -- 55
+@alt_56
+    d := [hl]                -- 56
+@alt_57
+    d := a                   -- 57
+@alt_58
+    e := b                   -- 58
+@alt_59
+    e := c                   -- 59
+@alt_5a
+    e := d                   -- 5A
+@alt_5b
+    e := e                   -- 5B
+@alt_5c
+    e := h                   -- 5C
+@alt_5d
+    e := l                   -- 5D
+@alt_5e
+    e := [hl]                -- 5E
+@alt_5f
+    e := a                   -- 5F
+@alt_60
+    h := b                   -- 60
+@alt_61
+    h := c                   -- 61
+@alt_62
+    h := d                   -- 62
+@alt_63
+    h := e                   -- 63
+@alt_64
+    h := h                   -- 64
+@alt_65
+    h := l                   -- 65
+@alt_66
+    h := [hl]                -- 66
+@alt_67
+    h := a                   -- 67
+@alt_68
+    l := b                   -- 68
+@alt_69
+    l := c                   -- 69
+@alt_6a
+    l := d                   -- 6A
+@alt_6b
+    l := e                   -- 6B
+@alt_6c
+    l := h                   -- 6C
+@alt_6d
+    l := l                   -- 6D
+@alt_6e
+    l := [hl]                -- 6E
+@alt_6f
+    l := a                   -- 6F
+@alt_70
+    [hl] := b                -- 70
+@alt_71
+    [hl] := c                -- 71
+@alt_72
+    [hl] := d                -- 72
+@alt_73
+    [hl] := e                -- 73
+@alt_74
+    [hl] := h                -- 74
+@alt_75
+    [hl] := l                -- 75
+@alt_77
+    [hl] := a                -- 77
+@alt_78
+    a := b                   -- 78
+@alt_79
+    a := c                   -- 79
+@alt_7a
+    a := d                   -- 7A
+@alt_7b
+    a := e                   -- 7B
+@alt_7c
+    a := h                   -- 7C
+@alt_7d
+    a := l                   -- 7D
+@alt_7e
+    a := [hl]                -- 7E
+@alt_7f
+    a := a                   -- 7F
+@alt_80
+    a += b                   -- 80
+@alt_81
+    a += c                   -- 81
+@alt_82
+    a += d                   -- 82
+@alt_83
+    a += e                   -- 83
+@alt_84
+    a += h                   -- 84
+@alt_85
+    a += l                   -- 85
+@alt_86
+    a += [hl]                -- 86
+@alt_87
+    a += a                   -- 87
+@alt_90
+    a -= b                   -- 90
+@alt_91
+    a -= c                   -- 91
+@alt_92
+    a -= d                   -- 92
+@alt_93
+    a -= e                   -- 93
+@alt_94
+    a -= h                   -- 94
+@alt_95
+    a -= l                   -- 95
+@alt_96
+    a -= [hl]                -- 96
+@alt_97
+    a -= a                   -- 97
+@alt_a0
+    a &= b                   -- A0
+@alt_a1
+    a &= c                   -- A1
+@alt_a2
+    a &= d                   -- A2
+@alt_a3
+    a &= e                   -- A3
+@alt_a4
+    a &= h                   -- A4
+@alt_a5
+    a &= l                   -- A5
+@alt_a6
+    a &= [hl]                -- A6
+@alt_a7
+    a &= a                   -- A7
+@alt_a8
+    a ^= b                   -- A8
+@alt_a9
+    a ^= c                   -- A9
+@alt_aa
+    a ^= d                   -- AA
+@alt_ab
+    a ^= e                   -- AB
+@alt_ac
+    a ^= h                   -- AC
+@alt_ad
+    a ^= l                   -- AD
+@alt_ae
+    a ^= [hl]                -- AE
+@alt_af
+    a ^= a                   -- AF
+@alt_b0
+    a |= b                   -- B0
+@alt_b1
+    a |= c                   -- B1
+@alt_b2
+    a |= d                   -- B2
+@alt_b3
+    a |= e                   -- B3
+@alt_b4
+    a |= h                   -- B4
+@alt_b5
+    a |= l                   -- B5
+@alt_b6
+    a |= [hl]                -- B6
+@alt_b7
+    a |= a                   -- B7
+@alt_c2
+    jp.nz main               -- C2
+@alt_c4
+    call.nz main             -- C4
+@alt_c6
+    a += 0x12                -- C6
+@alt_ca
+    jp.z main                -- CA
+@alt_cc
+    call.z main              -- CC
+@alt_d2
+    jp.nc main               -- D2
+@alt_d4
+    call.nc main             -- D4
+@alt_d6
+    a -= 0x12                -- D6
+@alt_da
+    jp.c main                -- DA
+@alt_dc
+    call.c main              -- DC
+@alt_e0
+    [high_later] := a        -- E0
+@alt_e2
+    [c] := a                 -- E2
+@alt_e6
+    a &= 0x12                -- E6
+@alt_e8
+    sp += -4                 -- E8
+@alt_ea
+    [absolute_later] := a    -- EA
+@alt_ee
+    a ^= 0x12                -- EE
+@alt_f0
+    a := [high_later]        -- F0
+@alt_f2
+    a := [c]                 -- F2
+@alt_f6
+    a |= 0x12                -- F6
+@alt_f8
+    hl := sp+sp_offset_later -- F8
+@alt_f9
+    sp := hl                 -- F9
+@alt_fa
+    a := [absolute_later]    -- FA
+@operator_end
+
+-- Bracketed memory remains available to historical bit mnemonics.
+    bit 3,[hl]
+    res 3,[hl]
+    set 3,[hl]
+
+-- Immediate operator expansions and newline-separated memory destinations.
+@operator_expansion_test
+    local expansion_value = 0x91
+    a := !(expansion_value or 0x80)
+    [LCDC] := a
+
+    local function expanded_address() return 0xc123 end
+    hl := !expanded_address()
+
+    local expansion_bytes = { 0x12, 0x34 }
+    for i = 1, #expansion_bytes do
+        a := !expansion_bytes[i]
+        [hl+] := a
+    end
+
+    bc := !#expansion_bytes
+    nop
+@operator_expansion_end
+
+-- Lua's length operator remains available inside immediate operands. In
+-- mnemonic syntax the first # marks the immediate and the second is Lua's
+-- length operator; operator syntax needs only the Lua #.
+local length_value = "hello"
+@length_expression_test
+    ld c, ##length_value
+    c := #length_value
+    ld hl, sp+##length_value
+    hl := sp+#length_value
+@length_expression_end
+
+-- These are deliberately declared after their operator-syntax uses.
+high_later = 0xff42
+absolute_later = 0xc123
+sp_offset_later = 4
+
+-- Validate opcode bytes and instruction sizes inside the sample itself.
+local invalid_base = {
+    [0xd3] = true,
+    [0xdb] = true,
+    [0xdd] = true,
+    [0xe3] = true,
+    [0xe4] = true,
+    [0xeb] = true,
+    [0xec] = true,
+    [0xed] = true,
+    [0xf4] = true,
+    [0xfc] = true,
+    [0xfd] = true,
+}
+local length_two = {
+    [0x06] = true,
+    [0x0e] = true,
+    [0x10] = true,
+    [0x16] = true,
+    [0x18] = true,
+    [0x1e] = true,
+    [0x20] = true,
+    [0x26] = true,
+    [0x28] = true,
+    [0x2e] = true,
+    [0x30] = true,
+    [0x36] = true,
+    [0x38] = true,
+    [0x3e] = true,
+    [0xc6] = true,
+    [0xcb] = true,
+    [0xce] = true,
+    [0xd6] = true,
+    [0xde] = true,
+    [0xe0] = true,
+    [0xe6] = true,
+    [0xe8] = true,
+    [0xee] = true,
+    [0xf0] = true,
+    [0xf6] = true,
+    [0xf8] = true,
+    [0xfe] = true,
+}
+local length_three = {
+    [0x01] = true,
+    [0x08] = true,
+    [0x11] = true,
+    [0x21] = true,
+    [0x31] = true,
+    [0xc2] = true,
+    [0xc3] = true,
+    [0xc4] = true,
+    [0xca] = true,
+    [0xcc] = true,
+    [0xcd] = true,
+    [0xd2] = true,
+    [0xd4] = true,
+    [0xda] = true,
+    [0xdc] = true,
+    [0xea] = true,
+    [0xfa] = true,
+}
+local operator_opcodes = {
+    0x01,
+    0x02,
+    0x03,
+    0x04,
+    0x05,
+    0x06,
+    0x08,
+    0x09,
+    0x0a,
+    0x0b,
+    0x0c,
+    0x0d,
+    0x0e,
+    0x11,
+    0x12,
+    0x13,
+    0x14,
+    0x15,
+    0x16,
+    0x19,
+    0x1a,
+    0x1b,
+    0x1c,
+    0x1d,
+    0x1e,
+    0x20,
+    0x21,
+    0x22,
+    0x23,
+    0x24,
+    0x25,
+    0x26,
+    0x28,
+    0x29,
+    0x2a,
+    0x2b,
+    0x2c,
+    0x2d,
+    0x2e,
+    0x30,
+    0x31,
+    0x32,
+    0x33,
+    0x34,
+    0x35,
+    0x36,
+    0x38,
+    0x39,
+    0x3a,
+    0x3b,
+    0x3c,
+    0x3d,
+    0x3e,
+    0x40,
+    0x41,
+    0x42,
+    0x43,
+    0x44,
+    0x45,
+    0x46,
+    0x47,
+    0x48,
+    0x49,
+    0x4a,
+    0x4b,
+    0x4c,
+    0x4d,
+    0x4e,
+    0x4f,
+    0x50,
+    0x51,
+    0x52,
+    0x53,
+    0x54,
+    0x55,
+    0x56,
+    0x57,
+    0x58,
+    0x59,
+    0x5a,
+    0x5b,
+    0x5c,
+    0x5d,
+    0x5e,
+    0x5f,
+    0x60,
+    0x61,
+    0x62,
+    0x63,
+    0x64,
+    0x65,
+    0x66,
+    0x67,
+    0x68,
+    0x69,
+    0x6a,
+    0x6b,
+    0x6c,
+    0x6d,
+    0x6e,
+    0x6f,
+    0x70,
+    0x71,
+    0x72,
+    0x73,
+    0x74,
+    0x75,
+    0x77,
+    0x78,
+    0x79,
+    0x7a,
+    0x7b,
+    0x7c,
+    0x7d,
+    0x7e,
+    0x7f,
+    0x80,
+    0x81,
+    0x82,
+    0x83,
+    0x84,
+    0x85,
+    0x86,
+    0x87,
+    0x90,
+    0x91,
+    0x92,
+    0x93,
+    0x94,
+    0x95,
+    0x96,
+    0x97,
+    0xa0,
+    0xa1,
+    0xa2,
+    0xa3,
+    0xa4,
+    0xa5,
+    0xa6,
+    0xa7,
+    0xa8,
+    0xa9,
+    0xaa,
+    0xab,
+    0xac,
+    0xad,
+    0xae,
+    0xaf,
+    0xb0,
+    0xb1,
+    0xb2,
+    0xb3,
+    0xb4,
+    0xb5,
+    0xb6,
+    0xb7,
+    0xc2,
+    0xc4,
+    0xc6,
+    0xca,
+    0xcc,
+    0xd2,
+    0xd4,
+    0xd6,
+    0xda,
+    0xdc,
+    0xe0,
+    0xe2,
+    0xe6,
+    0xe8,
+    0xea,
+    0xee,
+    0xf0,
+    0xf2,
+    0xf6,
+    0xf8,
+    0xf9,
+    0xfa,
+}
+
+local function instruction_length(opcode)
+    if length_three[opcode] then return 3 end
+    if length_two[opcode] then return 2 end
+    return 1
+end
+
+local bin = cpu.genbin()
+local symbols = cpu.symbols
+local function byte_at(address)
+    return bin[address + 1]
+end
+local function check(condition, message, ...)
+    assert(condition, string.format(message, ...))
+end
+
+local expansion_expected = {
+    0x3e, 0x91, 0xe0, 0x40,
+    0x21, 0x23, 0xc1,
+    0x3e, 0x12, 0x22, 0x3e, 0x34, 0x22,
+    0x01, 0x02, 0x00, 0x00,
+}
+local expansion_address = symbols.operator_expansion_test
+check(symbols.operator_expansion_end - expansion_address == #expansion_expected,
+    'operator expansion test has size %d, expected %d',
+    symbols.operator_expansion_end - expansion_address, #expansion_expected)
+for i, expected in ipairs(expansion_expected) do
+    check(byte_at(expansion_address + i - 1) == expected,
+        'operator expansion byte %d is %02X, expected %02X', i,
+        byte_at(expansion_address + i - 1), expected)
+end
+
+local length_expected = {
+    0x0e, 0x05,
+    0x0e, 0x05,
+    0xf8, 0x05,
+    0xf8, 0x05,
+}
+local length_address = symbols.length_expression_test
+check(symbols.length_expression_end - length_address == #length_expected,
+    'length expression test has size %d, expected %d',
+    symbols.length_expression_end - length_address, #length_expected)
+for i, expected in ipairs(length_expected) do
+    check(byte_at(length_address + i - 1) == expected,
+        'length expression byte %d is %02X, expected %02X', i,
+        byte_at(length_address + i - 1), expected)
+end
+
+local base_count = 0
+for opcode = 0, 0xff do
+    if not invalid_base[opcode] then
+        base_count = base_count + 1
+        local name = string.format('op_%02x', opcode)
+        local address = symbols[name]
+        check(byte_at(address) == opcode, '%s emitted %02X, expected %02X',
+            name, byte_at(address), opcode)
+        local next_address = symbols.mnemonic_end
+        for next_opcode = opcode + 1, 0xff do
+            if not invalid_base[next_opcode] then
+                next_address = symbols[string.format('op_%02x', next_opcode)]
+                break
+            end
+        end
+        check(next_address - address == instruction_length(opcode),
+            '%s has size %d, expected %d', name, next_address - address,
+            instruction_length(opcode))
+    end
+end
+check(base_count == 245, 'validated %d base opcodes, expected 245', base_count)
+
+for opcode = 0, 0xff do
+    local name = string.format('cb_%02x', opcode)
+    local address = symbols[name]
+    local next_address = opcode == 0xff and symbols.cb_end
+        or symbols[string.format('cb_%02x', opcode + 1)]
+    check(byte_at(address) == 0xcb and byte_at(address + 1) == opcode,
+        '%s emitted %02X %02X, expected CB %02X', name,
+        byte_at(address), byte_at(address + 1), opcode)
+    check(next_address - address == 2, '%s has size %d, expected 2',
+        name, next_address - address)
+end
+
+for index, opcode in ipairs(operator_opcodes) do
+    local name = string.format('alt_%02x', opcode)
+    local address = symbols[name]
+    local next_opcode = operator_opcodes[index + 1]
+    local next_address = next_opcode and symbols[string.format('alt_%02x', next_opcode)]
+        or symbols.operator_end
+    check(byte_at(address) == opcode, '%s emitted %02X, expected %02X',
+        name, byte_at(address), opcode)
+    check(next_address - address == instruction_length(opcode),
+        '%s has size %d, expected %d', name, next_address - address,
+        instruction_length(opcode))
+end
+
+writebin(filename .. '.gb', bin)
+print(string.format('validated %d base, 256 CB, and %d operator encodings',
+    base_count, #operator_opcodes))
+print(stats)

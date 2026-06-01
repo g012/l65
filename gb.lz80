@@ -1,0 +1,2319 @@
+cpu = require 'z80'
+cpu.gameboy = true
+setmetatable(_ENV, cpu)
+
+gb = {
+    ROM0               = 0x0000,
+    ROMX               = 0x4000,
+    VRAM               = 0x8000,
+    SRAM               = 0xa000,
+    WRAM               = 0xc000,
+    OAM                = 0xfe00,
+    HRAM               = 0xff80,
+    JOYP               = 0xff00,
+    SB                 = 0xff01,
+    SC                 = 0xff02,
+    DIV                = 0xff04,
+    TIMA               = 0xff05,
+    TMA                = 0xff06,
+    TAC                = 0xff07,
+    IF                 = 0xff0f,
+    NR10               = 0xff10,
+    NR11               = 0xff11,
+    NR12               = 0xff12,
+    NR13               = 0xff13,
+    NR14               = 0xff14,
+    NR21               = 0xff16,
+    NR22               = 0xff17,
+    NR23               = 0xff18,
+    NR24               = 0xff19,
+    NR30               = 0xff1a,
+    NR31               = 0xff1b,
+    NR32               = 0xff1c,
+    NR33               = 0xff1d,
+    NR34               = 0xff1e,
+    NR41               = 0xff20,
+    NR42               = 0xff21,
+    NR43               = 0xff22,
+    NR44               = 0xff23,
+    NR50               = 0xff24,
+    NR51               = 0xff25,
+    NR52               = 0xff26,
+    LCDC               = 0xff40,
+    STAT               = 0xff41,
+    SCY                = 0xff42,
+    SCX                = 0xff43,
+    LY                 = 0xff44,
+    LYC                = 0xff45,
+    DMA                = 0xff46,
+    BGP                = 0xff47,
+    OBP0               = 0xff48,
+    OBP1               = 0xff49,
+    WY                 = 0xff4a,
+    WX                 = 0xff4b,
+    KEY1               = 0xff4d,
+    KEY1_PREPARE       = 0x01,
+    KEY1_DOUBLE_SPEED  = 0x80,
+    VBK                = 0xff4f,
+    HDMA1              = 0xff51,
+    HDMA2              = 0xff52,
+    HDMA3              = 0xff53,
+    HDMA4              = 0xff54,
+    HDMA5              = 0xff55,
+    RP                 = 0xff56,
+    RPF_EMIT           = 0x01,
+    RPF_IDLE           = 0x02,
+    RPF_READ_ENABLE    = 0xc0,
+    BCPS               = 0xff68,
+    BCPD               = 0xff69,
+    OCPS               = 0xff6a,
+    OCPD               = 0xff6b,
+    SVBK               = 0xff70,
+    IE                 = 0xffff,
+    MBC_RAM_ENABLE     = 0x0000,
+    MBC_ROM_BANK       = 0x2000,
+    MBC5_ROM_BANK_HIGH = 0x3000,
+    MBC5_RUMBLE        = 0x08,
+    MBC_RAM_BANK       = 0x4000,
+    MBC_RTC_REGISTER   = 0x4000,
+    MBC_MODE           = 0x6000,
+    MBC_RTC_LATCH      = 0x6000,
+
+    RTC_SECONDS        = 0x08,
+    RTC_MINUTES        = 0x09,
+    RTC_HOURS          = 0x0a,
+    RTC_DAY_LOW        = 0x0b,
+    RTC_DAY_HIGH       = 0x0c,
+    RTCF_DAY_8         = 0x01,
+    RTCF_HALT          = 0x40,
+    RTCF_CARRY         = 0x80,
+
+    HARDWARE_DMG       = 0x00,
+    HARDWARE_CGB       = 0x01,
+    HARDWARE_GBA       = 0x02,
+    HARDWARE_GBC       = 0x01,
+    HARDWARE_AGB       = 0x02,
+
+    TACF_4096_HZ       = 0x00,
+    TACF_262144_HZ     = 0x01,
+    TACF_65536_HZ      = 0x02,
+    TACF_16384_HZ      = 0x03,
+    TACF_ENABLE        = 0x04,
+
+    SCF_CLOCK_INTERNAL = 0x01,
+    SCF_CLOCK_FAST     = 0x02,
+    SCF_START          = 0x80,
+
+    PAD_A              = 0x01,
+    PAD_B              = 0x02,
+    PAD_SELECT         = 0x04,
+    PAD_START          = 0x08,
+    PAD_RIGHT          = 0x10,
+    PAD_LEFT           = 0x20,
+    PAD_UP             = 0x40,
+    PAD_DOWN           = 0x80,
+
+    IEF_VBLANK         = 0x01,
+    IEF_LCD            = 0x02,
+    IEF_TIMER          = 0x04,
+    IEF_SERIAL         = 0x08,
+    IEF_JOYPAD         = 0x10,
+
+    OAMF_PRIORITY      = 0x80,
+    OAMF_YFLIP         = 0x40,
+    OAMF_XFLIP         = 0x20,
+    OAMF_PALETTE       = 0x10,
+    OAMF_BANK1         = 0x08,
+}
+
+-- Names and values follow gbdev/hardware.inc v5.3.0
+local hardware_constants = {
+    P1 = 0xff00,
+    AUD1SWEEP = 0xff10, AUD1LEN = 0xff11, AUD1ENV = 0xff12,
+    AUD1LOW = 0xff13, AUD1HIGH = 0xff14,
+    AUD2LEN = 0xff16, AUD2ENV = 0xff17, AUD2LOW = 0xff18,
+    AUD2HIGH = 0xff19,
+    AUD3ENA = 0xff1a, AUD3LEN = 0xff1b, AUD3LEVEL = 0xff1c,
+    AUD3LOW = 0xff1d, AUD3HIGH = 0xff1e,
+    AUD4LEN = 0xff20, AUD4ENV = 0xff21, AUD4POLY = 0xff22,
+    AUD4GO = 0xff23, AUDVOL = 0xff24, AUDTERM = 0xff25,
+    AUDENA = 0xff26,
+    AUD3WAVE_0 = 0xff30, AUD3WAVE_1 = 0xff31,
+    AUD3WAVE_2 = 0xff32, AUD3WAVE_3 = 0xff33,
+    AUD3WAVE_4 = 0xff34, AUD3WAVE_5 = 0xff35,
+    AUD3WAVE_6 = 0xff36, AUD3WAVE_7 = 0xff37,
+    AUD3WAVE_8 = 0xff38, AUD3WAVE_9 = 0xff39,
+    AUD3WAVE_A = 0xff3a, AUD3WAVE_B = 0xff3b,
+    AUD3WAVE_C = 0xff3c, AUD3WAVE_D = 0xff3d,
+    AUD3WAVE_E = 0xff3e, AUD3WAVE_F = 0xff3f,
+    KEY0 = 0xff4c, SYS = 0xff4c, SPD = 0xff4d, BANK = 0xff50,
+    VDMA_SRC_HIGH = 0xff51, VDMA_SRC_LOW = 0xff52,
+    VDMA_DEST_HIGH = 0xff53, VDMA_DEST_LOW = 0xff54,
+    VDMA_LEN = 0xff55,
+    BGPI = 0xff68, BGPD = 0xff69, OBPI = 0xff6a, OBPD = 0xff6b,
+    OPRI = 0xff6c, WBK = 0xff70, PCM12 = 0xff76, PCM34 = 0xff77,
+
+    B_JOYP_GET_BUTTONS = 5, B_JOYP_GET_CTRL_PAD = 4,
+    JOYP_GET = 0x30, JOYP_GET_BUTTONS = 0x10,
+    JOYP_GET_CTRL_PAD = 0x20, JOYP_GET_NONE = 0x30,
+    B_JOYP_START = 3, B_JOYP_SELECT = 2, B_JOYP_B = 1,
+    B_JOYP_A = 0, B_JOYP_DOWN = 3, B_JOYP_UP = 2,
+    B_JOYP_LEFT = 1, B_JOYP_RIGHT = 0,
+    JOYP_INPUTS = 0x0f, JOYP_START = 0x08, JOYP_SELECT = 0x04,
+    JOYP_B = 0x02, JOYP_A = 0x01, JOYP_DOWN = 0x08,
+    JOYP_UP = 0x04, JOYP_LEFT = 0x02, JOYP_RIGHT = 0x01,
+    B_JOYP_SGB_ONE = 5, B_JOYP_SGB_ZERO = 4,
+    JOYP_SGB_START = 0x00, JOYP_SGB_ONE = 0x10,
+    JOYP_SGB_ZERO = 0x20, JOYP_SGB_FINISH = 0x30,
+
+    B_PAD_DOWN = 7, B_PAD_UP = 6, B_PAD_LEFT = 5, B_PAD_RIGHT = 4,
+    B_PAD_START = 3, B_PAD_SELECT = 2, B_PAD_B = 1, B_PAD_A = 0,
+    PAD_CTRL_PAD = 0xf0, PAD_BUTTONS = 0x0f,
+    PAD_DOWN = 0x80, PAD_UP = 0x40, PAD_LEFT = 0x20, PAD_RIGHT = 0x10,
+    PAD_START = 0x08, PAD_SELECT = 0x04, PAD_B = 0x02, PAD_A = 0x01,
+    B_SC_START = 7, B_SC_SPEED = 1, B_SC_SOURCE = 0,
+    SC_START = 0x80, SC_SPEED = 0x02, SC_SLOW = 0x00,
+    SC_FAST = 0x02, SC_SOURCE = 0x01, SC_EXTERNAL = 0x00,
+    SC_INTERNAL = 0x01,
+
+    B_TAC_START = 2, TAC_STOP = 0x00, TAC_START = 0x04,
+    TAC_CLOCK = 0x03, TAC_4KHZ = 0x00, TAC_262KHZ = 0x01,
+    TAC_65KHZ = 0x02, TAC_16KHZ = 0x03,
+
+    B_IF_JOYPAD = 4, B_IF_SERIAL = 3, B_IF_TIMER = 2,
+    B_IF_STAT = 1, B_IF_VBLANK = 0,
+    IF_JOYPAD = 0x10, IF_SERIAL = 0x08, IF_TIMER = 0x04,
+    IF_STAT = 0x02, IF_VBLANK = 0x01,
+    B_IE_JOYPAD = 4, B_IE_SERIAL = 3, B_IE_TIMER = 2,
+    B_IE_STAT = 1, B_IE_VBLANK = 0,
+    IE_JOYPAD = 0x10, IE_SERIAL = 0x08, IE_TIMER = 0x04,
+    IE_STAT = 0x02, IE_VBLANK = 0x01,
+
+    AUD1SWEEP_TIME = 0x70, B_AUD1SWEEP_DIR = 3,
+    AUD1SWEEP_DIR = 0x08, AUD1SWEEP_UP = 0x00,
+    AUD1SWEEP_DOWN = 0x08, AUD1SWEEP_SHIFT = 0x07,
+    AUD1LEN_DUTY = 0xc0, AUD1LEN_DUTY_12_5 = 0x00,
+    AUD1LEN_DUTY_25 = 0x40, AUD1LEN_DUTY_50 = 0x80,
+    AUD1LEN_DUTY_75 = 0xc0, AUD1LEN_TIMER = 0x3f,
+    AUD1ENV_INIT_VOLUME = 0xf0, B_AUD1ENV_DIR = 3,
+    AUD1ENV_DIR = 0x08, AUD1ENV_DOWN = 0x00, AUD1ENV_UP = 0x08,
+    AUD1ENV_PACE = 0x07,
+    B_AUD1HIGH_RESTART = 7, B_AUD1HIGH_LEN_ENABLE = 6,
+    AUD1HIGH_RESTART = 0x80, AUD1HIGH_LENGTH_OFF = 0x00,
+    AUD1HIGH_LENGTH_ON = 0x40, AUD1HIGH_PERIOD_HIGH = 0x07,
+
+    AUD2LEN_DUTY = 0xc0, AUD2LEN_DUTY_12_5 = 0x00,
+    AUD2LEN_DUTY_25 = 0x40, AUD2LEN_DUTY_50 = 0x80,
+    AUD2LEN_DUTY_75 = 0xc0, AUD2LEN_TIMER = 0x3f,
+    AUD2ENV_INIT_VOLUME = 0xf0, B_AUD2ENV_DIR = 3,
+    AUD2ENV_DIR = 0x08, AUD2ENV_DOWN = 0x00, AUD2ENV_UP = 0x08,
+    AUD2ENV_PACE = 0x07,
+    B_AUD2HIGH_RESTART = 7, B_AUD2HIGH_LEN_ENABLE = 6,
+    AUD2HIGH_RESTART = 0x80, AUD2HIGH_LENGTH_OFF = 0x00,
+    AUD2HIGH_LENGTH_ON = 0x40, AUD2HIGH_PERIOD_HIGH = 0x07,
+
+    B_AUD3ENA_ENABLE = 7, AUD3ENA_OFF = 0x00, AUD3ENA_ON = 0x80,
+    AUD3LEVEL_VOLUME = 0x60, AUD3LEVEL_MUTE = 0x00,
+    AUD3LEVEL_100 = 0x20, AUD3LEVEL_50 = 0x40,
+    AUD3LEVEL_25 = 0x60,
+    B_AUD3HIGH_RESTART = 7, B_AUD3HIGH_LEN_ENABLE = 6,
+    AUD3HIGH_RESTART = 0x80, AUD3HIGH_LENGTH_OFF = 0x00,
+    AUD3HIGH_LENGTH_ON = 0x40, AUD3HIGH_PERIOD_HIGH = 0x07,
+
+    AUD4LEN_TIMER = 0x3f, AUD4ENV_INIT_VOLUME = 0xf0,
+    B_AUD4ENV_DIR = 3, AUD4ENV_DIR = 0x08, AUD4ENV_DOWN = 0x00,
+    AUD4ENV_UP = 0x08, AUD4ENV_PACE = 0x07,
+    AUD4POLY_SHIFT = 0xf0, B_AUD4POLY_WIDTH = 3,
+    AUD4POLY_15STEP = 0x00, AUD4POLY_7STEP = 0x08,
+    AUD4POLY_DIV = 0x07,
+    B_AUD4GO_RESTART = 7, B_AUD4GO_LEN_ENABLE = 6,
+    AUD4GO_RESTART = 0x80, AUD4GO_LENGTH_OFF = 0x00,
+    AUD4GO_LENGTH_ON = 0x40,
+
+    B_AUDVOL_VIN_LEFT = 7, AUDVOL_VIN_LEFT = 0x80,
+    AUDVOL_LEFT = 0x70, B_AUDVOL_VIN_RIGHT = 3,
+    AUDVOL_VIN_RIGHT = 0x08, AUDVOL_RIGHT = 0x07,
+    B_AUDTERM_4_LEFT = 7, B_AUDTERM_3_LEFT = 6,
+    B_AUDTERM_2_LEFT = 5, B_AUDTERM_1_LEFT = 4,
+    B_AUDTERM_4_RIGHT = 3, B_AUDTERM_3_RIGHT = 2,
+    B_AUDTERM_2_RIGHT = 1, B_AUDTERM_1_RIGHT = 0,
+    AUDTERM_4_LEFT = 0x80, AUDTERM_3_LEFT = 0x40,
+    AUDTERM_2_LEFT = 0x20, AUDTERM_1_LEFT = 0x10,
+    AUDTERM_4_RIGHT = 0x08, AUDTERM_3_RIGHT = 0x04,
+    AUDTERM_2_RIGHT = 0x02, AUDTERM_1_RIGHT = 0x01,
+    B_AUDENA_ENABLE = 7, B_AUDENA_ENABLE_CH4 = 3,
+    B_AUDENA_ENABLE_CH3 = 2, B_AUDENA_ENABLE_CH2 = 1,
+    B_AUDENA_ENABLE_CH1 = 0, AUDENA_OFF = 0x00, AUDENA_ON = 0x80,
+    AUDENA_CH4_OFF = 0x00, AUDENA_CH4_ON = 0x08,
+    AUDENA_CH3_OFF = 0x00, AUDENA_CH3_ON = 0x04,
+    AUDENA_CH2_OFF = 0x00, AUDENA_CH2_ON = 0x02,
+    AUDENA_CH1_OFF = 0x00, AUDENA_CH1_ON = 0x01,
+
+    B_LCDC_ENABLE = 7, B_LCDC_WIN_MAP = 6, B_LCDC_WINDOW = 5,
+    B_LCDC_BLOCKS = 4, B_LCDC_BG_MAP = 3, B_LCDC_OBJ_SIZE = 2,
+    B_LCDC_OBJS = 1, B_LCDC_BG = 0, B_LCDC_PRIO = 0,
+    LCDC_ENABLE = 0x80, LCDC_OFF = 0x00, LCDC_ON = 0x80,
+    LCDC_WIN_MAP = 0x40, LCDC_WIN_9800 = 0x00, LCDC_WIN_9C00 = 0x40,
+    LCDC_WINDOW = 0x20, LCDC_WIN_OFF = 0x00, LCDC_WIN_ON = 0x20,
+    LCDC_BLOCKS = 0x10, LCDC_BLOCK21 = 0x00, LCDC_BLOCK01 = 0x10,
+    LCDC_BG_MAP = 0x08, LCDC_BG_9800 = 0x00, LCDC_BG_9C00 = 0x08,
+    LCDC_OBJ_SIZE = 0x04, LCDC_OBJ_8 = 0x00, LCDC_OBJ_16 = 0x04,
+    LCDC_OBJS = 0x02, LCDC_OBJ_OFF = 0x00, LCDC_OBJ_ON = 0x02,
+    LCDC_BG = 0x01, LCDC_BG_OFF = 0x00, LCDC_BG_ON = 0x01,
+    LCDC_PRIO = 0x01, LCDC_PRIO_OFF = 0x00, LCDC_PRIO_ON = 0x01,
+    LCDC_DEFAULT = 0x91,
+
+    B_STAT_LYC = 6, B_STAT_MODE_2 = 5, B_STAT_MODE_1 = 4,
+    B_STAT_MODE_0 = 3, B_STAT_LYCF = 2, B_STAT_BUSY = 1,
+    STAT_LYC = 0x40, STAT_MODE_2 = 0x20, STAT_MODE_1 = 0x10,
+    STAT_MODE_0 = 0x08, STAT_LYCF = 0x04, STAT_BUSY = 0x02,
+    STAT_MODE = 0x03, STAT_HBLANK = 0x00, STAT_VBLANK = 0x01,
+    STAT_OAM = 0x02, STAT_LCD = 0x03, LY_VBLANK = 144,
+    BGP_SGB_TRANSFER = 0xe4, WX_OFS = 7,
+
+    SYS_MODE = 0x0c, SYS_CGB = 0x00, SYS_DMG = 0x04,
+    SYS_PGB1 = 0x08, SYS_PGB2 = 0x0c,
+    B_SPD_DOUBLE = 7, B_SPD_PREPARE = 0,
+    SPD_SINGLE = 0x00, SPD_DOUBLE = 0x80, SPD_PREPARE = 0x01,
+    VBK_BANK = 0x01, B_BANK_ON = 0, BANK_ON = 0x00, BANK_OFF = 0x01,
+    B_VDMA_LEN_MODE = 7, VDMA_LEN_MODE = 0x80,
+    VDMA_LEN_MODE_GENERAL = 0x00, VDMA_LEN_MODE_HBLANK = 0x80,
+    B_VDMA_LEN_BUSY = 7, VDMA_LEN_BUSY = 0x80,
+    VDMA_LEN_NO = 0x00, VDMA_LEN_YES = 0x80, VDMA_LEN_SIZE = 0x7f,
+    RP_READ = 0xc0, RP_DISABLE = 0x00, RP_ENABLE = 0xc0,
+    B_RP_DATA_IN = 1, B_RP_LED_ON = 0, RP_DATA_IN = 0x02,
+    RP_LED_ON = 0x01, RP_WRITE_LOW = 0x00, RP_WRITE_HIGH = 0x01,
+    B_BGPI_AUTOINC = 7, BGPI_AUTOINC = 0x80, BGPI_INDEX = 0x3f,
+    B_OBPI_AUTOINC = 7, OBPI_AUTOINC = 0x80, OBPI_INDEX = 0x3f,
+    B_OPRI_PRIORITY = 0, OPRI_PRIORITY = 0x01,
+    OPRI_OAM = 0x00, OPRI_COORD = 0x01, WBK_BANK = 0x07,
+    PCM12_CH2 = 0xf0, PCM12_CH1 = 0x0f,
+    PCM34_CH4 = 0xf0, PCM34_CH3 = 0x0f,
+
+    RAMG = 0x0000, ROMB = 0x2000, RAMB = 0x4000,
+    BMODE = 0x6000, ROM2B = 0x2100, RTCLATCH = 0x6000,
+    RTCREG = 0xa000, ROMB0 = 0x2000, ROMB1 = 0x3000,
+    RAMG_SRAM_DISABLE = 0x00, RAMG_SRAM_ENABLE = 0x0a,
+    RAMB_RTC_S = 0x08, RAMB_RTC_M = 0x09, RAMB_RTC_H = 0x0a,
+    RAMB_RTC_DL = 0x0b, RAMB_RTC_DH = 0x0c,
+    B_RAMB_RTC_DH_CARRY = 7, B_RAMB_RTC_DH_HALT = 6,
+    B_RAMB_RTC_DH_HIGH = 0, RAMB_RTC_DH_CARRY = 0x80,
+    RAMB_RTC_DH_HALT = 0x40, RAMB_RTC_DH_HIGH = 0x01,
+    B_RAMB_RUMBLE = 3, RAMB_RUMBLE = 0x08,
+    RAMB_RUMBLE_OFF = 0x00, RAMB_RUMBLE_ON = 0x08,
+    BMODE_SIMPLE = 0x00, BMODE_ADVANCED = 0x01,
+    RTCLATCH_START = 0x00, RTCLATCH_FINISH = 0x01,
+
+    SCREEN_WIDTH_PX = 160, SCREEN_HEIGHT_PX = 144,
+    SCREEN_WIDTH = 20, SCREEN_HEIGHT = 18, SCREEN_AREA = 360,
+    VRAM_SIZE = 0x2000, DMG_PALETTE_IDENTITY = 0xe4,
+    TILEMAP_WIDTH_PX = 256, TILEMAP_HEIGHT_PX = 256,
+    TILEMAP_WIDTH = 32, TILEMAP_HEIGHT = 32, TILEMAP_AREA = 1024,
+    TILE_WIDTH = 8, TILE_HEIGHT = 8, TILE_SIZE = 16,
+    COLOR_SIZE = 2, PAL_COLORS = 4, PAL_SIZE = 8,
+    COLOR_CH_WIDTH = 5, COLOR_CH_MAX = 31,
+    B_COLOR_RED = 0, B_COLOR_GREEN = 5, B_COLOR_BLUE = 10,
+    COLOR_RED = 0x1f, COLOR_GREEN_LOW = 0xe0,
+    COLOR_GREEN_HIGH = 0x03, COLOR_BLUE = 0x7c,
+    SHADE_WHITE = 0, SHADE_LIGHT = 1, SHADE_DARK = 2, SHADE_BLACK = 3,
+    TILEMAP0 = 0x9800, TILEMAP1 = 0x9c00,
+    B_BG_PRIO = 7, B_BG_YFLIP = 6, B_BG_XFLIP = 5, B_BG_BANK1 = 3,
+    BG_PALETTE = 0x07, BG_PRIO = 0x80, BG_YFLIP = 0x40,
+    BG_XFLIP = 0x20, BG_BANK0 = 0x00, BG_BANK1 = 0x08,
+
+    OAMA_Y = 0, OAMA_X = 1, OAMA_TILEID = 2, OAMA_FLAGS = 3,
+    OAM_Y_OFS = 16, OAM_X_OFS = 8,
+    B_OAM_PRIO = 7, B_OAM_YFLIP = 6, B_OAM_XFLIP = 5,
+    B_OAM_PAL1 = 4, B_OAM_BANK1 = 3, OAM_PALETTE = 0x07,
+    OAM_PRIO = 0x80, OAM_YFLIP = 0x40, OAM_XFLIP = 0x20,
+    OAM_PAL0 = 0x00, OAM_PAL1 = 0x10,
+    OAM_BANK0 = 0x00, OAM_BANK1 = 0x08,
+    OBJ_SIZE = 4, OAM_COUNT = 40, OAM_SIZE = 160,
+
+    AUD1RAM = 0xff10, AUD2RAM = 0xff15,
+    AUD3RAM = 0xff1a, AUD4RAM = 0xff1f, AUDRAM_SIZE = 5,
+    AUD3WAVERAM = 0xff30, AUD3WAVE_SIZE = 16,
+    INT_HANDLER_VBLANK = 0x0040, INT_HANDLER_STAT = 0x0048,
+    INT_HANDLER_TIMER = 0x0050, INT_HANDLER_SERIAL = 0x0058,
+    INT_HANDLER_JOYPAD = 0x0060,
+
+    BOOTUP_A_DMG = 0x01, BOOTUP_A_CGB = 0x11, BOOTUP_A_MGB = 0xff,
+    BOOTUP_A_SGB = 0x01, BOOTUP_A_SGB2 = 0xff, B_BOOTUP_B_AGB = 0,
+    BOOTUP_B_CGB = 0x00, BOOTUP_B_AGB = 0x01,
+    BOOTUP_C_DMG = 0x13, BOOTUP_C_SGB = 0x14, BOOTUP_C_CGB = 0x00,
+    BOOTUP_D_MONO = 0x00, BOOTUP_D_COLOR = 0xff,
+    BOOTUP_E_DMG0 = 0xc1, BOOTUP_E_DMG = 0xc8,
+    BOOTUP_E_SGB = 0x00, BOOTUP_E_CGB_DMGMODE = 0x08,
+    BOOTUP_E_CGB = 0x56,
+}
+for name, value in pairs(hardware_constants) do
+    local previous = gb[name]
+    assert(previous == nil or previous == value,
+        name .. " disagrees with hardware.inc v5.3.0")
+    gb[name] = value
+end
+
+-- Public numeric constants must remain assembler symbols so delayed operands
+-- can resolve them, but only actual hardware registers belong in debugger
+-- symbol files.
+local function is_debugger_register(name, value)
+    return value >= 0xff00 and value <= 0xff7f
+        or name == "IE"
+end
+
+do
+    local symbols = cpu.symbols
+    for k, v in pairs(gb) do symbols[k] = v end
+end
+
+-- RGBDS-compatible .sym files are understood by the usual Game Boy
+-- debuggers. ROM labels include their physical bank; non-ROM symbols use
+-- their unbanked CPU address.
+local function gb_symfile()
+    local fmt = string.format
+    local s = cpu.getsym(function(addr, name, label_name)
+        local gb_value = gb[label_name]
+        if type(gb_value) == "number"
+            and not is_debugger_register(label_name, gb_value) then
+            return
+        end
+        local physical = cpu.symbolsorg[label_name]
+        if physical and physical >= 0 then
+            local bank = math.floor(physical / 0x4000)
+            return fmt("%02x:%04x %s", bank, addr & 0xffff, name)
+        elseif addr >= 0 and addr <= 0xffff then
+            return fmt("%04x %s", addr, name)
+        end
+    end)
+    return table.concat(s, '\n')
+end
+
+cpu.getsym_as.rgbds = gb_symfile
+cpu.getsym_as.bgb = gb_symfile
+cpu.getsym_as.mesen = gb_symfile
+cpu.getsym_as.sameboy = gb_symfile
+cpu.getsym_as.mgba = gb_symfile
+cpu.getsym_as.emulicious = gb_symfile
+
+-- Game Boy debugfile v1 support
+-- https://github.com/aaaaaa123456789/gb-debugfiles/blob/master/debugfile.md
+--
+-- Debug annotations are zero-sized markers. Their addresses are resolved only
+-- when the debugfile is written, after the linker has placed their sections.
+local debugfile_entries = {}
+
+local function debug_identifier(name, variable)
+    assert(type(name) == "string" and name:match("^[A-Za-z_][A-Za-z0-9$#.@_]*$"),
+        "invalid debugfile identifier: " .. tostring(name))
+    if variable then
+        assert(name:sub(1, 1) == "_",
+            "debugfile variable names must begin with an underscore")
+    end
+    return name
+end
+
+local function debug_plain_string(value)
+    assert(type(value) == "string", "debugfile string must be a string")
+    assert(not value:find('"', 1, true),
+        "plain debugfile strings cannot contain a quote")
+    for i = 1, #value do
+        assert(value:byte(i) >= 32,
+            "plain debugfile strings cannot contain control characters")
+    end
+    return '"' .. value .. '"'
+end
+
+local function debug_message_string(value)
+    assert(type(value) == "string", "debugfile message must be a string")
+    value = value:gsub("\r\n", "{:n}")
+        :gsub("\r", "{:n}")
+        :gsub("\n", "{:n}")
+        :gsub("\t", "{:t}")
+        :gsub('"', "{:q}")
+    for i = 1, #value do
+        assert(value:byte(i) >= 32,
+            "debugfile messages cannot contain control characters")
+    end
+    return '"' .. value .. '"'
+end
+
+local function debug_expression(value)
+    if type(value) == "number" then
+        assert(value % 1 == 0, "debugfile numeric expressions must be integers")
+        return value < 0 and tostring(value) or string.format("$%X", value)
+    elseif type(value) == "boolean" then
+        return value and "1" or "0"
+    end
+    assert(type(value) == "string" and value ~= "",
+        "debugfile expression must be a string, integer, or boolean")
+    assert(not value:find("[\r\n]"),
+        "debugfile expressions must fit on one line")
+    return value
+end
+
+local function debug_flags(flags)
+    flags = flags or "x"
+    assert(type(flags) == "string", "debugfile flags must be a string")
+    flags = string.lower(flags)
+    assert(flags ~= "" and not flags:find("[^rwxsdmb]"),
+        "invalid debugfile flags: " .. flags)
+
+    local seen, operation, index = {}, false, 1
+    local doubled = { w = true, x = true, s = true, b = true }
+    while index <= #flags do
+        local family = flags:sub(index, index)
+        local token = family
+        if doubled[family] and flags:sub(index + 1, index + 1) == family then
+            token = family .. family
+            index = index + 1
+        end
+        assert(not seen[family], "duplicate or conflicting debugfile flag: " .. token)
+        seen[family] = token
+        operation = operation or family == "r" or family == "w" or family == "x"
+        index = index + 1
+    end
+    assert(operation, "debugfile actions require an r, w, ww, x, or xx flag")
+    return flags
+end
+
+local function debug_commands(commands)
+    if type(commands) == "table" then
+        commands = table.concat(commands, "; ")
+    end
+    assert(type(commands) == "string" and commands:match("%S"),
+        "debugfile action requires at least one command")
+    assert(not commands:find("[\r\n]"),
+        "debugfile commands must fit on one line")
+    assert(not commands:match(";%s*$"),
+        "the final debugfile command must not end with a semicolon")
+    return commands
+end
+
+local function debug_marker()
+    local section = cpu.section_current
+    assert(section, "dbg_action requires a current section")
+
+    local marker = { type = "debug_marker", section = section }
+    marker.size = function()
+        marker.offset = section.size
+        marker.size = 0
+        return 0
+    end
+    table.insert(section.instructions, marker)
+    section.refcount = (section.refcount or 0) + 1
+    return marker
+end
+
+local function banked_debug_address(physical, address)
+    assert(type(physical) == "number" and type(address) == "number",
+        "unresolved debugfile address")
+    return string.format("$%02X:$%04X", physical // 0x4000, address & 0xffff)
+end
+
+local function marker_debug_address(marker)
+    local section = marker.section
+    assert(type(section.org) == "number" and type(marker.offset) == "number",
+        "unresolved debugfile marker")
+    local physical = section.org + marker.offset
+    return banked_debug_address(physical, section.location.rorg(physical))
+end
+
+local function debug_address(address)
+    if type(address) == "function" then return debug_address(address()) end
+    if type(address) == "table" then
+        if address.label then return debug_address(address.label) end
+        local values = {}
+        for i, value in ipairs(address) do values[i] = debug_address(value) end
+        assert(#values > 0, "empty debugfile address list")
+        return table.concat(values, ",")
+    end
+    if type(address) == "number" then
+        assert(address % 1 == 0, "debugfile address must be an integer")
+        return string.format("$%04X", address & 0xffff)
+    end
+    assert(type(address) == "string" and address ~= "",
+        "invalid debugfile address")
+
+    local resolved = rawget(cpu.symbols, address)
+    if type(resolved) == "number" then
+        local physical = cpu.symbolsorg[address]
+        if type(physical) == "number" then
+            return banked_debug_address(physical, resolved)
+        end
+        return string.format("$%04X", resolved & 0xffff)
+    end
+    assert(not address:find("%s"),
+        "debugfile address fields cannot contain whitespace")
+    return address
+end
+
+local function add_debug_action(address, flags, commands, condition)
+    local resolved_condition
+    if condition ~= nil then resolved_condition = debug_expression(condition) end
+    debugfile_entries[#debugfile_entries + 1] = {
+        type = "action",
+        address = address,
+        flags = debug_flags(flags),
+        commands = debug_commands(commands),
+        condition = resolved_condition,
+    }
+end
+
+-- Add any single raw directive, private-use line, or action. The mandatory
+-- @debugfile directive is generated automatically by writedebug(). A function
+-- may be supplied when the line needs link-time resolution.
+function gb.dbg_line(line)
+    assert(type(line) == "string" or type(line) == "function",
+        "dbg_line expects a string or function")
+    debugfile_entries[#debugfile_entries + 1] = { type = "raw", line = line }
+end
+
+function gb.dbg_var(name, initial)
+    name = debug_identifier(name, true)
+    initial = debug_expression(initial == nil and 0 or initial)
+    dbg_line("@var " .. name .. " " .. initial)
+end
+
+function gb.dbg_group(name, display_name)
+    name = debug_identifier(name)
+    local line = "@group " .. name
+    if display_name ~= nil then line = line .. " " .. debug_plain_string(display_name) end
+    dbg_line(line)
+end
+
+function gb.end_dbg_group()
+    dbg_line("@endgroup")
+end
+
+-- Add an execute action at the current assembly position. This emits no ROM
+-- bytes. flags defaults to "x".
+function gb.dbg_action(commands, condition, flags)
+    add_debug_action(debug_marker(), flags or "x", commands, condition)
+end
+
+-- Add an action for an explicit address, symbol, range expression, or list of
+-- address specifications. This supports read/write watches as well as code.
+function gb.dbg_watch(address, flags, commands, condition)
+    add_debug_action(address, flags, commands, condition)
+end
+
+function gb.dbg_break(condition, flags)
+    dbg_action("break", condition, flags)
+end
+
+function gb.dbg_log(message, condition, flags)
+    dbg_action("message " .. debug_message_string(message), condition, flags)
+end
+
+function gb.dbg_alert(message, condition, flags)
+    dbg_action("alert " .. debug_message_string(message), condition, flags)
+end
+
+function gb.runtime_assert(condition, message)
+    condition = debug_expression(condition)
+    dbg_alert(message or "assert failure", "!(" .. condition .. ")")
+end
+
+function gb.unreachable(message)
+    dbg_alert(message or "unreachable code reached!")
+end
+
+-- Return a complete version-1 debugfile after resolving all link-time marker
+-- addresses. opt may be a symfile path or a table with version and symfile.
+function gb.getdebugfile(opt)
+    if type(opt) == "string" then opt = { symfile = opt } end
+    opt = opt or {}
+    assert(type(opt) == "table", "debugfile options must be a table or symfile path")
+    cpu.resolve()
+
+    local version = tostring(opt.version or "1")
+    local version_parts = {}
+    for part in version:gmatch("[^.]+") do version_parts[#version_parts + 1] = part end
+    assert(#version_parts >= 1 and #version_parts <= 3
+        and table.concat(version_parts, ".") == version,
+        "invalid debugfile version")
+    for _, part in ipairs(version_parts) do
+        assert(part:match("^%d+$") and (part == "0" or part:sub(1, 1) ~= "0"),
+            "invalid debugfile version")
+    end
+    local lines = { "@debugfile " .. version }
+    if opt.symfile then
+        lines[#lines + 1] = "@symfile " .. debug_plain_string(opt.symfile)
+    end
+
+    for _, entry in ipairs(debugfile_entries) do
+        if entry.type == "raw" then
+            local line = type(entry.line) == "function" and entry.line() or entry.line
+            assert(type(line) == "string" and not line:find("[\r\n]"),
+                "dbg_line must resolve to exactly one line")
+            lines[#lines + 1] = line
+        else
+            local address = type(entry.address) == "table"
+                and entry.address.type == "debug_marker"
+                and marker_debug_address(entry.address)
+                or debug_address(entry.address)
+            local condition = entry.condition and " " .. entry.condition or ""
+            lines[#lines + 1] = string.format("%s %s%s: %s",
+                address, entry.flags, condition, entry.commands)
+        end
+    end
+    return table.concat(lines, "\n") .. "\n"
+end
+
+function gb.writedebug(filename, opt)
+    assert(type(filename) == "string" and filename ~= "",
+        "writedebug requires a filename")
+    local file = assert(io.open(filename, "wb"),
+        "failed to open " .. filename .. " for writing")
+    file:write(getdebugfile(opt))
+    file:close()
+end
+
+rom0 = location{ 0x0000, 0x3fff, name = "rom0" }
+rom1 = location{ 0x4000, 0x7fff, rorg = 0x4000, name = "rom1" }
+rom = rom0
+romx = rom1
+location(rom0)
+
+local function contiguous_rom()
+    if rom0 == rom1 then return rom0 end
+
+    assert(#rom0.sections == 0 and #rom1.sections == 0,
+        "32 KiB mapper must be declared before ROM sections")
+
+    local fixed, switchable = rom0, rom1
+    for i = #cpu.locations, 1, -1 do
+        local loc = cpu.locations[i]
+        if loc == fixed or loc == switchable then
+            table.remove(cpu.locations, i)
+        end
+    end
+
+    rom = location{ 0x0000, 0x7fff, name = "rom" }
+    rom0 = rom
+    rom1 = rom
+    romx = rom
+    return rom
+end
+
+function gb.romx_bank(bank)
+    assert(bank >= 1, "ROMX bank index must be at least 1")
+    local name = "rom" .. bank
+    local loc = rawget(_ENV, name)
+    if not loc then
+        local offset = bank * 0x4000
+        loc = location{ offset, offset + 0x3fff, rorg = 0x4000, name = name }
+        rawset(_ENV, name, loc)
+    else
+        location(loc)
+    end
+    return loc
+end
+
+function gb.rom_banks(count)
+    assert(count >= 2, "Game Boy ROM must have at least 2 banks")
+    assert(count <= 512, "Game Boy ROM can have at most 512 banks")
+    if count == 2 then
+        location(contiguous_rom())
+        return rom
+    end
+    for bank = 1, count - 1 do gb.romx_bank(bank) end
+    location(rom0)
+    return rom0
+end
+
+function gb.romx_offset(bank, org)
+    org = org or 0x4000
+    assert(org >= 0x4000 and org <= 0x7fff, "ROMX CPU address must be in 0x4000-0x7fff")
+    return bank * 0x4000 + (org - 0x4000)
+end
+
+function gb.romx_section(name, bank, org)
+    location(gb.romx_bank(bank))
+    return section{ name, org = gb.romx_offset(bank, org) }
+end
+
+if rawget(_ENV, "stack_size") == nil then rawset(_ENV, "stack_size", 0x20) end
+if rawget(_ENV, "stack_address") == nil then rawset(_ENV, "stack_address", 0xfffe) end
+
+-- stack_size reserves bytes below stack_address for the downward-growing
+-- stack. Their defaults are 0x20 and 0xfffe. Set them after the mapper and
+-- before allocating RAM; the WRAM and HRAM allocators stop before the stack.
+local function stack_config()
+    local size = stack_size
+    assert(type(size) == "number" and size >= 0 and size % 1 == 0,
+        "stack_size must be a non-negative integer")
+    local top = stack_address
+    assert(type(top) == "number" and top % 1 == 0,
+        "stack_address must be an integer")
+
+    local region, region_start
+    if top >= WRAM and top <= 0xdfff then
+        region, region_start = "wram", WRAM
+    elseif top >= HRAM and top <= 0xfffe then
+        region, region_start = "hram", HRAM
+    else
+        error("stack_address must be in WRAM or HRAM")
+    end
+    local bottom = top - size
+    assert(bottom >= region_start, "stack does not fit in its RAM region")
+    return size, bottom, region
+end
+
+local function allocate_ram(name, size, addr)
+    assert(type(name) == "string", "RAM symbol name must be a string")
+    assert(type(size) == "number" and size >= 1 and size % 1 == 0,
+        "RAM allocation size must be a positive integer")
+    assert(rawget(_ENV, name) == nil and cpu.symbols[name] == nil,
+        "duplicate symbol: " .. name)
+    cpu.symbols[name] = addr
+    rawset(_ENV, name, addr)
+    return addr
+end
+
+gb.wram_next = WRAM
+function gb.wram(name, size, alignment)
+    size = size or 1
+    alignment = alignment or 1
+    assert(type(alignment) == "number" and alignment >= 1
+        and alignment % 1 == 0, "WRAM alignment must be a positive integer")
+    local stack_bytes, stack_bottom, stack_region = stack_config()
+    local addr = math.floor((gb.wram_next + alignment - 1) / alignment) * alignment
+    local limit = stack_bytes > 0 and stack_region == "wram"
+        and stack_bottom - 1 or 0xdfff
+    assert(addr + size - 1 <= limit,
+        "WRAM allocation overlaps the reserved stack")
+    gb.wram_next = addr + size
+    return allocate_ram(name, size, addr)
+end
+
+gb.hram_next = HRAM
+function gb.hram(name, size)
+    size = size or 1
+    local stack_bytes, stack_bottom, stack_region = stack_config()
+    local addr = gb.hram_next
+    local limit = stack_bytes > 0 and stack_region == "hram"
+        and stack_bottom - 1 or 0xfffe
+    assert(addr + size - 1 <= limit,
+        "HRAM allocation overlaps the reserved stack")
+    gb.hram_next = addr + size
+    return allocate_ram(name, size, addr)
+end
+
+cpu.before_link[#cpu.before_link + 1] = function()
+    stack_config()
+end
+
+gb.logo = {
+    0xce,0xed,0x66,0x66,0xcc,0x0d,0x00,0x0b,0x03,0x73,0x00,0x83,
+    0x00,0x0c,0x00,0x0d,0x00,0x08,0x11,0x1f,0x88,0x89,0x00,0x0e,
+    0xdc,0xcc,0x6e,0xe6,0xdd,0xdd,0xd9,0x99,0xbb,0xbb,0x67,0x63,
+    0x6e,0x0e,0xec,0xcc,0xdd,0xdc,0x99,0x9f,0xbb,0xb9,0x33,0x3e,
+}
+
+local fixed_string = function(s, n)
+    local bytes = { string.byte(s or "", 1, #(s or "")) }
+    assert(#bytes <= n, "string is too long for Game Boy ROM header")
+    for i = #bytes + 1, n do bytes[i] = 0 end
+    return bytes
+end
+
+gb.rom_size_codes = {
+    [2] = 0x00, [4] = 0x01, [8] = 0x02, [16] = 0x03,
+    [32] = 0x04, [64] = 0x05, [128] = 0x06, [256] = 0x07,
+    [512] = 0x08, [72] = 0x52, [80] = 0x53, [96] = 0x54,
+}
+
+gb.ram_size_codes = {
+    [0] = 0x00, [2] = 0x01, [8] = 0x02, [32] = 0x03,
+    [128] = 0x04, [64] = 0x05,
+}
+
+function gb.rom_size_code(banks)
+    local code = gb.rom_size_codes[banks]
+    assert(code, "unsupported Game Boy ROM bank count: " .. tostring(banks))
+    return code
+end
+
+function gb.ram_size_code(kib)
+    local code = gb.ram_size_codes[kib]
+    assert(code, "unsupported Game Boy RAM size in KiB: " .. tostring(kib))
+    return code
+end
+
+function gb.cartridge_type(t)
+    t = t or {}
+    local mapper = (t.mapper or t.mbc or "rom")
+    if type(mapper) == "string" then mapper = mapper:lower() end
+    local ram = t.ram or t.ram_banks or t.ram_kib or (t.ramsize and t.ramsize ~= 0)
+    local battery = not not t.battery
+    local timer = not not (t.timer or t.rtc)
+    local rumble = not not t.rumble
+
+    if mapper == "rom" or mapper == "none" or mapper == 0 then
+        if battery then return 0x09 end
+        if ram then return 0x08 end
+        return 0x00
+    elseif mapper == "mbc1" or mapper == 1 then
+        assert(ram or not battery, "MBC1 battery cartridge type requires RAM")
+        return ram and (battery and 0x03 or 0x02) or 0x01
+    elseif mapper == "mbc2" or mapper == 2 then
+        return battery and 0x06 or 0x05
+    elseif mapper == "mbc3" or mapper == 3 then
+        if timer then return ram and 0x10 or 0x0f end
+        return ram and (battery and 0x13 or 0x12) or 0x11
+    elseif mapper == "mbc5" or mapper == 5 then
+        if rumble then return ram and (battery and 0x1e or 0x1d) or 0x1c end
+        return ram and (battery and 0x1b or 0x1a) or 0x19
+    end
+    error("unsupported Game Boy mapper: " .. tostring(mapper))
+end
+
+gb.header = function(t)
+    t = t or {}
+    local entry = t.entry or "main"
+    location(rom0)
+    section{ "gb_entry", org = 0x0100 }
+        nop
+        jp !entry
+
+    section{ "gb_logo", org = 0x0104 }
+        dc.b !gb.logo
+
+    local cgb_only = t.cgb_only or t.gbc_only or t.color_only
+    local cgb = t.cgb or t.gbc or t.color or t.gameboy_color or cgb_only
+    local header = fixed_string(t.title or "LZ80", cgb and 15 or 16)
+    if cgb then
+        header[#header + 1] = cgb_only and 0xc0 or 0x80
+    end
+    local licensee = fixed_string(t.licensee or "00", 2)
+    header[#header + 1] = licensee[1]
+    header[#header + 1] = licensee[2]
+    header[#header + 1] = t.sgb or 0
+    header[#header + 1] = t.carttype or t.cartridge_type or gb.cartridge_type(t)
+    local ram_kib = t.ram_kib or (t.ram_banks and t.ram_banks * 8)
+    header[#header + 1] = t.romsize or (t.rom_banks and gb.rom_size_code(t.rom_banks)) or 0
+    header[#header + 1] = t.ramsize or (ram_kib and gb.ram_size_code(ram_kib)) or 0
+    header[#header + 1] = t.destination or 1
+    header[#header + 1] = t.old_licensee or 0x33
+    header[#header + 1] = t.version or 0
+
+    local checksum = 0
+    for _, v in ipairs(header) do checksum = (checksum - v - 1) & 0xff end
+
+    section{ "gb_header", org = 0x0134 }
+        dc.b !header   -- header content
+        dc.b !checksum -- header checksum
+        dc.b 0, 0      -- ROM checksum, set by writebin
+end
+
+mappers = mappers or {}
+
+local function mapper_options(t, mapper, default_rom_banks, max_rom_banks)
+    t = t or {}
+    t.mapper = mapper
+    if not t.rom_banks then t.rom_banks = default_rom_banks or 2 end
+    assert(t.rom_banks >= 2, "Game Boy ROM must have at least 2 banks")
+    assert(t.rom_banks <= max_rom_banks, mapper .. " ROM can have at most " .. max_rom_banks .. " banks")
+    return t
+end
+
+local function mapper_ram_kib(t)
+    return t.ram_kib or (t.ram_banks and t.ram_banks * 8) or 0
+end
+
+local function mapper_header(t)
+    gb.rom_banks(t.rom_banks)
+    gb.header(t)
+    mappers.header = t
+end
+
+mappers.ROM = function(t)
+    t = mapper_options(t, "rom", 2, 2)
+    assert(mapper_ram_kib(t) == 0, "ROM-only cartridges do not support external RAM")
+    mapper_header(t)
+end
+
+mappers.MBC1 = function(t)
+    t = mapper_options(t, "mbc1", 2, 128)
+    assert(mapper_ram_kib(t) <= 32, "MBC1 RAM size must be at most 32 KiB")
+    mapper_header(t)
+end
+
+mappers.MBC2 = function(t)
+    t = mapper_options(t, "mbc2", 2, 16)
+    assert(mapper_ram_kib(t) == 0, "MBC2 uses built-in RAM; do not set external RAM")
+    mapper_header(t)
+end
+
+mappers.MBC3 = function(t)
+    t = mapper_options(t, "mbc3", 2, 128)
+    assert(mapper_ram_kib(t) <= 32, "MBC3 RAM size must be at most 32 KiB")
+    if t.rtc then t.timer = true end
+    if t.timer then t.battery = true end
+    mapper_header(t)
+end
+
+mappers.MBC5 = function(t)
+    t = mapper_options(t, "mbc5", 2, 512)
+    assert(mapper_ram_kib(t) <= 128, "MBC5 RAM size must be at most 128 KiB")
+    assert(not t.rumble or mapper_ram_kib(t) <= 64,
+        "MBC5 rumble cartridges can address at most 64 KiB of RAM")
+    mapper_header(t)
+end
+
+mappers.rom = mappers.ROM
+mappers.mbc1 = mappers.MBC1
+mappers.mbc2 = mappers.MBC2
+mappers.mbc3 = mappers.MBC3
+mappers.mbc5 = mappers.MBC5
+
+function gb.fix_global_checksum(bin)
+    assert(bin and #bin >= 0x150, "Game Boy ROM is too small for a header")
+    local checksum = 0
+    for i = 1, 0x14e do
+        checksum = (checksum + bin[i]) & 0xffff
+    end
+    for i = 0x151, #bin do
+        checksum = (checksum + bin[i]) & 0xffff
+    end
+    bin[0x14f] = (checksum >> 8) & 0xff
+    bin[0x150] = checksum & 0xff
+    return checksum
+end
+
+cpu.bin_filler = 0xff
+cpu.bin_finalizer = gb.fix_global_checksum
+
+function ldh_a(addr) ldh a,!addr end
+function ldh_addr(addr) ldh !addr,a end
+
+-- Dispatch A through the word table immediately following the calling RST.
+-- The caller chooses the section and RST vector where this code is emitted.
+function gb.rst_dispatch()
+    add a,a
+    ld e,a  ld d,#0
+    pop hl  add hl,de
+    ld e,(hl)  inc hl  ld d,(hl)
+    ld h,d  ld l,e
+    jp (hl)
+end
+
+-- Emit a crash handler, intended for the RST 0x38 vector reached by 0xFF padding.
+function gb.crash_handler()
+    di
+    local loop = label()
+    halt
+    jr !loop
+end
+
+-- Reset the APU control registers to zero. Wave RAM is left untouched.
+-- The APU must be enabled for these writes to take effect. Clobbers AF, B, HL.
+function gb.sound_reset()
+    ld hl,#!NR10
+    ld b,#!(NR52 - NR10)
+    xor a
+    local loop = label()
+    ldi (hl),a
+    dec b
+    jr nz,!loop
+end
+
+-- Power on the APU, then initialize its control registers to a silent state.
+function gb.sound_enable()
+    ld a,#!AUDENA_ON
+    ldh !NR52,a
+    gb.sound_reset()
+end
+
+-- Power off the APU. This also clears its control registers in hardware.
+function gb.sound_disable()
+    xor a
+    ldh !NR52,a
+end
+
+-- Wait for the beginning of VBlank by polling LY. Clobbers AF.
+function gb.vblank_waitbegin()
+    local loop = label()
+    a := [LY]
+    cp #!LY_VBLANK
+    jr.c !loop
+end
+
+-- Wait until VBlank has ended by polling LY. Clobbers AF.
+function gb.vblank_waitend()
+    local loop = label()
+    a := [LY]
+    cp #!LY_VBLANK
+    jr.nc !loop
+end
+
+-- Wait for a complete mode 3, then return at the beginning of an HBlank.
+-- This gives the caller the full following mode 0 VRAM/OAM access window.
+-- Clobbers AF.
+function gb.hblank_waitbegin()
+    local mode3 = label()
+    a := [STAT]
+    bit B_STAT_BUSY,a
+    jr.z !mode3
+
+    local hblank = label()
+    a := [STAT]
+    bit B_STAT_BUSY,a
+    jr.nz !hblank
+end
+
+-- Disable the LCD during VBlank, as required by the hardware. If it is
+-- already disabled, return immediately. Clobbers AF.
+function gb.lcd_disable()
+    local done = "lcd_disable_done_" .. id()
+    a := [LCDC]
+    bit B_LCDC_ENABLE,a
+    jr.z !done
+
+    vblank_waitbegin()
+    xor a
+    [LCDC] := a
+
+    label(done)
+end
+
+-- Enable the LCD with the supplied LCDC value (LCDC_DEFAULT by default).
+-- Clobbers AF.
+function gb.lcd_enable(value)
+    a := !(value or LCDC_DEFAULT)
+    [LCDC] := a
+end
+
+local function assert_cgb_header()
+    local header = mappers.header
+    assert(header and (header.cgb or header.gbc or header.color
+        or header.gameboy_color or header.cgb_only or header.gbc_only
+        or header.color_only),
+        "CGB hardware access requires a CGB cartridge header")
+end
+
+local function cgb_boot_b_value()
+    local header = mappers.header
+    assert(header, "hardware detection requires a mapper declaration")
+    local cgb_only = header.cgb_only or header.gbc_only or header.color_only
+    local cgb = header.cgb or header.gbc or header.color
+        or header.gameboy_color or cgb_only
+    if cgb then return 0 end
+
+    local old_licensee = header.old_licensee or 0x33
+    local licensee = header.licensee or "00"
+    local nintendo = old_licensee == 0x01
+        or (old_licensee == 0x33 and licensee == "01")
+    if not nintendo then return 0 end
+
+    local sum = 0
+    for _, byte in ipairs(fixed_string(header.title or "LZ80", 16)) do
+        sum = (sum + byte) & 0xff
+    end
+    return sum
+end
+
+-- Detect the hardware from the boot ROM's untouched A and B registers.
+-- This must be emitted at the cartridge entry point before either register is
+-- changed. Returns HARDWARE_DMG, HARDWARE_CGB, or HARDWARE_GBA in A; DMG also
+-- covers Pocket and Super Game Boy because boot registers cannot distinguish
+-- them reliably. Clobbers AF; preserves B and all other registers.
+function gb.hardware_detect()
+    local dmg = "hardware_detect_dmg_" .. id()
+    local gba = "hardware_detect_gba_" .. id()
+    local done = "hardware_detect_done_" .. id()
+    local gba_b = (cgb_boot_b_value() + 1) & 0xff
+
+    cp #!BOOTUP_A_CGB
+    jr.nz !dmg
+    a := b
+    a ^= gba_b
+    jr.z !gba
+    a := HARDWARE_CGB
+    jr !done
+
+    label(gba)
+    a := HARDWARE_GBA
+    jr !done
+
+    label(dmg)
+    a := HARDWARE_DMG
+
+    label(done)
+end
+
+gb.detect_hardware = gb.hardware_detect
+gb.hardware_type = gb.hardware_detect
+
+-- Switch between CGB normal and double speed. With no argument, always
+-- toggle. Pass true to ensure double speed or false to ensure normal speed.
+-- Preserves AF, IE, and JOYP. A dual-mode ROM must first detect CGB hardware.
+function gb.speed_switch(double_speed)
+    assert_cgb_header()
+    local done = "speed_switch_done_" .. id()
+
+    push af
+    if double_speed ~= nil then
+        a := [KEY1]
+        bit B_SPD_DOUBLE,a
+        if double_speed then jr.nz !done else jr.z !done end
+    end
+
+    a := [IE]
+    push af
+    a := [JOYP]
+    push af
+
+    xor a
+    [IE] := a
+    a := JOYP_GET_NONE
+    [JOYP] := a
+    a := KEY1_PREPARE
+    [KEY1] := a
+    stop
+
+    pop af
+    [JOYP] := a
+    pop af
+    [IE] := a
+
+    label(done)
+    pop af
+end
+
+gb.speed_toggle = gb.speed_switch
+gb.cgb_speed_switch = gb.speed_switch
+
+-- Enable the CGB infrared receiver with its emitter off. The caller must
+-- runtime-detect actual CGB hardware in a dual-mode ROM; GBA has no IR port.
+-- Clobbers A; preserves F.
+function gb.infrared_enable()
+    assert_cgb_header()
+    a := RP_ENABLE
+    [RP] := a
+end
+
+-- Reset RP after sending or receiving to reduce power consumption. Clobbers
+-- AF. Call infrared_enable() again before polling the receiver.
+function gb.infrared_disable()
+    assert_cgb_header()
+    xor a
+    [RP] := a
+end
+
+-- Turn the CGB infrared LED on by default, or turn it off with false while
+-- leaving the receiver enabled. Clobbers A; preserves F.
+function gb.infrared_emit(enabled)
+    assert_cgb_header()
+    local control = RP_ENABLE
+        | (enabled == false and RP_WRITE_LOW or RP_WRITE_HIGH)
+    a := control
+    [RP] := a
+end
+
+-- Read RP into A and test its active-low receiver bit. Z means an IR signal
+-- is being received; NZ means idle. The receiver must already be enabled.
+function gb.infrared_poll()
+    assert_cgb_header()
+    a := [RP]
+    bit B_RP_DATA_IN,a
+end
+
+gb.ir_enable = gb.infrared_enable
+gb.ir_disable = gb.infrared_disable
+gb.ir_emit = gb.infrared_emit
+gb.ir_poll = gb.infrared_poll
+gb.infrared_read = gb.infrared_poll
+
+-- Return the current divider value in A. Preserves F.
+function gb.divider_read()
+    a := [DIV]
+end
+
+-- Reset the divider. Any value written to DIV resets it, so AF is preserved.
+function gb.divider_reset()
+    [DIV] := a
+end
+
+-- Return TIMA in A. Preserves F.
+function gb.timer_read()
+    a := [TIMA]
+end
+
+-- Set TMA and TIMA. counter defaults to modulo. Clobbers A; preserves F.
+function gb.timer_reload(modulo, counter)
+    modulo = modulo or 0
+    counter = counter == nil and modulo or counter
+    a := modulo
+    [TMA] := a
+    a := counter
+    [TIMA] := a
+end
+
+-- Disable TIMA while preserving the selected TAC frequency. Clobbers AF.
+function gb.timer_stop()
+    a := [TAC]
+    a &= TAC_CLOCK
+    [TAC] := a
+end
+
+-- Enable TIMA with the current TAC frequency. Clobbers AF.
+function gb.timer_resume()
+    a := [TAC]
+    a |= TAC_START
+    [TAC] := a
+end
+
+-- Configure and start TIMA. frequency is one of TACF_*_HZ; modulo defaults
+-- to zero and counter defaults to modulo. Clobbers AF.
+function gb.timer_start(frequency, modulo, counter)
+    frequency = frequency or TACF_4096_HZ
+    assert(type(frequency) == "number" and frequency % 1 == 0
+        and frequency >= 0 and frequency <= 3,
+        "timer frequency must be a TACF_*_HZ value")
+    timer_stop()
+    timer_reload(modulo, counter)
+    a := !(frequency | TAC_START)
+    [TAC] := a
+end
+
+-- Start a transfer using the byte already in SB. Internal clock is the
+-- default; pass false for external clock. fast=true requires CGB mode.
+-- Clobbers A; preserves F.
+function gb.serial_start(internal_clock, fast)
+    if fast then
+        assert(internal_clock ~= false,
+            "fast serial mode requires the internal clock")
+        assert_cgb_header()
+    end
+    local control = SC_START
+        | (internal_clock == false and SC_EXTERNAL or SC_INTERNAL)
+        | (fast and SC_FAST or SC_SLOW)
+    a := !control
+    [SC] := a
+end
+
+-- Store A in SB and start a simultaneous send/receive transfer. Clobbers A;
+-- preserves F. Arguments match serial_start().
+function gb.serial_transfer(internal_clock, fast)
+    [SB] := a
+    serial_start(internal_clock, fast)
+end
+
+gb.serial_send = gb.serial_transfer
+
+-- Return SC in A and test its transfer bit. NZ means busy; Z means complete.
+function gb.serial_poll()
+    a := [SC]
+    bit B_SC_START,a
+end
+
+-- Poll until a serial transfer completes, then return the received byte in A.
+-- External-clock transfers can wait forever; use an application timeout when
+-- the peer may be absent. Clobbers AF.
+function gb.serial_wait()
+    local loop = label()
+    serial_poll()
+    jr.nz !loop
+    a := [SB]
+end
+
+-- Cancel a requested/in-progress transfer by clearing SC bit 7. Clobbers AF.
+function gb.serial_cancel()
+    a := [SC]
+    a &= 0xff ~ SC_START
+    [SC] := a
+end
+
+-- Clear tile data and both tile maps in VRAM bank 0. The LCD must be off.
+-- Clobbers AF, BC, HL.
+function gb.vram_clear()
+    fill(VRAM, 0, VRAM_SIZE)
+end
+
+-- Clear all 40 hardware OAM entries. The LCD must be off, or OAM must be
+-- accessible. Clobbers AF, BC, HL.
+function gb.oam_clear()
+    fill(OAM, 0, OAM_SIZE)
+end
+
+-- Emit reset-entry initialization inline. This is not a callable routine: it
+-- sets SP and deliberately leaves the LCD, interrupts, and sound disabled.
+-- It clears VRAM bank 0 and OAM, resets scrolling/window coordinates, and sets
+-- identity DMG palettes. It does not clear WRAM or HRAM.
+function gb.init()
+    di
+    sp := stack_address
+
+    xor a
+    [IE] := a
+    [IF] := a
+
+    lcd_disable()
+    sound_disable()
+    vram_clear()
+    oam_clear()
+
+    xor a
+    [SCX] := a
+    [SCY] := a
+    [WX] := a
+    [WY] := a
+
+    a := DMG_PALETTE_IDENTITY
+    [BGP] := a
+    [OBP0] := a
+    [OBP1] := a
+
+    a := JOYP_GET_NONE
+    [JOYP] := a
+end
+
+-- Read both joypad rows and return pressed buttons as 1 bits in A, using the
+-- conventional hardware.inc PAD_* order (directions high, buttons low).
+-- The optional destination may be in HRAM or WRAM;
+-- operator syntax selects LDH or LD after delayed resolution. Clobbers F, B.
+function gb.read_joy(destination)
+    a := JOYP_GET_CTRL_PAD
+    [JOYP] := a
+    a := [JOYP]
+    a := [JOYP]
+    cpl
+    a &= JOYP_INPUTS
+    b := a
+
+    a := JOYP_GET_BUTTONS
+    [JOYP] := a
+    a := [JOYP]
+    a := [JOYP]
+    cpl
+    a &= JOYP_INPUTS
+    swap a
+    a |= b
+    b := a
+
+    a := JOYP_GET_NONE
+    [JOYP] := a
+    a := b
+    swap a
+    if destination ~= nil then [destination] := a end
+end
+
+-- Convert a sprite description to the four bytes stored by GB OAM: Y, X,
+-- tile, flags. x and y are screen coordinates; set raw=true to supply the
+-- hardware coordinates directly. If flags is omitted, the named flag fields
+-- and CGB palette are combined.
+function gb.oam_bytes(t)
+    assert(type(t) == "table", "OAM entry must be a table")
+    local function enabled(value) return value == true or value == 1 end
+    local x = t.x or 0
+    local y = t.y or 0
+    if not t.raw then x, y = x + 8, y + 16 end
+    local flags = t.flags
+    if flags == nil then
+        flags = ((enabled(t.behind) or enabled(t.priority)) and OAMF_PRIORITY or 0)
+            | ((enabled(t.flipy) or enabled(t.yflip)) and OAMF_YFLIP or 0)
+            | ((enabled(t.flipx) or enabled(t.xflip)) and OAMF_XFLIP or 0)
+            | (enabled(t.palette) and OAMF_PALETTE or 0)
+            | (enabled(t.bank1) and OAMF_BANK1 or 0)
+            | ((t.cgb_palette or 0) & 0x07)
+    end
+    return { y & 0xff, x & 0xff, (t.tile or 0) & 0xff, flags & 0xff }
+end
+
+local function oam_entry_address(base, t)
+    local index = assert(t.index or t[1],
+        "OAM entry requires index 1.." .. OAM_COUNT)
+    assert(type(index) == "number" and index % 1 == 0
+        and index >= 1 and index <= OAM_COUNT,
+        "OAM index must be in 1.." .. OAM_COUNT)
+    return base + (index - 1) * OBJ_SIZE
+end
+
+local function emit_oam_entry(base, t)
+    local bytes = oam_bytes(t)
+    hl := !oam_entry_address(base, t)
+    for i = 1, 4 do
+        a := !bytes[i]
+        [hl+] := a
+    end
+end
+
+-- Write one entry directly to hardware OAM. The LCD must be off, or OAM must
+-- be accessible. Clobbers AF, HL.
+function gb.oam_set(t)
+    emit_oam_entry(OAM, t)
+end
+
+local function oamcache_address()
+    local address = rawget(_ENV, "oamcache") or cpu.symbols.oamcache
+    if address == nil then
+        address = wram("oamcache", OAM_SIZE, 0x100)
+    end
+    assert(type(address) == "number" and address >= WRAM
+        and address + OAM_SIZE - 1 <= 0xdfff, "oamcache must fit in WRAM")
+    assert(address & 0xff == 0, "oamcache must be 0x100-byte aligned")
+    rawset(_ENV, "oamcache", address)
+    cpu.symbols.oamcache = address
+    return address
+end
+
+-- Clear the lazy 160-byte WRAM OAM cache. Clobbers AF, BC, HL.
+function gb.oamcache_clear()
+    hl := !oamcache_address()
+    bc := OAM_SIZE
+    xor a
+    memset()
+end
+
+-- Write one entry to the lazy WRAM OAM cache. Clobbers AF, HL.
+function gb.oamcache_set(t)
+    emit_oam_entry(oamcache_address(), t)
+end
+
+gb.oam_dma_bytes = { 0xe0, 0x46, 0x3e, OAM_COUNT, 0x3d, 0x20, 0xfd, 0xc9 }
+
+local function oam_dma_address_value()
+    local address = rawget(_ENV, "oam_dma_address")
+        or cpu.symbols.oam_dma_address
+    if address == nil then
+        address = hram("oam_dma_address", #gb.oam_dma_bytes)
+    end
+    assert(type(address) == "number" and address >= HRAM
+        and address + #gb.oam_dma_bytes - 1 <= 0xfffe,
+        "oam_dma_address must fit in HRAM")
+    rawset(_ENV, "oam_dma_address", address)
+    cpu.symbols.oam_dma_address = address
+    return address
+end
+
+-- Copy the OAM DMA routine to HRAM. Emit this once during initialization,
+-- before oamcache_flush is called. Falls through and clobbers AF, BC, DE, HL.
+function gb.oam_dma_install()
+    local source = "oam_dma_source_" .. id()
+    local done = "oam_dma_install_done_" .. id()
+    hl := !oam_dma_address_value()
+    de := !source
+    bc := !#gb.oam_dma_bytes
+    memcpy()
+    jr !done
+
+    label(source)
+    dc.b !gb.oam_dma_bytes
+    label(done)
+end
+
+-- DMA the lazy WRAM OAM cache to hardware OAM through the installed HRAM
+-- routine. Call during VBlank with interrupts disabled. Clobbers AF.
+function gb.oamcache_flush()
+    local source = oamcache_address()
+    a := !(source >> 8)
+    call !oam_dma_address_value()
+end
+
+-- Copy BC bytes from DE to HL. Clobbers AF and BC; advances HL and DE.
+-- A count of zero wraps and copies 65536 bytes.
+-- Falls through without RET, so it can be used inline or followed by RET in
+-- a section chosen by the caller.
+function gb.memcpy()
+    bc--
+    b++
+    c++
+
+    local loop = label()
+    a := [de]
+    de++
+    [hl+] := a
+    c--
+    jr.nz !loop
+    b--
+    jr.nz !loop
+end
+
+-- Copy BC bytes from DE to HL, treating a zero count as a no-op.
+-- Clobbers AF always; clobbers BC for a non-zero count; advances HL and DE.
+-- Falls through without RET.
+function gb.memcpy0()
+    local done = "memcpy0_done_" .. id()
+
+    a := b
+    a |= c
+    jr.z !done
+
+    memcpy()
+
+    label(done)
+end
+
+-- Copy C bytes from DE to HL. C=0 means 256. Clobbers AF and C; advances HL
+-- and DE. Falls through without RET.
+function gb.memcpy_c()
+    local loop = label()
+    a := [de]
+    de++
+    [hl+] := a
+    c--
+    jr.nz !loop
+end
+
+-- Copy exactly 16 bytes from DE to HL. Clobbers A; advances HL and DE.
+-- Falls through without RET.
+function gb.memcpy16()
+    for i = 1, 16 do
+        a := [de]
+        de++
+        [hl+] := a
+    end
+end
+
+-- Fill BC bytes at HL with A. Preserves A; clobbers F and BC; advances HL.
+-- A count of zero wraps and writes 65536 bytes.
+-- Falls through without RET, so it can be used inline or followed by RET in
+-- a section chosen by the caller.
+function gb.memset()
+    bc--
+    b++
+    c++
+
+    local loop = label()
+    [hl+] := a
+    c--
+    jr.nz !loop
+    b--
+    jr.nz !loop
+end
+
+-- Fill BC bytes at HL with A, treating a zero count as a no-op.
+-- Preserves A. Clobbers F always; clobbers BC for a non-zero count;
+-- advances HL for a non-zero count. Falls through without RET.
+function gb.memset0()
+    local loop = "memset0_loop_" .. id()
+    local done = "memset0_done_" .. id()
+
+    bc--
+    b++
+    c++
+
+    -- If C is nonzero after the transform, original BC was nonzero.
+    jr.nz !loop
+
+    -- C is zero: either original BC was zero, or original count was a multiple of 256.
+    -- Transformed B is zero only for original BC = 0.
+    b++
+    b--
+    jr.z !done
+
+    label(loop)
+    [hl+] := a
+    c--
+    jr.nz !loop
+    b--
+    jr.nz !loop
+
+    label(done)
+end
+
+-- Fill C bytes at HL with A. C=0 means 256. Preserves A; clobbers F and C;
+-- advances HL. Falls through without RET.
+function gb.memset_c()
+    local loop = label()
+    [hl+] := a
+    c--
+    jr.nz !loop
+end
+
+-- Fill exactly 16 bytes at HL with A. Preserves AF; advances HL.
+-- Falls through without RET.
+function gb.memset16()
+    for i = 1, 16 do
+        [hl+] := a
+    end
+end
+
+-- Pseudorandom number generator
+--
+-- Copyright 2018, 2020 Damian Yerrick
+--
+-- This software is provided 'as-is', without any express or implied
+-- warranty. In no event will the authors be held liable for any damages
+-- arising from the use of this software.
+--
+-- Permission is granted to anyone to use this software for any purpose,
+-- including commercial applications, and to alter it and redistribute it
+-- freely, subject to the following restrictions:
+--
+-- 1. The origin of this software must not be misrepresented; you must not
+--    claim that you wrote the original software. If you use this software
+--    in a product, an acknowledgment in the product documentation would be
+--    appreciated but is not required.
+-- 2. Altered source versions must be plainly marked as such, and must not be
+--    misrepresented as being the original software.
+-- 3. This notice may not be removed or altered from any source distribution.
+
+local randstate_address
+local function rand_state()
+    if randstate_address == nil then
+        randstate_address = rawget(_ENV, "randstate")
+            or cpu.symbols.randstate
+            or wram("randstate", 4)
+    end
+    return randstate_address
+end
+
+-- The formula is:
+-- x[i + 1] = (x[i] + 0xb3) * 0x01010101
+-- or equivalently:
+-- x[i + 1] = x[i] * 0x01010101 + 0xb3b3b3b3.
+-- Before cc65 commit 3994fee595, the additive constant was 0x31415927.
+
+-- Generate a pseudorandom 16-bit integer in BC using the current cc65 rand()
+-- LCG. Returns A=B=state bits 31-24 and C=state bits 23-16; clobbers H and L.
+-- The four-byte state defaults to an automatically allocated WRAM symbol named
+-- randstate. Set randstate before emitting this routine to relocate it.
+-- Emits RET, so place it in a caller-chosen section and invoke it with CALL.
+function gb.rand()
+    local state = rand_state()
+
+    hl := state
+    a := [hl]
+    a += 0xb3
+    [hl+] := a
+    adc a,(hl)
+    [hl+] := a
+    adc a,(hl)
+    [hl+] := a
+    c := a
+    adc a,(hl)
+    [hl] := a
+    b := a
+    ret
+end
+
+-- Seed rand() from BC. C is the low byte and B is the high byte; startup code
+-- should behave as though srand(1) had been called. Clobbers A, H, and L.
+-- Emits RET, so place it in a caller-chosen section and invoke it with CALL.
+function gb.srand()
+    local state = rand_state()
+
+    hl := state + 3
+    a ^= a
+    [hl-] := a
+    [hl-] := a
+    a := b
+    [hl-] := a
+    [hl] := c
+    ret
+end
+
+-- PB8 decompression for Game Boy
+-- Copyright 2019 Damian Yerrick
+-- The decoder below is adapted from the version used by gb-starter-kit. It
+-- emits the original byte stream; unlike the crash-handler specialization,
+-- it does not duplicate each decoded 1bpp byte into both Game Boy bitplanes.
+-- The zlib license notice is retained in pb.lua.
+--
+-- A clear control bit loads a literal and a set bit repeats the previous byte.
+
+-- Unpack one PB8 packet from DE to HL, producing eight bytes. A holds the
+-- previous byte and must initially be zero; it is preserved between packets.
+-- Clobbers F and B; advances DE and HL. Falls through without RET.
+function gb.pb8_unpack_packet()
+    local loop = "pb8_packet_loop_" .. id()
+    local repeat_byte = "pb8_repeat_byte_" .. id()
+
+    push af
+    a := [de]
+    de++
+    b := a
+    pop af
+    scf
+    rl b
+
+    label(loop)
+    jr.c !repeat_byte
+    a := [de]
+    de++
+
+    label(repeat_byte)
+    [hl+] := a
+    sla b
+    jr.nz !loop
+end
+
+-- Unpack C PB8 packets from DE to HL, producing 8*C bytes. C=0 means 256
+-- packets, or 2048 bytes. The packet routine defaults to pb8_unpack_packet.
+-- Clobbers AF, BC, DE, and HL. Falls through without RET.
+function gb.pb8_unpack_block(packet)
+    local loop = "pb8_block_loop_" .. id()
+    packet = packet or "pb8_unpack_packet"
+
+    xor a
+
+    label(loop)
+    call !packet
+    c--
+    jr.nz !loop
+end
+
+local pb8_runtime
+
+-- Emit callable pb8_unpack_packet and pb8_unpack_block sections at the
+-- caller's current ROM location. Nothing is emitted until this is called.
+function gb.pb8_unpacker()
+    if pb8_runtime then
+        return pb8_runtime.packet, pb8_runtime.block
+    end
+
+    local previous = cpu.section_current
+    assert(previous, "pb8_unpacker requires a current section")
+
+    local packet = section("pb8_unpack_packet")
+    gb.pb8_unpack_packet()
+    ret
+
+    local block = section("pb8_unpack_block")
+    gb.pb8_unpack_block(packet)
+    ret
+
+    section(previous)
+    pb8_runtime = { packet = packet, block = block }
+    return packet, block
+end
+
+-- PB16 decompression for Game Boy
+-- Copyright 2018 Damian Yerrick
+-- Modified by Eldred Habert (ISSOtm), then ported to lz80. This is an altered
+-- source version. The zlib license notice is retained in pb.lua.
+--
+-- The PB16 format encodes two interleaved byte streams. A clear control bit
+-- loads a literal and a set bit repeats the byte from two positions earlier.
+
+local pb16_byte0_address
+local function pb16_temp_byte()
+    if pb16_byte0_address == nil then
+        pb16_byte0_address = rawget(_ENV, "pb16_byte0")
+            or cpu.symbols.pb16_byte0
+            or hram("pb16_byte0")
+    end
+    return pb16_byte0_address
+end
+
+-- Unpack one PB16 packet from DE to HL, producing eight bytes. The previous
+-- even byte is stored in pb16_byte0 (allocated in HRAM by default); C holds
+-- the previous odd byte. Clobbers AF and B; advances DE and HL. Falls through.
+function gb.pb16_unpack_packet()
+    local temp = pb16_temp_byte()
+    local loop = "pb16_packet_loop_" .. id()
+    local p0_literal = "pb16_p0_literal_" .. id()
+    local have_p0 = "pb16_have_p0_" .. id()
+    local have_p1 = "pb16_have_p1_" .. id()
+
+    a := [de]
+    de++
+    scf
+    rla
+    b := a
+
+    label(loop)
+    jr.nc !p0_literal
+    a := [temp]
+    jr !have_p0
+
+    label(p0_literal)
+    a := [de]
+    de++
+    [temp] := a
+
+    label(have_p0)
+    [hl+] := a
+
+    a := c
+    sla b
+    jr.c !have_p1
+    a := [de]
+    de++
+    c := a
+
+    label(have_p1)
+    [hl+] := a
+
+    sla b
+    jr.nz !loop
+end
+
+-- Unpack 2*B PB16 packets from DE to HL, producing 16*B bytes. B=0 means
+-- 4096 bytes. The packet routine defaults to the pb16_unpack_packet symbol.
+-- Clobbers AF, BC, DE, and HL. Falls through.
+function gb.pb16_unpack_block(packet)
+    local temp = pb16_temp_byte()
+    local loop = "pb16_block_loop_" .. id()
+    packet = packet or "pb16_unpack_packet"
+
+    xor a
+    [temp] := a
+    c := a
+
+    label(loop)
+    push bc
+    call !packet
+    call !packet
+    a := c
+    pop bc
+    c := a
+    b--
+    jr.nz !loop
+end
+
+local pb16_runtime
+
+-- Emit callable pb16_unpack_packet and pb16_unpack_block sections at the
+-- caller's current ROM location. Nothing is emitted until this is called.
+function gb.pb16_unpacker()
+    if pb16_runtime then
+        return pb16_runtime.packet, pb16_runtime.block
+    end
+
+    local previous = cpu.section_current
+    assert(previous, "pb16_unpacker requires a current section")
+
+    local packet = section("pb16_unpack_packet")
+    gb.pb16_unpack_packet()
+    ret
+
+    local block = section("pb16_unpack_block")
+    gb.pb16_unpack_block(packet)
+    ret
+
+    section(previous)
+    pb16_runtime = { packet = packet, block = block }
+    return packet, block
+end
+
+-- Client scripts may set emit_runtime_memops to select runtime calls for all
+-- BC-based memory operations, then override individual choices with
+-- emit_memcpy, emit_memcpy0, emit_memset, or emit_memset0. Options may be set
+-- before or after require'gb', as long as they precede the relevant helper.
+-- With no option set, auto mode keeps the operation inline.
+function gb.should_call_memop(name)
+    local option = "emit_" .. name
+    local specific = rawget(_ENV, option)
+    if specific == nil then specific = rawget(gb, option) end
+    if specific ~= nil then
+        assert(type(specific) == "boolean", option .. " must be boolean")
+        return specific
+    end
+
+    local generic = rawget(_ENV, "emit_runtime_memops")
+    if generic == nil then generic = rawget(gb, "emit_runtime_memops") end
+    if generic ~= nil then
+        assert(type(generic) == "boolean",
+            "emit_runtime_memops must be boolean")
+    end
+    return generic == true
+end
+
+local emitted_memops = {}
+local function ensure_memop(name, emit)
+    local symbol = "gb_" .. name
+    if emitted_memops[name] or cpu.symbols[symbol] ~= nil then
+        emitted_memops[name] = true
+        return symbol
+    end
+
+    local previous_section = cpu.section_current
+    assert(previous_section, "runtime memory operation requires a current section")
+    emitted_memops[name] = true
+
+    location(rom0)
+    section(symbol)
+    emit()
+    ret
+    section(previous_section)
+    return symbol
+end
+
+
+function gb.ensure_memcpy()
+    return ensure_memop("memcpy", gb.memcpy)
+end
+
+function gb.ensure_memcpy0()
+    return ensure_memop("memcpy0", gb.memcpy0)
+end
+
+function gb.ensure_memset()
+    return ensure_memop("memset", gb.memset)
+end
+
+function gb.ensure_memset0()
+    return ensure_memop("memset0", gb.memset0)
+end
+
+local function memop_mode(opt)
+    local mode = opt or "auto"
+    assert(mode == "auto" or mode == "inline" or mode == "call",
+        "memory operation mode must be 'auto', 'inline', or 'call'")
+    return mode
+end
+
+local function emit_bc_memop(name, mode)
+    if mode == "call" or (mode == "auto" and gb.should_call_memop(name)) then
+        local ensure = assert(gb["ensure_" .. name])
+        local symbol = ensure()
+        call !symbol
+    else
+        gb[name]()
+    end
+end
+
+-- Resolve a transfer size early when possible, without requiring link-time
+-- symbols to be available yet. An unresolved size selects the safe zero-aware
+-- BC implementation below.
+local function transfer_size_value(size)
+    assert(size ~= nil, "transfer size is required")
+
+    local ok, value
+    if type(size) == "function" then
+        ok, value = pcall(size, 0, op_resolve)
+    else
+        ok, value = pcall(op_resolve, size)
+    end
+    if not ok or type(value) ~= "number" then return nil end
+
+    assert(value >= 0 and value <= 0xffff and value % 1 == 0,
+        "transfer size must be an integer in 0..65535")
+    return value
+end
+
+-- Copy size bytes from source to destination. HL is loaded with destination
+-- and DE with source. A resolved size selects the most specific specialized
+-- implementation; an unresolved size uses memcpy0 so zero remains a no-op.
+-- opt is "auto" by default; "inline" and "call" force that behavior for the
+-- BC variants. The C and 16-byte variants are always inline.
+-- Clobbers AF, BC, DE, and HL as required by the selected implementation.
+function gb.copy(source, destination, size, opt)
+    assert(source ~= nil, "copy source is required")
+    assert(destination ~= nil, "copy destination is required")
+    local resolved_size = transfer_size_value(size)
+    local mode = memop_mode(opt)
+
+    hl := destination
+    de := source
+
+    if resolved_size == 16 then
+        memcpy16()
+    elseif resolved_size ~= nil and resolved_size > 0
+        and resolved_size <= 256 then
+        local size8 = resolved_size & 0xff
+        c := size8
+        memcpy_c()
+    elseif resolved_size ~= nil and resolved_size > 0 then
+        bc := resolved_size
+        emit_bc_memop("memcpy", mode)
+    else
+        bc := !size
+        emit_bc_memop("memcpy0", mode)
+    end
+end
+
+-- Fill size bytes at destination with value. HL is loaded with destination
+-- and A with value. A resolved size selects the most specific specialized
+-- implementation; an unresolved size uses memset0 so zero remains a no-op.
+-- opt is "auto" by default; "inline" and "call" force that behavior for the
+-- BC variants. The C and 16-byte variants are always inline.
+-- Clobbers AF, BC, and HL as required by the selected implementation.
+function gb.fill(destination, value, size, opt)
+    assert(destination ~= nil, "fill destination is required")
+    assert(value ~= nil, "fill value is required")
+    local resolved_size = transfer_size_value(size)
+    local mode = memop_mode(opt)
+
+    hl := destination
+    a := value
+
+    if resolved_size == 16 then
+        memset16()
+    elseif resolved_size ~= nil and resolved_size > 0
+        and resolved_size <= 256 then
+        local size8 = resolved_size & 0xff
+        c := size8
+        memset_c()
+    elseif resolved_size ~= nil and resolved_size > 0 then
+        bc := resolved_size
+        emit_bc_memop("memset", mode)
+    else
+        bc := !size
+        emit_bc_memop("memset0", mode)
+    end
+end
+
+local function vblank_wait_flag()
+    if waiting_for_vblank == nil then
+        waiting_for_vblank = rawget(_ENV, "hWaitingForVBlank")
+            or cpu.symbols.hWaitingForVBlank
+            or hram("hWaitingForVBlank")
+    end
+    return waiting_for_vblank
+end
+
+-- Emit the body of a callable wait-for-next-VBlank routine.
+-- IE must contain the interrupts to process; IME is restored on return.
+-- Set waiting_for_vblank before emitting this routine and the ISR to choose
+-- its address. It defaults to hWaitingForVBlank in HRAM. Operator assignments
+-- select LDH for an address in 0xff00-0xffff, or LD for any other address.
+-- Example: waiting_for_vblank = wram("wWaitingForVBlank")
+function gb.wait_vblank()
+    local flag = vblank_wait_flag()
+    di
+    ld a,#1
+    [flag] := a
+
+    local loop = label()
+    a := [flag]
+    ana a
+    local done = "wait_vblank_done_" .. id()
+    jr z,!done
+
+    halt
+    nop
+    ei
+    nop
+    di
+    jr !loop
+
+    label(done)
+    ei
+    ret
+end
+
+-- Install the VBlank vector and a relocatable ISR in ROM0.
+-- callback is emitted after clearing hWaitingForVBlank and before pop AF.
+function gb.vblank_isr(callback)
+    assert(callback == nil or type(callback) == "function",
+        "VBlank ISR callback must be a function")
+    local flag = vblank_wait_flag()
+    local previous_section = cpu.section_current
+
+    location(rom0)
+    local handler = section{ "vblank_isr" }
+    section{ "vblank_vector", org = INT_HANDLER_VBLANK }
+    jp !handler.label
+
+    section(handler)
+    push af
+    xor a
+    [flag] := a
+    if callback then callback() end
+    pop af
+    reti
+
+    section(previous_section)
+end
+
+function gb.ram_enable(enabled)
+    ld a,#!(enabled == false and RAMG_SRAM_DISABLE or RAMG_SRAM_ENABLE)
+    ld !gb.MBC_RAM_ENABLE,a
+end
+
+function gb.ram_disable()
+    gb.ram_enable(false)
+end
+
+gb.mbc1_ram_enable = gb.ram_enable
+gb.mbc2_ram_enable = gb.ram_enable
+gb.mbc3_ram_enable = gb.ram_enable
+gb.mbc5_ram_enable = gb.ram_enable
+
+function gb.mbc1_select_rom_bank(bank)
+    if type(bank) == "number" then
+        bank = bank & 0x1f
+        if bank == 0 then bank = 1 end
+    end
+    ld a,#!bank
+    ld !gb.MBC_ROM_BANK,a
+end
+
+function gb.mbc1_select_ram_bank(bank)
+    ld a,#!bank
+    ld !gb.MBC_RAM_BANK,a
+end
+
+function gb.mbc1_select_upper_rom_bits(bits)
+    gb.mbc1_select_ram_bank(bits)
+end
+
+function gb.mbc1_select_mode(mode)
+    ld a,#!mode
+    ld !gb.MBC_MODE,a
+end
+
+function gb.mbc2_select_rom_bank(bank)
+    if type(bank) == "number" then
+        bank = bank & 0x0f
+        if bank == 0 then bank = 1 end
+    end
+    ld a,#!bank
+    ld !gb.ROM2B,a
+end
+
+function gb.mbc3_select_rom_bank(bank)
+    if type(bank) == "number" then
+        bank = bank & 0x7f
+        if bank == 0 then bank = 1 end
+    end
+    ld a,#!bank
+    ld !gb.MBC_ROM_BANK,a
+end
+
+function gb.mbc3_select_ram_bank(bank)
+    ld a,#!bank
+    ld !gb.MBC_RAM_BANK,a
+end
+
+function gb.mbc3_select_rtc_register(reg)
+    gb.mbc3_select_ram_bank(reg)
+end
+
+function gb.mbc3_latch_clock()
+    xor a
+    ld !gb.MBC_RTC_LATCH,a
+    inc a
+    ld !gb.MBC_RTC_LATCH,a
+end
+
+local function rtc_register(register)
+    local header = mappers.header
+    assert(header and header.mapper == "mbc3" and (header.timer or header.rtc),
+        "RTC requires an MBC3 cartridge declared with rtc=true")
+    assert(type(register) == "number" and register % 1 == 0
+        and register >= RTC_SECONDS and register <= RTC_DAY_HIGH,
+        "RTC register must be RTC_SECONDS through RTC_DAY_HIGH")
+    return register
+end
+
+-- Latch a stable snapshot of the running MBC3 clock. RAM/RTC access must have
+-- been enabled by the caller with ram_enable(). Clobbers AF.
+function gb.rtc_latch()
+    rtc_register(RTC_SECONDS)
+    gb.mbc3_latch_clock()
+end
+
+-- Select an RTC register and return its value in A. Call rtc_latch() first
+-- when reading multiple fields from one coherent snapshot. Preserves F.
+function gb.rtc_read(register)
+    gb.mbc3_select_rtc_register(rtc_register(register))
+    a := [SRAM]
+end
+
+-- Write A to an RTC register while preserving AF. Halt the clock before
+-- changing counter registers, as required by the hardware.
+function gb.rtc_write(register)
+    push af
+    gb.mbc3_select_rtc_register(rtc_register(register))
+    pop af
+    [SRAM] := a
+end
+
+-- Latch and copy seconds, minutes, hours, day-low, and day-high to [HL+].
+-- RAM/RTC access must already be enabled. Clobbers AF and advances HL by 5.
+function gb.rtc_read_all()
+    rtc_latch()
+    for register = RTC_SECONDS, RTC_DAY_HIGH do
+        rtc_read(register)
+        [hl+] := a
+    end
+end
+
+local function rtc_access_delay()
+    for i = 1, 4 do nop end
+end
+
+local function rtc_update_day_high(clear_mask, set_mask)
+    rtc_latch()
+    rtc_read(RTC_DAY_HIGH)
+    a &= clear_mask
+    if set_mask ~= 0 then a |= set_mask end
+    rtc_access_delay()
+    [SRAM] := a
+end
+
+-- Stop the RTC while preserving the day counter and carry flag. Clobbers AF.
+function gb.rtc_halt()
+    rtc_update_day_high(0xff, RTCF_HALT)
+end
+
+-- Resume the RTC while preserving the day counter and carry flag. Clobbers AF.
+function gb.rtc_resume()
+    rtc_update_day_high(0xff ~ RTCF_HALT, 0)
+end
+
+-- Clear the sticky day-counter overflow flag without changing halt/day bit 8.
+-- The clock must already be halted. Clobbers AF.
+function gb.rtc_clear_carry()
+    rtc_update_day_high(0xff ~ RTCF_CARRY, 0)
+end
+
+function gb.mbc5_select_rom_bank(bank)
+    if type(bank) == "number" then
+        local lo = bank & 0xff
+        local hi = (bank >> 8) & 0x01
+        ld a,#!lo
+        ld !gb.MBC_ROM_BANK,a
+        ld a,#!hi
+        ld !gb.MBC5_ROM_BANK_HIGH,a
+    else
+        ld a,#!bank
+        ld !gb.MBC_ROM_BANK,a
+        xor a
+        ld !gb.MBC5_ROM_BANK_HIGH,a
+    end
+end
+
+local mbc5_ram_bank = 0
+local mbc5_rumble_enabled = false
+
+local function mbc5_write_ram_control()
+    local header = mappers.header
+    local rumble_cart = header and header.mapper == "mbc5" and header.rumble
+    if rumble_cart and type(mbc5_ram_bank) == "number" then
+        local value = (mbc5_ram_bank & 0x07)
+            | (mbc5_rumble_enabled and MBC5_RUMBLE or 0)
+        a := value
+    else
+        a := mbc5_ram_bank
+        if rumble_cart then
+            a &= 0x07
+            if mbc5_rumble_enabled then a |= MBC5_RUMBLE end
+        end
+    end
+    [MBC_RAM_BANK] := a
+end
+
+function gb.mbc5_select_ram_bank(bank)
+    if type(bank) == "number" then
+        local max_bank = mappers.header and mappers.header.rumble and 7 or 15
+        assert(bank >= 0 and bank <= max_bank and bank % 1 == 0,
+            "MBC5 RAM bank must be an integer in 0.." .. max_bank)
+    end
+    mbc5_ram_bank = bank
+    mbc5_write_ram_control()
+end
+
+-- Enable cartridge rumble by default, or disable it with false. The selected
+-- MBC5 RAM bank is preserved. The mapper declaration must use rumble=true.
+function gb.rumble(enabled)
+    local header = mappers.header
+    assert(header and header.mapper == "mbc5" and header.rumble,
+        "rumble requires an MBC5 cartridge declared with rumble=true")
+    mbc5_rumble_enabled = enabled ~= false
+    mbc5_write_ram_control()
+end
+
+gb.mbc5_rumble = gb.rumble
+
+-- Match the NES module API: helper functions are directly available in the
+-- assembler environment. The gb table remains available to the module itself.
+for name, value in pairs(gb) do
+    if type(value) == "function" then rawset(_ENV, name, value) end
+end

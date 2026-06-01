@@ -1,0 +1,81 @@
+require'gb'
+
+mappers.ROM{ title = "GB MEMORY" }
+wram("buffer", 512)
+
+emit_runtime_memops = true
+emit_memcpy0 = false
+emit_memset0 = true
+
+assert(should_call_memop("memcpy"))
+assert(not should_call_memop("memcpy0"))
+assert(should_call_memop("memset"))
+assert(should_call_memop("memset0"))
+
+@@main
+    sp := stack_address
+
+    hl := buffer
+    de := source
+    bc := 16
+    memcpy()
+
+    bc := 0
+    memcpy0()
+    memset0()
+
+    hl := buffer
+    de := source
+    c := 16
+    memcpy_c()
+
+    hl := buffer
+    de := source
+    memcpy16()
+
+    hl := buffer + 8
+    a := 0
+    bc := 8
+    call memset
+
+    hl := buffer
+    c := 16
+    memset_c()
+
+    hl := buffer
+    memset16()
+
+    -- Auto mode follows the global runtime-emission options above.
+    copy("source", buffer, 257)
+    copy("source", buffer, 0)
+    fill(buffer, 0, 257)
+    fill(buffer, 0, 0)
+
+    -- Explicit modes override the options. The C and 16-byte specializations
+    -- remain inline even when call mode is requested.
+    copy("source", buffer, 257, "inline")
+    copy("source", buffer, 0, "call")
+    fill(buffer, 0, 16, "call")
+
+    bc := 1
+    call srand
+    call rand
+@loop
+    jr loop
+
+section{ "memset" }
+    memset()
+    ret
+
+section{ "rand" }
+    rand()
+
+section{ "srand" }
+    srand()
+
+section{ "source" }
+    for i = 0, 256 do dc.b i & 0xff end
+
+writebin(filename .. '.gb')
+writesym(filename .. '.sym', 'rgbds')
+print(stats)

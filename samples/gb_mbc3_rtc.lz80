@@ -1,0 +1,45 @@
+require 'gb'
+
+mappers.MBC3{
+    title = "LZ80 MBC3 RTC",
+    rom_banks = 4,
+    ram_kib = 8,
+    rtc = true,
+}
+
+hram("hRtc", 5)
+
+@@main
+    di
+    sp := stack_address
+    ram_enable()
+
+    hl := hRtc
+    rtc_read_all()
+
+    ram_disable()
+@loop
+    halt
+    jr loop
+
+-- Write helpers are kept callable but are not run by the sample, so loading
+-- it on a cartridge does not change the clock.
+@reset_rtc
+    ram_enable()
+    rtc_halt()
+
+    xor a
+    rtc_write(RTC_SECONDS)
+    rtc_write(RTC_MINUTES)
+    rtc_write(RTC_HOURS)
+    rtc_write(RTC_DAY_LOW)
+
+    a := RTCF_HALT
+    rtc_write(RTC_DAY_HIGH)
+    rtc_clear_carry()
+    rtc_resume()
+    ram_disable()
+    ret
+
+writebin(filename .. '.gb')
+print(stats)

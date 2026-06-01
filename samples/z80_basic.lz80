@@ -1,0 +1,12 @@
+cpu = require 'z80'
+setmetatable(_ENV, cpu)
+
+location(0x0000, 0xffff)
+section{"rom", org=0x0000}
+
+@start
+    ld a,#0x12
+    ld 0x4000,a
+    jp start
+
+writebin(filename .. '.bin')

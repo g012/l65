@@ -1,0 +1,23 @@
+require'gb'
+
+mappers.ROM{ title = "RST DISPATCH", entry = "main" }
+
+section{ "rst00", org = 0x0000 }
+    rst_dispatch()
+
+-- unitialized space defaults to 0xFF, which is rst 0x38
+section{ "rst38", org = 0x0038 }
+    crash_handler()
+
+section{ "rom", org = 0x0150 }
+@main
+    xor a
+    rst #0
+    dc.w target0,target1
+@target0
+    jr target0
+@target1
+    jr target1
+
+writebin(filename .. '.gb')
+print(stats)

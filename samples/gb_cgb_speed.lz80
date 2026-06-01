@@ -1,0 +1,28 @@
+require 'gb'
+
+mappers.ROM{
+    title = "CGB SPEED",
+    cgb_only = true,
+}
+
+@@main
+    di
+    sp := stack_address
+    speed_switch(true)
+
+@loop
+    halt
+    jr loop
+
+-- Callable example for returning to normal speed.
+@normal_speed
+    speed_switch(false)
+    ret
+
+-- Toggle regardless of the current speed.
+@toggle_speed
+    speed_toggle()
+    ret
+
+writebin(filename .. '.gb')
+print(stats)

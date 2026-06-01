@@ -1,0 +1,2220 @@
+require 'gb'
+
+huge = huge or {}
+
+-- Full lz80 port of SuperDisk's public-domain hUGEDriver:
+-- https://github.com/SuperDisk/hUGEDriver
+-- The runtime instruction stream follows upstream commit
+-- 727ab8ebb6bac20eecf82f35356fe4871a2a383b exactly. Song descriptor helpers
+-- and note periods follow hUGEDriver's RGBDS export layout.
+
+huge.NO_NOTE = 90
+huge.C_3 =  0 huge.Cs3 =  1 huge.D_3 =  2 huge.Ds3 =  3 huge.E_3 =  4 huge.F_3 =  5
+huge.Fs3 =  6 huge.G_3 =  7 huge.Gs3 =  8 huge.A_3 =  9 huge.As3 = 10 huge.B_3 = 11
+huge.C_4 = 12 huge.Cs4 = 13 huge.D_4 = 14 huge.Ds4 = 15 huge.E_4 = 16 huge.F_4 = 17
+huge.Fs4 = 18 huge.G_4 = 19 huge.Gs4 = 20 huge.A_4 = 21 huge.As4 = 22 huge.B_4 = 23
+huge.C_5 = 24 huge.Cs5 = 25 huge.D_5 = 26 huge.Ds5 = 27 huge.E_5 = 28 huge.F_5 = 29
+huge.Fs5 = 30 huge.G_5 = 31 huge.Gs5 = 32 huge.A_5 = 33 huge.As5 = 34 huge.B_5 = 35
+huge.C_6 = 36 huge.Cs6 = 37 huge.D_6 = 38 huge.Ds6 = 39 huge.E_6 = 40 huge.F_6 = 41
+huge.Fs6 = 42 huge.G_6 = 43 huge.Gs6 = 44 huge.A_6 = 45 huge.As6 = 46 huge.B_6 = 47
+huge.C_7 = 48 huge.Cs7 = 49 huge.D_7 = 50 huge.Ds7 = 51 huge.E_7 = 52 huge.F_7 = 53
+huge.Fs7 = 54 huge.G_7 = 55 huge.Gs7 = 56 huge.A_7 = 57 huge.As7 = 58 huge.B_7 = 59
+huge.C_8 = 60 huge.Cs8 = 61 huge.D_8 = 62 huge.Ds8 = 63 huge.E_8 = 64 huge.F_8 = 65
+huge.Fs8 = 66 huge.G_8 = 67 huge.Gs8 = 68 huge.A_8 = 69 huge.As8 = 70 huge.B_8 = 71
+
+huge.note_table = {
+    44,156,262,363,457,547,631,710,
+    786,854,923,986,1046,1102,1155,1205,
+    1253,1297,1339,1379,1417,1452,1486,1517,
+    1546,1575,1602,1627,1650,1673,1694,1714,
+    1732,1750,1767,1783,1798,1812,1825,1837,
+    1849,1860,1871,1881,1890,1899,1907,1915,
+    1923,1930,1936,1943,1949,1954,1959,1964,
+    1969,1974,1978,1982,1985,1988,1992,1995,
+    1998,2001,2004,2006,2009,2011,2013,2015,
+}
+
+function huge.dn(note, instrument, effect)
+    effect = effect or 0
+    instrument = instrument or 0
+    return {
+        (note | ((instrument & 0x10) << 3)) & 0xff,
+        (((instrument << 4) & 0xff) | ((effect >> 8) & 0x0f)) & 0xff,
+        effect & 0xff,
+    }
+end
+
+function huge.rest()
+    return { huge.NO_NOTE, 0, 0 }
+end
+
+-- Read the original hUGETracker v1 module format.  This is intentionally a
+-- build-time importer: the .uge file is converted to hUGEDriver's compact ROM
+-- layout while assembling, so none of the editor-only metadata reaches the
+-- cartridge.
+function huge.read_uge(data)
+    assert(type(data) == "string", "hUGETracker module must be a byte string")
+
+    local position = 1
+    local function need(count)
+        assert(position + count - 1 <= #data, "truncated hUGETracker module")
+    end
+    local function u8()
+        need(1)
+        local value = data:byte(position)
+        position = position + 1
+        return value
+    end
+    local function i32()
+        need(4)
+        local a, b, c, d = data:byte(position, position + 3)
+        position = position + 4
+        local value = a | (b << 8) | (c << 16) | (d << 24)
+        if value >= 0x80000000 then value = value - 0x100000000 end
+        return value
+    end
+    local function skip(count)
+        need(count)
+        position = position + count
+    end
+    local function short_string()
+        local length = u8()
+        assert(length <= 255, "invalid hUGETracker short string")
+        need(255)
+        local value = data:sub(position, position + length - 1)
+        position = position + 255
+        return value
+    end
+
+    local version = i32()
+    assert(version == 1,
+        "unsupported hUGETracker module version " .. version .. " (expected v1)")
+
+    local song = {
+        version = version,
+        name = short_string(),
+        artist = short_string(),
+        comment = short_string(),
+        instruments = { duty = {}, wave = {}, noise = {} },
+        waves = {},
+        patterns = {},
+        orders = {},
+    }
+
+    -- v1 has one mixed bank of 15 instruments. Upgrading initializes all three
+    -- typed banks, then copies each old instrument into its corresponding bank.
+    for index = 1, 15 do
+        local duty_instrument = {
+            nr10 = 0x08,
+            nr11 = 0x80,
+            nr12 = 0xf0,
+            highmask = 0x80,
+        }
+        local wave_instrument = {
+            length = 0,
+            level = 0x20,
+            waveform = index - 1,
+            highmask = 0x80,
+        }
+        local noise_instrument = {
+            envelope = 0xf0,
+            attributes = 0,
+        }
+
+        local type_ = i32()
+        short_string()                 -- editor-only instrument name
+        local length = i32()
+        local length_enabled = u8() ~= 0
+        local initial_volume = u8()
+        local volume_direction = i32()
+        local volume_sweep = u8()
+        local sweep_time = i32()
+        local sweep_direction = i32()
+        local sweep_shift = i32()
+        local duty = u8()
+        local output_level = i32()
+        local waveform = i32()
+        i32()                          -- legacy noise shift clock
+        local counter_step = i32()
+        i32()                          -- noise dividing ratio
+
+        if type_ == 0 then             -- itSquare
+            duty_instrument.nr10 = ((sweep_time & 7) << 4)
+                | ((sweep_direction == 1 and 1 or 0) << 3)
+                | (sweep_shift & 7)
+            duty_instrument.nr11 = ((duty & 3) << 6) | (length & 0x3f)
+            duty_instrument.nr12 = ((initial_volume & 0x0f) << 4)
+                | ((volume_direction == 0 and 1 or 0) << 3)
+                | (volume_sweep & 7)
+            duty_instrument.highmask = 0x80
+                | (length_enabled and 0x40 or 0)
+        elseif type_ == 1 then         -- itWave
+            wave_instrument.length = length & 0xff
+            wave_instrument.level = (output_level & 3) << 5
+            wave_instrument.waveform = waveform & 0x0f
+            wave_instrument.highmask = 0x80
+                | (length_enabled and 0x40 or 0)
+        elseif type_ == 2 then         -- itNoise
+            noise_instrument.envelope = ((initial_volume & 0x0f) << 4)
+                | ((volume_direction == 0 and 1 or 0) << 3)
+                | (volume_sweep & 7)
+            noise_instrument.attributes = (length & 0x3f)
+                | (length_enabled and 0x40 or 0)
+                | (counter_step == 1 and 0x80 or 0)
+        else
+            error("invalid hUGETracker instrument type " .. type_)
+        end
+        song.instruments.duty[index] = duty_instrument
+        song.instruments.wave[index] = wave_instrument
+        song.instruments.noise[index] = noise_instrument
+    end
+
+    for wave = 1, 16 do
+        local samples = {}
+        for sample = 1, 32 do samples[sample] = u8() & 0x0f end
+        u8()                           -- historical trailing sample
+        song.waves[wave] = samples
+    end
+    song.ticks_per_row = i32()
+
+    local pattern_count = i32()
+    assert(pattern_count >= 0, "invalid hUGETracker pattern count")
+    for pattern = 0, pattern_count - 1 do
+        local rows = {}
+        for row = 1, 64 do
+            local note = i32()
+            local instrument = i32()
+            local effect_code = i32()
+            local effect_params = u8()
+            if note < 0 or note > 71 then note = huge.NO_NOTE end
+            if instrument < 0 or instrument > 15 then instrument = 0 end
+            rows[row] = huge.dn(note, instrument,
+                ((effect_code & 0x0f) << 8) | effect_params)
+        end
+        song.patterns[pattern] = rows
+    end
+
+    for channel = 1, 4 do
+        local count = i32()
+        assert(count > 0, "invalid hUGETracker order length")
+        local order = {}
+        for index = 1, count do order[index] = i32() end
+        order[#order] = nil            -- v1 stores a historical sentinel row
+        song.orders[channel] = order
+    end
+
+    -- UGE v4 changed channel 4 from pitched notes to hUGEDriver's polynomial
+    -- counter note codes. Reproduce hUGETracker's v1-to-v4 upgrade for every
+    -- pattern used by the noise channel.
+    local noise_codes = {
+        11, 15, 19, 23, 27, 31, 35, 39,
+        43, 47, 51, 55, 59, 61, 62, 63,
+    }
+    local converted = {}
+    for _, pattern in ipairs(song.orders[4]) do
+        if not converted[pattern] then
+            converted[pattern] = true
+            for _, cell in ipairs(song.patterns[pattern]) do
+                local note = cell[1] & 0x7f
+                local instrument = (cell[2] >> 4) & 0x0f
+                if note <= 71 and instrument ~= 0 then
+                    local period = huge.note_table[note + 1]
+                    cell[1] = noise_codes[(period >> 7) + 1]
+                end
+            end
+        end
+    end
+
+    assert(position - 1 == #data, "unexpected trailing hUGETracker module data")
+    return song
+end
+
+-- Emit a v1 song imported by huge.read_uge() in the public hUGEDriver song
+-- layout.  The caller chooses the location by selecting a section first.
+function huge.song(song, name)
+    assert(type(song) == "table" and song.version == 1,
+        "huge.song expects a hUGETracker v1 module")
+    name = name or ("hUGE_song_" .. id())
+
+    local order_labels = {}
+    local pattern_labels = {}
+    for channel = 1, 4 do
+        order_labels[channel] = name .. "_order" .. channel
+    end
+    for pattern in pairs(song.patterns) do
+        pattern_labels[pattern] = name .. "_pattern" .. pattern
+    end
+    local duty_instruments = name .. "_duty_instruments"
+    local wave_instruments = name .. "_wave_instruments"
+    local noise_instruments = name .. "_noise_instruments"
+    local routines = name .. "_routines"
+    local waves = name .. "_waves"
+
+    label(name)
+    byte(song.ticks_per_row, song.ticks_per_row,
+        song.ticks_per_row, song.ticks_per_row)
+    local order_count = 0
+    for channel = 1, 4 do
+        order_count = math.max(order_count, #song.orders[channel])
+    end
+    assert(order_count > 0 and order_count <= 128,
+        "hUGETracker order count must fit in one byte")
+    byte(order_count * 2)
+    word(order_labels)
+    word(duty_instruments, wave_instruments, noise_instruments)
+    word(routines, waves)
+
+    for channel = 1, 4 do
+        label(order_labels[channel])
+        local pointers = {}
+        for index, pattern in ipairs(song.orders[channel]) do
+            assert(pattern_labels[pattern],
+                "hUGETracker order references missing pattern " .. pattern)
+            pointers[index] = pattern_labels[pattern]
+        end
+        word(pointers)
+    end
+
+    label(duty_instruments)
+    for _, instrument in ipairs(song.instruments.duty) do
+        byte(instrument.nr10, instrument.nr11, instrument.nr12)
+        word(0)                        -- v1 has no instrument subpatterns
+        byte(instrument.highmask)
+    end
+
+    label(wave_instruments)
+    for _, instrument in ipairs(song.instruments.wave) do
+        byte(instrument.length, instrument.level, instrument.waveform)
+        word(0)
+        byte(instrument.highmask)
+    end
+
+    label(noise_instruments)
+    for _, instrument in ipairs(song.instruments.noise) do
+        byte(instrument.envelope)
+        word(0)
+        byte(instrument.attributes, 0, 0)
+    end
+
+    label(routines)
+    for _ = 1, 16 do byte(0xc9) end    -- RET
+    label(waves)
+    for _, samples in ipairs(song.waves) do
+        local packed = {}
+        for sample = 1, 32, 2 do
+            packed[#packed + 1] = (samples[sample] << 4)
+                | samples[sample + 1]
+        end
+        byte(packed)
+    end
+
+    local keys = {}
+    for pattern in pairs(song.patterns) do keys[#keys + 1] = pattern end
+    table.sort(keys)
+    for _, pattern in ipairs(keys) do
+        label(pattern_labels[pattern])
+        for _, row in ipairs(song.patterns[pattern]) do byte(row) end
+    end
+
+    return name
+end
+
+function huge.init_sound()
+    ld a,#0x80
+    ldh NR52,a
+    ld a,#0xff
+    ldh NR51,a
+    ld a,#0x77
+    ldh NR50,a
+end
+
+-- Full hUGEDriver port. The instruction stream below is kept byte-for-byte
+-- equivalent to upstream hUGEDriver while using lz80 syntax and relocatable
+-- ROM/WRAM symbols.
+function huge.driver()
+    if huge.driver_emitted then return end
+    huge.driver_emitted = true
+
+    local function w(local_name, size)
+        return gb.wram("hUGE_" .. local_name, size)
+    end
+
+    local order_cnt = w("order_cnt", 1)
+    hUGE_start_song_descriptor_pointers = gb.wram_next
+    local order1 = w("order1", 2)
+    local order2 = w("order2", 2)
+    local order3 = w("order3", 2)
+    local order4 = w("order4", 2)
+    local duty_instruments = w("duty_instruments", 2)
+    local wave_instruments = w("wave_instruments", 2)
+    local noise_instruments = w("noise_instruments", 2)
+    local routines = w("routines", 2)
+    local waves = w("waves", 2)
+    hUGE_end_song_descriptor_pointers = gb.wram_next
+
+    local pattern1 = w("pattern1", 2)
+    local pattern2 = w("pattern2", 2)
+    local pattern3 = w("pattern3", 2)
+    local pattern4 = w("pattern4", 2)
+    local ticks_per_row = w("ticks_per_row", 4)
+    local current_wave = w("current_wave", 1)
+    hUGE_NO_WAVE = 100
+
+    hUGE_start_zero = gb.wram_next
+    local mute_channels = w("mute_channels", 1)
+    local counter = w("counter", 1)
+    local tick = w("tick", 1)
+    local row_break = w("row_break", 1)
+    local next_order = w("next_order", 1)
+    local row = w("row", 1)
+    local current_order = w("current_order", 1)
+    hUGE_channels = gb.wram_next
+
+    local channel_period1 = w("channel_period1", 2)
+    local toneporta_target1 = w("toneporta_target1", 2)
+    local channel_note1 = w("channel_note1", 1)
+    local highmask1 = w("highmask1", 1)
+    local vibrato_tremolo_phase1 = w("vibrato_tremolo_phase1", 1)
+    local envelope1 = w("envelope1", 1)
+    local table1 = w("table1", 2)
+    local table_row1 = w("table_row1", 1)
+    w("channel1_pad", 5)
+
+    local channel_period2 = w("channel_period2", 2)
+    local toneporta_target2 = w("toneporta_target2", 2)
+    local channel_note2 = w("channel_note2", 1)
+    local highmask2 = w("highmask2", 1)
+    local vibrato_tremolo_phase2 = w("vibrato_tremolo_phase2", 1)
+    local envelope2 = w("envelope2", 1)
+    local table2 = w("table2", 2)
+    local table_row2 = w("table_row2", 1)
+    w("channel2_pad", 5)
+
+    local channel_period3 = w("channel_period3", 2)
+    local toneporta_target3 = w("toneporta_target3", 2)
+    local channel_note3 = w("channel_note3", 1)
+    local highmask3 = w("highmask3", 1)
+    local vibrato_tremolo_phase3 = w("vibrato_tremolo_phase3", 1)
+    local envelope3 = w("envelope3", 1)
+    local table3 = w("table3", 2)
+    local table_row3 = w("table_row3", 1)
+    w("channel3_pad", 5)
+
+    local channel_period4 = w("channel_period4", 2)
+    local toneporta_target4 = w("toneporta_target4", 2)
+    local channel_note4 = w("channel_note4", 1)
+    local highmask4 = w("highmask4", 1)
+    local step_width4 = w("step_width4", 1)
+    local vibrato_tremolo_phase4 = w("vibrato_tremolo_phase4", 1)
+    local envelope4 = w("envelope4", 1)
+    local table4 = w("table4", 2)
+    local table_row4 = w("table_row4", 1)
+    w("channel4_pad", 4)
+    hUGE_end_zero = gb.wram_next
+
+    huge.current_wave = current_wave
+    huge.mute_mask = mute_channels
+
+    local previous_section = cpu.section_current
+    location(rom0)
+    section{ "hUGEDriver" }
+
+
+     -- Sets up hUGEDriver to play a song.
+     -- !!! BE SURE THAT `hUGE_dosound` WILL NOT BE CALLED WHILE THIS RUNS !!!
+     -- Param: HL = Pointer to the "song descriptor" you wish to load (typically exported by hUGETracker).
+     -- Destroys: AF C DE HL
+    @hUGE_init
+        ld de,#hUGE_ticks_per_row
+
+        ldi a,(hl) -- tempo
+        ld (de),a
+        inc de
+        ldi a,(hl) -- tempo
+        ld (de),a
+        inc de
+        ldi a,(hl) -- tempo
+        ld (de),a
+        inc de
+        ldi a,(hl) -- tempo
+        ld (de),a
+        inc de
+
+        ldi a,(hl)
+        ld hUGE_order_cnt,a
+
+        ld c,#hUGE_end_song_descriptor_pointers - (hUGE_start_song_descriptor_pointers)
+        ld de,#hUGE_order1
+
+    @hUGE_init_copy_song_descriptor_loop
+        ldi a,(hl)
+        ld (de),a
+        inc de
+        dec c
+        jr nz, hUGE_init_copy_song_descriptor_loop
+
+     -- Zero some ram
+        ld c,#hUGE_end_zero - hUGE_start_zero
+        ld hl,#hUGE_start_zero
+        xor a
+    @hUGE_init_fill_loop
+        ldi (hl),a
+        dec c
+        jr nz, hUGE_init_fill_loop
+
+     -- These two are zero-initialized by the loop above, so these two writes must come after
+        ld a,#0b11110000
+        ld hUGE_envelope1,a
+        ld hUGE_envelope2,a
+
+     -- Force loading the next wave
+        ld a,#hUGE_NO_WAVE
+        ld hUGE_current_wave,a
+
+     -- Preview mode needs to load the order ID from memory
+        ld c,#0
+     -- fallthrough (load the pattern pointers)
+
+     -- Sets all 4 pattern pointers from a certain index in the respective 4 orders.
+     -- Param: C = The index (in increments of 2)
+     -- Destroy: AF DE HL
+    @hUGE_load_patterns
+
+        ld hl,#hUGE_order1
+        ld de,#hUGE_pattern1
+        call hUGE_load_patterns_load_pattern
+
+        ld hl,#hUGE_order2
+        call hUGE_load_patterns_load_pattern
+
+        ld hl,#hUGE_order3
+        call hUGE_load_patterns_load_pattern
+
+        ld hl,#hUGE_order4
+     -- fallthrough
+
+    @hUGE_load_patterns_load_pattern
+        ldi a,(hl)
+        add c
+        ld h,(hl)
+        ld l,a
+        adc a,h
+        sub l
+        ld h,a
+
+        ldi a,(hl)
+        ld (de),a
+        inc de
+        ld a,(hl)
+        ld (de),a
+        inc de
+        ret
+
+
+     -- Sets a channel's muting status.
+     -- Muted hUGE_channels are left entirely alone by the driver, so that you can repurpose them,
+     -- for example for sound effects, CH3 sample playback, etc.
+     -- If muting the channel, the note being played will be cut.
+     -- Param: B = Which channel to enable; 0 for CH1, 1 for CH2, etc.
+     -- Param: C = 0 to unmute the channel, 1 to mute it
+     -- Destroy: A C E HL
+    @hUGE_mute_channel
+        ld e,#0xfe
+        ld a,b
+        ora a
+        jr z, hUGE_mute_channel_enable_cut
+    @hUGE_mute_channel_enable_loop
+        sla c
+        rlc e
+        dec a
+        jr nz, hUGE_mute_channel_enable_loop
+    @hUGE_mute_channel_enable_cut
+        ld a,hUGE_mute_channels
+        ana e
+        ora c
+        ld hUGE_mute_channels,a
+        ana c
+        jp nz, hUGE_note_cut
+        ret
+
+
+     -- Reads a pattern's current hUGE_row.
+     -- Param: BC = Pointer to the pattern
+     -- Param: [hUGE_row] = Index of the current hUGE_row
+     -- Return: A = Note ID
+     -- Return: B = Instrument (upper nibble) & effect code (lower nibble)
+     -- Return: C = Effect parameter
+     -- Destroy: HL
+    @hUGE_get_current_row
+        ld a,hUGE_row
+    @hUGE_get_current_row_row_in_a
+        ld h,a
+     -- Multiply by 3 for the note value
+        add h
+        add h
+
+        ld h,#0
+        ld l,a
+        add hl,bc -- HL now points at the 3rd byte of the note
+        ldi a,(hl)
+        ld b,(hl)
+        inc hl
+        ld c,(hl)
+        ret
+
+     -- Gets the "period" of a pattern's current note.
+     -- Param: HL = Pointer to the pattern pointer
+     -- Param: [hUGE_row] = Index of the current hUGE_row
+     -- Param: DE = Location to write the note's index to, if applicable
+     -- Return: HL = Note's period
+     -- Return: CF = Set if and only if a "valid" note (i.e. not a "rest")
+     -- Return: [DE] = Note's ID, not updated if a "rest"
+     -- Return: B = Instrument (upper nibble) & effect code (lower nibble)
+     -- Return: C = Effect parameter
+     -- Destroy: AF
+    @hUGE_get_current_note
+        ldi a,(hl)
+        ld c,a
+        ld b,(hl)
+
+        call hUGE_get_current_row
+        ld hl,#0
+
+     -- If the note we found is greater than 72, then it's not a valid note
+     -- and nothing needs to be updated.
+        cp #72
+        ret nc
+
+     -- Store the loaded note value in channel_noteX
+        ld (de),a
+
+     -- Gets a note's "period", i.e. what should be written to NRx3 and NRx4.
+     -- Param: A = Note ID
+     -- Return: HL = Note's period
+     -- Return: CF = 1
+     -- Destroy: AF
+    @hUGE_get_note_period
+        add a -- double it to get index into hi/lo table
+        add #((hUGE_note_table) & 0xff)
+        ld l,a
+        adc a,#(((hUGE_note_table) >> 8) & 0xff)
+        sub l
+        ld h,a
+        ldi a,(hl)
+        ld h,(hl)
+        ld l,a
+
+        scf
+        ret
+
+     -- Gets a note's "polynomial hUGE_counter", i.e. what should be written to NR44.
+     -- Param: A = Note ID
+     -- Return: A = Note's poly
+     -- Destroy: F HL
+    @hUGE_get_note_poly
+     -- Invert the order of the numbers
+        add #192 -- (255 - 63)
+        cpl
+
+     -- Thanks to RichardULZ for this formula
+     -- https://docs.google.com/spreadsheets/d/1O9OTAHgLk1SUt972w88uVHp44w7HKEbS/edit#gid=75028951
+     -- if A > 7 then begin
+     --   B := (A-4) div 4;
+     --   C := (A mod 4)+4;
+     --   A := (C or (B shl 4))
+     -- end;
+
+     -- if A < 7 then return
+        cp #7
+        ret c
+
+        ld h,a
+
+     -- B := (A-4) div 4;
+        srl a
+        srl a
+        dec a
+        ld l,a
+
+     -- C := (A mod 4)+4;
+        ld a,h
+        ana #3 -- mod 4
+        add #4
+
+     -- A := (C or (B shl 4))
+        swap l
+        ora l
+        ret
+
+
+     -- Computes the pointer to a member of a channel.
+     -- Param: B = Which channel (0 = CH1, 1 = CH2, etc.)
+     -- Param: D = Offset within the channel struct
+     -- Return: HL = Pointer to the channel's member
+     -- Destroy: AF
+    @hUGE_ptr_to_channel_member
+        ld a,b
+        swap a
+        add d
+        add #((hUGE_channels) & 0xff)
+        ld l,a
+        adc a,#(((hUGE_channels) >> 8) & 0xff)
+        sub l
+        ld h,a
+        ret
+
+
+     -- TODO: Make this take HL instead of DE
+
+     -- Updates a channel's frequency, and possibly restarts it.
+     -- Note that CH4 is *never* restarted by this!
+     -- Param: B = Which channel to update (0 = CH1, 1 = CH2, etc.)
+     -- Param: (for CH4) E = Note ID
+     -- Param: (otherwise) DE = Note period
+     -- Destroy: AF C
+     -- Destroy: (for CH4) HL
+    @hUGE_update_channel_freq
+        ld h,#0
+    @hUGE_update_channel_freq_nonzero_highmask
+        ld c,b
+        ld a,hUGE_mute_channels
+        dec c
+        jr z, hUGE_update_channel_freq_update_channel2
+        dec c
+        jr z, hUGE_update_channel_freq_update_channel3
+        dec c
+        jr z, hUGE_update_channel_freq_update_channel4
+
+    @hUGE_update_channel_freq_update_channel1
+        bit 0, a
+        ret nz
+
+        ld a,e
+        ld hUGE_channel_period1,a
+        ldh NR13,a
+        ld a,d
+        ld !hUGE_channel_period1+1,a
+        ora h
+        ldh NR14,a
+        ret
+
+    @hUGE_update_channel_freq_update_channel2
+        bit 1, a
+        ret nz
+
+        ld a,e
+        ld hUGE_channel_period2,a
+        ldh NR23,a
+        ld a,d
+        ld !hUGE_channel_period2+1,a
+        ora h
+        ldh NR24,a
+        ret
+
+    @hUGE_update_channel_freq_update_channel3
+        bit 2, a
+        ret nz
+
+        ld a,e
+        ld hUGE_channel_period3,a
+        ldh NR33,a
+        ld a,d
+        ld !hUGE_channel_period3+1,a
+        ora h
+        ldh NR34,a
+        ret
+
+    @hUGE_update_channel_freq_update_channel4
+        bit 3, a
+        ret nz
+
+        ld d,h
+        ld a,e
+        call hUGE_get_note_poly
+        ld hl,#hUGE_step_width4
+        ora (hl)
+        ldh NR43,a
+
+        ld a,d
+        ldh NR44,a
+        ret
+
+
+    @hUGE_play_note_routines
+        jr hUGE_play_ch1_note
+        jr hUGE_play_ch2_note
+        jr hUGE_play_ch3_note
+        jr hUGE_play_ch4_note
+
+    @hUGE_play_ch1_note
+        ld a,hUGE_mute_channels
+        bit 0, a
+        ret nz
+
+     -- Play a note on channel 1 (square wave)
+        ld hl,#hUGE_channel_period1
+        ldi a,(hl)
+        ldh NR13,a
+
+     -- Get the highmask and apply it.
+        ld a,hUGE_highmask1
+        ora (hl)
+        ldh NR14,a
+        ret
+
+    @hUGE_play_ch2_note
+        ld a,hUGE_mute_channels
+        bit 1, a
+        ret nz
+
+     -- Play a note on channel 2 (square wave)
+        ld hl,#hUGE_channel_period2
+        ldi a,(hl)
+        ldh NR23,a
+
+     -- Get the highmask and apply it.
+        ld a,hUGE_highmask2
+        ora (hl)
+        ldh NR24,a
+        ret
+
+    @hUGE_play_ch3_note
+        ld a,hUGE_mute_channels
+        bit 2, a
+        ret nz
+
+     -- Triggering CH3 while it's reading a byte corrupts wave RAM.
+     -- To avoid this, we kill the wave channel (0 → NR30), then re-enable it.
+     -- This way, CH3 will be paused when we trigger it by writing to NR34.
+     -- TODO: what if `hUGE_highmask3` bit 7 is not set, though?
+
+        ldh a,NR51
+        push af
+        ana #0b10111011
+        ldh NR51,a
+
+        xor a
+        ldh NR30,a
+        cpl
+        ldh NR30,a
+
+     -- Play a note on channel 3 (waveform)
+        ld hl,#hUGE_channel_period3
+        ldi a,(hl)
+        ldh NR33,a
+
+     -- Get the highmask and apply it.
+        ld a,hUGE_highmask3
+        ora (hl)
+        ldh NR34,a
+
+        pop af
+        ldh NR51,a
+
+        ret
+
+    @hUGE_play_ch4_note
+        ld a,hUGE_mute_channels
+        bit 3, a
+        ret nz
+
+     -- Play a "note" on channel 4 (noise)
+        ld a,hUGE_channel_period4
+        ldh NR43,a
+
+     -- Get the highmask and apply it.
+        ld a,hUGE_highmask4
+        ldh NR44,a
+
+        ret
+
+     -- Executes a hUGE_row of a table.
+     -- Param: BC = Pointer to which table to run
+     -- Param: [HL] = Which hUGE_row the table is on
+     -- Param: E = Which channel to run the table on
+    @hUGE_do_table
+     -- Increment the current hUGE_row
+        ld a,(hl)
+        inc (hl)
+        push hl
+
+     -- Grab the cell values, return if no note.
+     -- Save BC for doing effects.
+        call hUGE_get_current_row_row_in_a
+        pop hl -- TODO: don't trash HL in the first place
+        push bc
+
+        ld d,a
+
+     -- If there's a jump, change the current hUGE_row
+        ld a,b
+        ana #0xF0
+        bit 7, d
+        jr z, hUGE_do_table_no_steal
+        res 7, d
+        set 0, a
+    @hUGE_do_table_no_steal
+        swap a
+        jr z, hUGE_do_table_no_jump
+        dec a
+        ld (hl),a
+
+    @hUGE_do_table_no_jump
+        ld a,d
+     -- If there's no note, don't update channel frequencies
+        cp #90
+        jr z, hUGE_do_table_no_note2
+
+        sub #36 -- bring the number back in the range of -36, +35
+
+        ld b,e
+        ld e,a
+        ld d,#4
+        call hUGE_ptr_to_channel_member
+        ld a,e
+        add (hl)
+        inc hl
+        ld d,(hl)
+
+     -- A = note index
+     -- B = channel
+     -- D = highmask
+     -- pushed = instrument/effect
+
+     -- If ch4, don't get note period (hUGE_update_channel_freq gets the poly for us)
+        ld e,a
+        inc b
+        bit 2, b
+        ld c,d
+        jr nz, hUGE_do_table_is_ch4
+
+        call hUGE_get_note_period
+        ld d,h
+        ld e,l
+    @hUGE_do_table_is_ch4
+        ld h,c
+        res 7, h
+        dec b
+        call hUGE_update_channel_freq_nonzero_highmask
+
+    @hUGE_do_table_no_note
+        ld e,b
+    @hUGE_do_table_no_note2
+        pop bc
+
+        ld d,#1
+        jr hUGE_do_effect_no_set_offset
+
+     -- Performs an effect on a given channel.
+     -- Param: E = Channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: B = Effect type (upper 4 bits ignored)
+     -- Param: C = Effect parameters (depend on FX type)
+     -- Destroy: AF BC DE HL
+    @hUGE_do_effect
+     -- Return immediately if effect is 000
+        ld d,#0
+    @hUGE_do_effect_no_set_offset
+        ld a,b
+        ana #0x0F
+        ora c
+        ret z
+
+     -- Strip the instrument bits off leaving only effect code
+        ld a,b
+        ana #0x0F
+     -- Multiply by 2 to get offset into table
+        add a
+
+        add #((hUGE_do_effect_jump) & 0xff)
+        ld l,a
+        adc a,#(((hUGE_do_effect_jump) >> 8) & 0xff)
+        sub l
+        ld h,a
+
+        ldi a,(hl)
+        ld h,(hl)
+        ld l,a
+        bit 0, d
+        jr z, hUGE_do_effect_no_offset
+        inc hl
+    @hUGE_do_effect_no_offset
+        ld b,e
+        ld a,hUGE_tick
+        ora a -- We can return right off the bat if it's hUGE_tick zero
+        jp (hl)
+
+    @hUGE_do_effect_jump
+     -- Jump table for effect
+        dc.w hUGE_fx_arpeggio --0xy
+        dc.w hUGE_fx_porta_up --1xy
+        dc.w hUGE_fx_porta_down --2xy
+        dc.w hUGE_fx_toneporta --3xy
+        dc.w hUGE_fx_vibrato --4xy
+        dc.w hUGE_fx_set_master_volume --5xy ; global
+        dc.w hUGE_fx_call_routine --6xy
+        dc.w hUGE_fx_note_delay --7xy
+        dc.w hUGE_fx_set_pan --8xy ; global
+        dc.w hUGE_fx_set_duty --9xy
+        dc.w hUGE_fx_vol_slide --Axy
+        dc.w hUGE_fx_pos_jump --Bxy ; global
+        dc.w hUGE_fx_set_volume --Cxy
+        dc.w hUGE_fx_pattern_break --Dxy ; global
+        dc.w hUGE_fx_note_cut --Exy
+        dc.w hUGE_fx_set_speed --Fxy ; global
+
+
+     -- Processes (global) effect 5, "set master volume".
+     -- Param: C = Value to write to NR50
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: A
+    @hUGE_fx_set_master_volume
+        ret nz
+
+        ld a,c
+        ldh NR50,a
+        ret
+
+
+     -- Processes effect 6, "call routine".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = Routine ID
+     -- Param: A = Current hUGE_tick
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: Anything the routine does
+    @hUGE_fx_call_routine
+        nop -- In place of `ret cc`. Allows to be used in subpatterns
+
+        ld hl,#hUGE_routines
+        ld a,#0x0f
+        ana c
+        add a
+        add (hl)
+        ld e,a
+        inc hl
+        ld a,#0x0
+        adc a,(hl)
+        ld h,a
+        ld l,e
+
+        ldi a,(hl)
+        ld h,(hl)
+        ld l,a
+
+        ld d,b
+        ld e,c -- SDCC compatibility
+
+        ld a,hUGE_tick
+        ora a -- set zero flag if hUGE_tick 0 for compatibility
+        jp (hl)
+
+
+     -- Processes (global) effect 8, "set pan".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = Value to write to NR51
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: A
+    @hUGE_fx_set_pan
+        ret nz
+
+     -- Pretty simple. The editor can create the correct value here without a bunch
+     -- of bit shifting manually.
+        ld a,c
+        ldh NR51,a
+        ret
+
+
+     -- Processes effect 9, "set duty cycle".
+     -- Param: B = Current channel ID (0 = CH1, anything else = CH2)
+     -- Param: C = Value to write to NRx1
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: AF
+    @hUGE_fx_set_duty
+        ret nz
+
+     -- 0x900 = 12.5%
+     -- 0x940 = 25%
+     -- 0x980 = 50%
+     -- 0x9C0 = 75%
+
+        ld a,hUGE_mute_channels
+        dec b
+        jr z, hUGE_fx_set_duty_chan2
+        dec b
+        jr z, hUGE_fx_set_duty_chan3
+        dec b
+        jr z, hUGE_fx_set_duty_chan4
+    @hUGE_fx_set_duty_chan1
+        bit 0, a
+        ret nz
+        ld a,c
+        ldh NR11,a
+        ret
+    @hUGE_fx_set_duty_chan2
+        bit 1, a
+        ret nz
+        ld a,c
+        ldh NR21,a
+        ret
+    @hUGE_fx_set_duty_chan4
+        bit 3, a
+        ret nz
+        ldh a,NR43
+        res 3, a
+        ora c
+        ldh NR43,a
+        ret
+    @hUGE_fx_set_duty_chan3
+        bit 2, a
+        ret nz
+
+        ld a,c
+        ld hl,#hUGE_current_wave
+        call hUGE_update_ch3_waveform
+
+        ld b,#2
+        jp hUGE_play_note
+
+    @hUGE_update_ch3_waveform
+        ld (hl),a
+     -- Get pointer to new wave
+        swap a
+        ld hl,#hUGE_waves
+        add (hl)
+        inc hl
+        ld h,(hl)
+        ld l,a
+        adc a,h
+        sub l
+        ld h,a
+
+        ldh a,NR51
+        push af
+        ana #0b10111011
+        ldh NR51,a
+
+        xor a
+        ldh NR30,a
+
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 0,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 1,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 2,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 3,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 4,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 5,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 6,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 7,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 8,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 9,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 10,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 11,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 12,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 13,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 14,a
+        ldi a,(hl)
+        ldh !AUD3WAVERAM + 15,a
+
+        ld a,#0b10000000
+        ldh NR30,a
+
+        pop af
+        ldh NR51,a
+
+        ret
+
+     -- Processes (global) effect F, "set speed".
+     -- Param: C = New amount of ticks per hUGE_row
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: A
+    @hUGE_fx_set_speed
+        ret nz
+
+        ld a,c
+        ld hl,#hUGE_ticks_per_row
+        ldi (hl),a
+        ldi (hl),a
+        ldi (hl),a
+        ld (hl),c
+        ret
+
+
+
+    @hUGE_set_position
+     -- Processes (global) effect B, "position jump".
+     -- Param: C = ID of the order to jump to
+     -- Destroy: A
+    @hUGE_fx_pos_jump
+        ret nz
+
+        ld hl,#hUGE_row_break
+
+        ora (hl) -- a = 0 since we know we're on hUGE_tick 0
+        jr nz, hUGE_fx_pos_jump_already_broken
+        ld (hl),#1
+    @hUGE_fx_pos_jump_already_broken
+        inc hl
+        ld (hl),c
+        ret
+
+
+     -- Processes (global) effect D, "pattern break".
+     -- Param: C = ID of the next order's hUGE_row to start on
+     -- Destroy: A
+    @hUGE_fx_pattern_break
+        ret nz
+
+        ld a,c
+        ld hUGE_row_break,a
+        ret
+
+
+     -- Processes effect E, "note cut".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = Tick to cut the note on
+     -- Param: A = Current hUGE_tick
+     -- Destroy: A
+    @hUGE_fx_note_cut
+        cp c
+        ret nz
+
+     -- check channel mute
+
+        ld a,b
+     -- 0 → 0x01, 1 → 0x02, 2 → 0x04, 3 → 0x05
+     -- Overall, these two instructions add 1 to the number.
+     -- However, the first instruction will generate a carry for inputs of 0x02 and 0x03;
+     -- the `adc` will pick the carry up, and "separate" 0 / 1 from 2 / 3 by an extra 1.
+     -- Luckily, this yields correct results for 0 (0x01), 1 (0x02), and 2 (0x03 + 1 = 0x04).
+     -- We'll see about fixing 3 afterwards.
+        add #-2
+        adc a,#3
+     -- After being shifted left, the inputs are 0x02, 0x04, 0x08 and 0x0A; all are valid BCD,
+     -- except for 0x0A. Since we just performed `add a`, DAA will correct the latter to 0x10.
+     -- (This should be correctly emulated everywhere, since the inputs are identical to
+     -- "regular" BCD.)
+     -- When shifting the results back, we'll thus get 0x01, 0x02, 0x04 and 0x08!
+        add a
+        daa
+        rra
+        ld d,a
+        ld a,hUGE_mute_channels
+        cpl
+        ana d
+        ret z
+
+     -- fallthrough
+
+
+     -- Cuts note on a channel.
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Destroy: AF HL
+    @hUGE_note_cut
+        ld a,b
+        add a
+        add a
+        add b -- multiply by 5
+        add #((NR12) & 0xff)
+        ld l,a
+        ld h,#(((NR12) >> 8) & 0xff)
+        xor a
+        ldi (hl),a
+        ld a,b
+        cp #2
+        ret z -- return early if CH3-- no need to retrigger note
+
+     -- Retrigger note
+        inc l -- Not `inc hl` because H stays constant (= $FF)
+        ld (hl),#0xFF
+        ret
+
+
+     -- Processes effect C, "set volume".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = Volume to set the channel to
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: AF BC
+    @hUGE_fx_set_volume
+        ret nz -- Return if we're not on hUGE_tick zero.
+
+        swap c
+        ld a,hUGE_mute_channels
+        dec b
+        jr z, hUGE_fx_set_volume_set_chn_2_vol
+        dec b
+        jr z, hUGE_fx_set_volume_set_chn_3_vol
+        dec b
+        jr z, hUGE_fx_set_volume_set_chn_4_vol
+
+    @hUGE_fx_set_volume_set_chn_1_vol
+        bit 0, a
+        ret nz
+
+        ldh a,NR12
+        ana #0b00001111
+        ora c
+        ldh NR12,a
+        jp hUGE_play_ch1_note
+
+    @hUGE_fx_set_volume_set_chn_2_vol
+        bit 1, a
+        ret nz
+
+        ldh a,NR22
+        ana #0b00001111
+        ora c
+        ldh NR22,a
+        jp hUGE_play_ch2_note
+
+    @hUGE_fx_set_volume_set_chn_3_vol
+        bit 2, a
+        ret nz
+
+     -- "Quantize" the more finely grained volume control down to one of 4 values.
+        ld a,c
+        cp #10 << 4
+        jr nc, hUGE_fx_set_volume_one
+        cp #5 << 4
+        jr nc, hUGE_fx_set_volume_two
+        ora a
+        jr z, hUGE_fx_set_volume_done -- Zero maps to zero
+    @hUGE_fx_set_volume_three
+        ld a,#0b01100000
+        jr hUGE_fx_set_volume_done
+    @hUGE_fx_set_volume_two
+        ld a,#0b01000000
+        jr hUGE_fx_set_volume_done
+    @hUGE_fx_set_volume_one
+        ld a,#0b00100000
+    @hUGE_fx_set_volume_done
+        ldh NR32,a
+        ret
+
+    @hUGE_fx_set_volume_set_chn_4_vol
+        bit 3, a
+        ret nz
+
+        ld a,c
+        ldh NR42,a
+        jp hUGE_play_ch4_note
+
+
+     -- Processes effect 4, "vibrato".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = FX param
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: AF B DE HL
+    @hUGE_fx_vibrato
+        ret z
+
+     -- Extremely poor man's vibrato.
+     -- Speed values:
+     -- (0x0  = 1.0)
+     -- (0x1  = 0.5)
+     -- (0x3  = 0.25)
+     -- (0x7  = 0.125)
+     -- (0xf  = 0.0625)
+        ld d,#4
+        call hUGE_ptr_to_channel_member
+
+        ld a,c
+        ana #0b11110000
+        swap a
+        ld e,a
+
+        ld a,hUGE_counter
+        ana e
+        ld a,(hl)
+        jr z, hUGE_fx_vibrato_go_up
+    @hUGE_fx_vibrato_restore
+        call hUGE_get_note_period
+        ld d,h
+        ld e,l
+        jr hUGE_fx_vibrato_finish_vibrato
+    @hUGE_fx_vibrato_go_up
+        call hUGE_get_note_period
+        ld a,c
+        ana #0b00001111
+        add l
+        ld e,a
+        adc a,h
+        sub e
+        ld d,a
+    @hUGE_fx_vibrato_finish_vibrato
+        jp hUGE_update_channel_freq
+
+
+     -- Processes effect 0, "arpeggio".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = Offsets in semitones (each nibble)
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: AF B DE HL
+    @hUGE_fx_arpeggio
+        nop -- In place of `ret cc`. Allows to be used in subpatterns
+
+        ld d,#4
+        call hUGE_ptr_to_channel_member
+        ld d,(hl)
+
+        ld a,hUGE_counter
+        dec a
+
+     -- TODO: A crappy modulo, because it's not a multiple of four :(
+
+        jr hUGE_fx_arpeggio_test_greater_than_two
+    @hUGE_fx_arpeggio_greater_than_two
+        sub #3
+    @hUGE_fx_arpeggio_test_greater_than_two
+        cp #3
+        jr nc, hUGE_fx_arpeggio_greater_than_two
+
+     -- Multiply by 2 to get offset into table
+        add a
+
+        add #((hUGE_fx_arpeggio_arp_options) & 0xff)
+        ld l,a
+        adc a,#(((hUGE_fx_arpeggio_arp_options) >> 8) & 0xff)
+        sub l
+        ld h,a
+        jp (hl)
+
+    @hUGE_fx_arpeggio_arp_options
+        jr hUGE_fx_arpeggio_set_arp1
+        jr hUGE_fx_arpeggio_set_arp2
+     -- No `jr .reset_arp`
+
+    @hUGE_fx_arpeggio_reset_arp
+        ld a,d
+        jr hUGE_fx_arpeggio_finish_skip_add
+
+    @hUGE_fx_arpeggio_set_arp2
+        ld a,c
+        swap a
+        dc.b 0xFE -- cp <imm8> gobbles next byte
+
+    @hUGE_fx_arpeggio_set_arp1
+        ld a,c
+    @hUGE_fx_arpeggio_finish_arp
+        ana #0b00001111
+        add d
+    @hUGE_fx_arpeggio_finish_skip_add
+        call hUGE_get_note_period
+        ld d,h
+        ld e,l
+        jp hUGE_update_channel_freq
+
+
+     -- Processes effect 1, "portamento up".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = How many units to slide the pitch by per hUGE_tick
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: A B DE HL
+    @hUGE_fx_porta_up
+        ret z
+
+        ld d,#0
+        call hUGE_ptr_to_channel_member
+
+     -- Add C to 16-bit value at HL
+        ldi a,(hl)
+        add c
+        ld e,a
+        adc a,(hl)
+        sub e
+        ld d,a
+
+        jp hUGE_update_channel_freq
+
+
+     -- Processes (global) effect 2, "portamento down".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = How many units to slide the pitch down by per hUGE_tick
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: A B DE HL
+    @hUGE_fx_porta_down
+        ret z
+
+        ld d,#0
+        call hUGE_ptr_to_channel_member
+
+     -- Subtract C from 16-bit value at [HL]
+        ldi a,(hl)
+        sub c
+        ld e,a
+        sbc a,a
+        add (hl)
+        ld d,a
+
+        jp hUGE_update_channel_freq
+
+
+     -- Processes effect 2, "tone portamento".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = Target note
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: A B DE HL
+    @hUGE_fx_toneporta
+        jr z, hUGE_fx_toneporta_setup
+
+        ld d,#0
+        call hUGE_ptr_to_channel_member
+        push hl
+
+        ldi a,(hl)
+        ld e,a
+        ldi a,(hl)
+        ld d,a
+
+        ldi a,(hl)
+        ld h,(hl)
+        ld l,a
+
+     -- Comparing which direction to move the current value
+     -- TODO: Optimize this!!!!
+
+     -- Compare high byte
+        ld a,h
+
+        cp d
+        jr c, hUGE_fx_toneporta_subtract -- target is less than the current period
+        jr nz, hUGE_fx_toneporta_add
+    @hUGE_fx_toneporta_high_byte_same
+        ld a,l
+        cp e
+        jr c, hUGE_fx_toneporta_subtract -- the target is less than the current period
+        jr z, hUGE_fx_toneporta_done -- both nibbles are the same so no portamento
+    @hUGE_fx_toneporta_add
+        ld a,c
+        add e
+        ld e,a
+        adc a,d
+        sub e
+        ld d,a
+
+        ld a,h
+        cp d
+        jr c, hUGE_fx_toneporta_set_exact
+        jr nz, hUGE_fx_toneporta_done
+        ld a,l
+        cp e
+        jr c, hUGE_fx_toneporta_set_exact
+
+        jr hUGE_fx_toneporta_done
+
+    @hUGE_fx_toneporta_subtract
+        ld a,e
+        sub c
+        ld e,a
+        sbc a,a
+        add d
+        ld d,a
+
+        bit 7, d -- check for overflow
+        jr nz, hUGE_fx_toneporta_set_exact
+
+        ld a,d
+        cp h
+        jr c, hUGE_fx_toneporta_set_exact
+        jr nz, hUGE_fx_toneporta_done
+        ld a,e
+        cp l
+        jr c, hUGE_fx_toneporta_set_exact
+
+        jr hUGE_fx_toneporta_done
+    @hUGE_fx_toneporta_set_exact
+        ld d,h
+        ld e,l
+    @hUGE_fx_toneporta_done
+
+        pop hl
+        ld a,e
+        ldi (hl),a
+        ld (hl),d
+
+
+        ld a,#4
+        add l
+        ld l,a
+        adc a,h
+        sub l
+        ld h,a
+
+        ld a,(hl)
+        res 7, (hl)
+        ld h,a
+     -- B must be preserved for this
+        jp hUGE_update_channel_freq_nonzero_highmask
+
+    @hUGE_fx_toneporta_setup
+     -- We're on hUGE_tick zero, so load the note period into the toneporta target.
+        ld d,#4
+        call hUGE_ptr_to_channel_member
+
+        ldd a,(hl)
+        ld d,h
+        ld e,l
+        call hUGE_get_note_period
+        ld a,h
+        ld (de),a
+        dec de
+        ld a,l
+        ld (de),a
+
+    @hUGE_ret_dont_play_note
+     -- Don't call play_chX_note. This is done by popping the saved AF register and clearing
+     -- the C flag, which relies on the way the caller is implemented!!
+        pop hl
+        pop af
+        ana a -- Clear carry to avoid calling `play_chX_note`
+        push af
+        jp (hl)
+
+
+     -- Processes effect A, "volume slide".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = FX param; either nibble should be 0, otherwise weird (unspecified) behavior may arise
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: AF C DE HL
+    @hUGE_fx_vol_slide
+        ret nz
+
+     -- This is really more of a "retrigger note with lower volume" effect and thus
+     -- isn't really that useful. Instrument envelopes should be used instead.
+     -- Might replace this effect with something different if a new effect is
+     -- ever needed.
+
+     -- check channel mute
+
+        ld a,b
+     -- 0 → 0x01, 1 → 0x02, 2 → 0x04, 3 → 0x05
+     -- Overall, these two instructions add 1 to the number.
+     -- However, the first instruction will generate a carry for inputs of 0x02 and 0x03;
+     -- the `adc` will pick the carry up, and "separate" 0 / 1 from 2 / 3 by an extra 1.
+     -- Luckily, this yields correct results for 0 (0x01), 1 (0x02), and 2 (0x03 + 1 = 0x04).
+     -- We'll see about fixing 3 afterwards.
+        add #-2
+        adc a,#3
+     -- After being shifted left, the inputs are 0x02, 0x04, 0x08 and 0x0A; all are valid BCD,
+     -- except for 0x0A. Since we just performed `add a`, DAA will correct the latter to 0x10.
+     -- (This should be correctly emulated everywhere, since the inputs are identical to
+     -- "regular" BCD.)
+     -- When shifting the results back, we'll thus get 0x01, 0x02, 0x04 and 0x08!
+        add a
+        daa
+        rra
+        ld d,a
+        ld a,hUGE_mute_channels
+        cpl
+        ana d
+        ret z
+
+     -- setup the up and down params
+        ld a,c
+        ana #0b00001111
+        ld d,a
+
+        ld a,c
+        ana #0b11110000
+        ld e,a
+        swap e
+
+     -- There are 5 bytes between each envelope register
+        ld a,b
+        add a
+        add a
+        add b
+        add #((NR12) & 0xff)
+        ld c,a
+
+        ldh a,(c)
+        ana #0b11110000
+        swap a
+        sub d
+        jr nc, hUGE_fx_vol_slide_cont1
+        xor a
+    @hUGE_fx_vol_slide_cont1
+        add e
+        cp #0x10
+        jr c, hUGE_fx_vol_slide_cont2
+        ld a,#0xF
+    @hUGE_fx_vol_slide_cont2
+        swap a
+        ldh (c),a
+
+     -- Go to rAUDxGO, which is 2 bytes after
+        inc c
+        inc c
+        ldh a,(c)
+        ora #0b10000000
+        ldh (c),a
+
+        jr hUGE_play_note
+
+
+     -- Processes effect 7, "note delay".
+     -- Param: B = Current channel ID (0 = CH1, 1 = CH2, etc.)
+     -- Param: C = Amount of ticks by which to delay the note
+     --            Caveats: 0 never plays the note, and a delay longer than a hUGE_row's duration skips the note entirely
+     -- Param: ZF = Set if and only if on hUGE_tick 0
+     -- Destroy: AF D HL
+    @hUGE_fx_note_delay
+        jr z, hUGE_ret_dont_play_note
+
+        cp c
+        ret nz -- wait until the correct hUGE_tick to play the note
+
+     -- fallthrough
+
+
+     -- Plays a channel's current note.
+     -- Param: B = Which channel (0 = CH1, 1 = CH2, etc.)
+     -- Destroy: AF D HL
+    @hUGE_play_note
+        ld a,b
+        add a
+        add #((hUGE_play_note_routines) & 0xff)
+        ld l,a
+        adc a,#(((hUGE_play_note_routines) >> 8) & 0xff)
+        sub l
+        ld h,a
+        jp (hl)
+
+
+     -- Computes the pointer to an instrument.
+     -- Param: B = The instrument's ID
+     -- Param: HL = Instrument pointer table
+     -- Return: HL = Pointer to the instrument
+     -- Return: ZF = Set if and only if there was no instrument (ID == 0)
+     -- Destroy: AF
+    @hUGE_setup_instrument_pointer
+        ld a,b
+        ana #0b11110000
+        swap a
+        ret z -- If there's no instrument, then return early.
+
+        dec a -- Instrument 0 is "no instrument"
+    @hUGE_setup_instrument_pointer_finish
+     -- Multiply by 6
+        add a
+        ld e,a
+        add a
+        add e
+
+        add l
+        ld l,a
+        adc a,h
+        sub l
+        ld h,a
+
+        rla -- reset the Z flag
+        ret
+
+     -- Ticks the sound engine once.
+     -- Destroy: AF BC DE HL
+    @hUGE_dosound
+
+        ld a,hUGE_tick
+        ora a
+        jp nz, hUGE_process_effects
+
+     -- Note playback
+        ld hl,#hUGE_pattern1
+        ld de,#hUGE_channel_note1
+        call hUGE_get_current_note
+
+        push af -- Save carry for conditonally calling note
+        jr nc, hUGE_dosound_do_setvol1
+
+        ld a,b
+        ana #0x0F
+        cp #3 -- If toneporta, don't load the channel period
+        jr z, hUGE_dosound_toneporta
+        ld a,l
+        ld hUGE_channel_period1,a
+        ld a,h
+        ld !hUGE_channel_period1+1,a
+    @hUGE_dosound_toneporta
+
+        ld hl,#hUGE_duty_instruments
+        ldi a,(hl)
+        ld h,(hl)
+        ld l,a
+        call hUGE_setup_instrument_pointer
+        ld a,hUGE_highmask1
+        res 7, a -- Turn off the "initial" flag
+        jr z, hUGE_dosound_write_mask1
+
+        ld a,hUGE_mute_channels
+        bit 0, a
+        jr nz, hUGE_dosound_do_setvol1
+
+        ldi a,(hl)
+        ldh NR10,a
+        ldi a,(hl)
+        ldh NR11,a
+        ldi a,(hl)
+        ldh NR12,a
+        ldi a,(hl)
+        ld hUGE_table1,a
+        ldi a,(hl)
+        ld !hUGE_table1+1,a
+        xor a
+        ld hUGE_table_row1,a
+
+        ld a,(hl)
+
+    @hUGE_dosound_write_mask1
+        ld hUGE_highmask1,a
+
+    @hUGE_dosound_do_setvol1
+        ld e,#0
+        call hUGE_do_effect
+
+        pop af
+        call c, hUGE_play_ch1_note
+
+        ld a,hUGE_table1
+        ld c,a
+        ld a,!hUGE_table1+1
+        ld b,a
+        ora c
+        ld hl,#hUGE_table_row1
+        ld e,#0
+        call nz, hUGE_do_table
+
+    @hUGE_process_ch2
+     -- Note playback
+        ld hl,#hUGE_pattern2
+        ld de,#hUGE_channel_note2
+        call hUGE_get_current_note
+
+        push af -- Save carry for conditonally calling note
+        jr nc, hUGE_process_ch2_do_setvol2
+
+        ld a,b
+        ana #0x0F
+        cp #3 -- If toneporta, don't load the channel period
+        jr z, hUGE_process_ch2_toneporta
+        ld a,l
+        ld hUGE_channel_period2,a
+        ld a,h
+        ld !hUGE_channel_period2+1,a
+    @hUGE_process_ch2_toneporta
+
+        ld hl,#hUGE_duty_instruments
+        ldi a,(hl)
+        ld h,(hl)
+        ld l,a
+        call hUGE_setup_instrument_pointer
+        ld a,hUGE_highmask2
+        res 7, a -- Turn off the "initial" flag
+        jr z, hUGE_process_ch2_write_mask2
+
+        ld a,hUGE_mute_channels
+        bit 1, a
+        jr nz, hUGE_process_ch2_do_setvol2
+
+        inc hl
+
+        ldi a,(hl)
+        ldh NR21,a
+        ldi a,(hl)
+        ldh NR22,a
+        ldi a,(hl)
+        ld hUGE_table2,a
+        ldi a,(hl)
+        ld !hUGE_table2+1,a
+        xor a
+        ld hUGE_table_row2,a
+
+        ld a,(hl)
+
+    @hUGE_process_ch2_write_mask2
+        ld hUGE_highmask2,a
+
+    @hUGE_process_ch2_do_setvol2
+        ld e,#1
+        call hUGE_do_effect
+
+        pop af
+        call c, hUGE_play_ch2_note
+
+        ld a,hUGE_table2
+        ld c,a
+        ld a,!hUGE_table2+1
+        ld b,a
+        ora c
+        ld hl,#hUGE_table_row2
+        ld e,#1
+        call nz, hUGE_do_table
+
+    @hUGE_process_ch3
+        ld hl,#hUGE_pattern3
+        ld de,#hUGE_channel_note3
+        call hUGE_get_current_note
+
+        push af -- Save carry for conditonally calling note
+        jp nc, hUGE_process_ch3_do_setvol3
+
+        ld a,b
+        ana #0x0F
+        cp #3 -- If toneporta, don't load the channel period
+        jr z, hUGE_process_ch3_toneporta
+        ld a,l
+        ld hUGE_channel_period3,a
+        ld a,h
+        ld !hUGE_channel_period3+1,a
+    @hUGE_process_ch3_toneporta
+
+        ld hl,#hUGE_wave_instruments
+        ldi a,(hl)
+        ld h,(hl)
+        ld l,a
+        call hUGE_setup_instrument_pointer
+        ld a,hUGE_highmask3
+        res 7, a -- Turn off the "initial" flag
+        jr z, hUGE_process_ch3_write_mask3
+
+        ld a,hUGE_mute_channels
+        bit 2, a
+        jr nz, hUGE_process_ch3_do_setvol3
+
+        ldi a,(hl)
+        ldh NR31,a
+        ldi a,(hl)
+        ldh NR32,a
+        ldi a,(hl)
+        push hl
+
+     -- Check to see if we need to copy the wave
+        ld hl,#hUGE_current_wave
+        cp (hl)
+        jr z, hUGE_process_ch3_no_wave_copy
+        call hUGE_update_ch3_waveform
+
+    @hUGE_process_ch3_no_wave_copy
+        pop hl
+        ldi a,(hl)
+        ld hUGE_table3,a
+        ldi a,(hl)
+        ld !hUGE_table3+1,a
+        xor a
+        ld hUGE_table_row3,a
+
+        ld a,(hl)
+
+    @hUGE_process_ch3_write_mask3
+        ld hUGE_highmask3,a
+
+    @hUGE_process_ch3_do_setvol3
+        ld e,#2
+        call hUGE_do_effect
+
+        pop af
+        call c, hUGE_play_ch3_note
+
+        ld a,hUGE_table3
+        ld c,a
+        ld a,!hUGE_table3+1
+        ld b,a
+        ora c
+        ld hl,#hUGE_table_row3
+        ld e,#2
+        call nz, hUGE_do_table
+
+    @hUGE_process_ch4
+        ld hl,#hUGE_pattern4
+        ldi a,(hl)
+        ld c,a
+        ld b,(hl)
+        call hUGE_get_current_row
+        cp #72
+
+        push af -- Save carry for conditonally calling note
+        jr nc, hUGE_process_ch4_do_setvol4
+
+        ld hUGE_channel_note4,a
+
+     -- No toneporta check because it's not supported for CH4 anyway
+
+        call hUGE_get_note_poly
+        ld hUGE_channel_period4,a
+
+        ld hl,#hUGE_noise_instruments
+        ldi a,(hl)
+        ld h,(hl)
+        ld l,a
+        call hUGE_setup_instrument_pointer
+
+        ld a,hUGE_highmask4
+        res 7, a -- Turn off the "initial" flag
+        jr z, hUGE_process_ch4_write_mask4
+
+        ld a,hUGE_mute_channels
+        bit 3, a
+        jr nz, hUGE_process_ch4_do_setvol4
+
+        ldi a,(hl)
+        ldh NR42,a
+
+        ldi a,(hl)
+        ld hUGE_table4,a
+        ldi a,(hl)
+        ld !hUGE_table4+1,a
+        xor a
+        ld hUGE_table_row4,a
+
+        ld a,(hl)
+        ana #0b00111111
+        ldh NR41,a
+
+        ld a,hUGE_channel_period4
+        ld d,a
+        ld a,(hl)
+        ana #0b10000000
+        swap a
+        ld hUGE_step_width4,a
+        ora d
+        ld hUGE_channel_period4,a
+
+        ld a,(hl)
+        ana #0b01000000
+        ora #0b10000000
+    @hUGE_process_ch4_write_mask4
+        ld hUGE_highmask4,a
+
+    @hUGE_process_ch4_do_setvol4
+        ld e,#3
+        call hUGE_do_effect
+
+        pop af
+        call c, hUGE_play_ch4_note
+
+        ld a,hUGE_table4
+        ld c,a
+        ld a,!hUGE_table4+1
+        ld b,a
+        ora c
+        ld hl,#hUGE_table_row4
+        ld e,#3
+        call nz, hUGE_do_table
+
+     -- finally just update the hUGE_tick/order/hUGE_row values
+        jp hUGE_tick_time
+
+    @hUGE_process_effects
+     -- Only do effects if not on hUGE_tick zero
+        ld a,hUGE_mute_channels
+        bit 0, a
+        jr nz, hUGE_process_effects_after_effect1
+
+        ld hl,#hUGE_pattern1
+        ldi a,(hl)
+        ld c,a
+        ld b,(hl)
+        call hUGE_get_current_row
+
+        ld a,c
+        ora a
+        jr z, hUGE_process_effects_after_effect1
+
+        ld e,#0
+        call hUGE_do_effect -- make sure we never return with hUGE_ret_dont_play_note!!
+
+     -- TODO: Deduplicate this code by moving it into hUGE_do_table?
+    @hUGE_process_effects_after_effect1
+        ld a,hUGE_table1
+        ld c,a
+        ld a,!hUGE_table1+1
+        ld b,a
+        ora c
+        ld hl,#hUGE_table_row1
+        ld e,#0
+        call nz, hUGE_do_table
+
+    @hUGE_process_effects_process_ch2
+        ld a,hUGE_mute_channels
+        bit 1, a
+        jr nz, hUGE_process_effects_after_effect2
+
+        ld hl,#hUGE_pattern2
+        ldi a,(hl)
+        ld c,a
+        ld b,(hl)
+        call hUGE_get_current_row
+
+        ld a,c
+        ora a
+        jr z, hUGE_process_effects_after_effect2
+
+        ld e,#1
+        call hUGE_do_effect -- make sure we never return with hUGE_ret_dont_play_note!!
+
+    @hUGE_process_effects_after_effect2
+        ld a,hUGE_table2
+        ld c,a
+        ld a,!hUGE_table2+1
+        ld b,a
+        ora c
+        ld hl,#hUGE_table_row2
+        ld e,#1
+        call nz, hUGE_do_table
+
+    @hUGE_process_effects_process_ch3
+        ld a,hUGE_mute_channels
+        bit 2, a
+        jr nz, hUGE_process_effects_after_effect3
+
+        ld hl,#hUGE_pattern3
+        ldi a,(hl)
+        ld c,a
+        ld b,(hl)
+        call hUGE_get_current_row
+
+        ld a,c
+        ora a
+        jr z, hUGE_process_effects_after_effect3
+
+        ld e,#2
+        call hUGE_do_effect -- make sure we never return with hUGE_ret_dont_play_note!!
+
+    @hUGE_process_effects_after_effect3
+        ld a,hUGE_table3
+        ld c,a
+        ld a,!hUGE_table3+1
+        ld b,a
+        ora c
+        ld hl,#hUGE_table_row3
+        ld e,#2
+        call nz, hUGE_do_table
+
+    @hUGE_process_effects_process_ch4
+        ld a,hUGE_mute_channels
+        bit 3, a
+        jr nz, hUGE_process_effects_after_effect4
+
+        ld hl,#hUGE_pattern4
+        ldi a,(hl)
+        ld c,a
+        ld b,(hl)
+        call hUGE_get_current_row
+
+        ld a,c
+        ora a
+        jr z, hUGE_process_effects_after_effect4
+
+        ld e,#3
+        call hUGE_do_effect -- make sure we never return with hUGE_ret_dont_play_note!!
+
+    @hUGE_process_effects_after_effect4
+        ld a,hUGE_table4
+        ld c,a
+        ld a,!hUGE_table4+1
+        ld b,a
+        ora c
+        ld hl,#hUGE_table_row4
+        ld e,#3
+        call nz, hUGE_do_table
+
+    @hUGE_tick_time
+
+        ld a,hUGE_row
+        ana #3
+        ld hl,#hUGE_ticks_per_row
+        add l
+        ld l,a
+        adc a,h
+        sub l
+        ld h,a
+        ld b,(hl)
+
+        ld hl,#hUGE_counter
+        inc (hl)
+
+        inc hl -- ld hl, hUGE_tick
+        inc (hl) -- Increment hUGE_tick hUGE_counter
+
+     -- Should we switch to the next hUGE_row?
+        ld a,b
+        sub (hl)
+        ret nz -- Nope.
+        ldi (hl),a -- Reset hUGE_tick to 0
+     -- Below code relies on a == 0
+
+     -- Check if we need to perform a hUGE_row break or pattern break
+        ora (hl) -- a == 0, so this is `ld a, [hl]` that also alters flags
+        jr z, hUGE_tick_time_no_break
+
+     -- These are offset by one so we can check to see if they've
+     -- been modified
+        dec a
+        ld b,a
+
+        xor a
+        ldi (hl),a
+        ora (hl) -- a = [hUGE_next_order], zf = ([hUGE_next_order] == 0)
+        jr z, hUGE_tick_time_neworder
+        ld (hl),#0
+
+        dec a
+        add a -- multiply order by 2 (they are words)
+
+        jr hUGE_tick_time_update_current_order
+
+    @hUGE_tick_time_no_break
+     -- Increment hUGE_row.
+        ld a,hUGE_row
+        inc a
+        cp #64
+        jr nz, hUGE_tick_time_noreset
+
+        ld b,#0
+    @hUGE_tick_time_neworder
+     -- Increment order and change loaded patterns
+        ld a,hUGE_order_cnt
+        ld c,a
+        ld a,hUGE_current_order
+        add #2
+        cp c
+        jr nz, hUGE_tick_time_update_current_order
+        xor a
+    @hUGE_tick_time_update_current_order
+     -- Call with:
+     -- A: The order to load
+     -- B: The hUGE_row for the order to start on
+        ld hUGE_current_order,a
+        ld c,a
+        call hUGE_load_patterns
+
+        ld a,b
+    @hUGE_tick_time_noreset
+        ld hUGE_row,a
+
+        ret
+
+    @hUGE_note_table
+        dc.w 44,156,262,363,457,547,631,710
+        dc.w 786,854,923,986,1046,1102,1155,1205
+        dc.w 1253,1297,1339,1379,1417,1452,1486,1517
+        dc.w 1546,1575,1602,1627,1650,1673,1694,1714
+        dc.w 1732,1750,1767,1783,1798,1812,1825,1837
+        dc.w 1849,1860,1871,1881,1890,1899,1907,1915
+        dc.w 1923,1930,1936,1943,1949,1954,1959,1964
+        dc.w 1969,1974,1978,1982,1985,1988,1992,1995
+        dc.w 1998,2001,2004,2006,2009,2011,2013,2015
+
+    if previous_section then section(previous_section) end
+end

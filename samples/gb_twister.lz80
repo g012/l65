@@ -1,0 +1,151 @@
+require 'gb'
+
+mappers.ROM{ title = "LZ80 TWIST" }
+
+wram("frame")
+
+-- Build a 160x64 image of a square prism rotating around its vertical axis.
+-- Each scanline projects the four corners independently: the outermost
+-- corners form the silhouette, and the nearest corner separates the two
+-- visible faces. The runtime raster selects one of these cross-sections for
+-- every displayed scanline.
+local image_width = SCREEN_WIDTH_PX
+local image_height = 64
+local tile_columns = image_width // TILE_WIDTH
+local tile_rows = image_height // TILE_HEIGHT
+local center = image_width // 2
+local radius = 34
+local pixels = {}
+
+for y = 0, image_height - 1 do
+    local angle = y * math.pi * 2 / image_height
+    local left_x, right_x = math.huge, -math.huge
+    local front_x, front_z, front_corner = 0, -math.huge, 1
+
+    for corner = 0, 3 do
+        local corner_angle = angle + corner * math.pi / 2
+        local x = center + radius * math.cos(corner_angle)
+        local z = radius * math.sin(corner_angle)
+        left_x = math.min(left_x, x)
+        right_x = math.max(right_x, x)
+        if z > front_z then
+            front_x, front_z, front_corner = x, z, corner + 1
+        end
+    end
+
+    local left = math.floor(left_x + 0.5)
+    local right = math.floor(right_x + 0.5)
+    local ridge = math.floor(front_x + 0.5)
+    local left_face = (front_corner & 1) == 0 and 1 or 2
+    local right_face = left_face == 1 and 2 or 1
+    local row = {}
+
+    for x = 0, image_width - 1 do
+        local color = 0
+        if x >= left and x <= right then
+            color = x < ridge and left_face or right_face
+            if x == left or x == right or x == ridge then color = 3 end
+        end
+        row[x + 1] = color
+    end
+    pixels[y + 1] = row
+end
+
+-- Convert the generated image to native Game Boy 2bpp tiles.
+local tile_bytes = {}
+for tile_y = 0, tile_rows - 1 do
+    for tile_x = 0, tile_columns - 1 do
+        for pixel_y = 0, TILE_HEIGHT - 1 do
+            local low, high = 0, 0
+            local row = pixels[tile_y * TILE_HEIGHT + pixel_y + 1]
+            for pixel_x = 0, TILE_WIDTH - 1 do
+                local color = row[tile_x * TILE_WIDTH + pixel_x + 1]
+                local bit = 7 - pixel_x
+                low = low | ((color & 1) << bit)
+                high = high | (((color >> 1) & 1) << bit)
+            end
+            tile_bytes[#tile_bytes + 1] = low
+            tile_bytes[#tile_bytes + 1] = high
+        end
+    end
+end
+
+-- Build one raster program per animation frame. Like the reference effect,
+-- each horizontal slice receives its own phase before projecting the four
+-- points. SCY is the per-scanline indirect lookup: selecting background row P
+-- for LCD line Y requires SCY = P - Y.
+local animation_frames = 64
+local raster_bytes = {}
+for animation_frame = 0, animation_frames - 1 do
+    local time = animation_frame * math.pi * 2 / animation_frames
+    for screen_y = 0, SCREEN_HEIGHT_PX - 1 do
+        local normalized_y = screen_y * 2 / (SCREEN_HEIGHT_PX - 1) - 1
+        local phase = 1.5 * math.sin(normalized_y * math.cos(time))
+            + math.cos(time)
+        local phase_row = math.floor(
+            (phase % (math.pi * 2)) * image_height / (math.pi * 2) + 0.5
+        ) % image_height
+        raster_bytes[#raster_bytes + 1] = (phase_row - screen_y) & 0xff
+    end
+end
+
+-- Repeat the eight tile rows through the 32x32 background map. SCY therefore
+-- wraps seamlessly for arbitrary phase selections.
+local map_bytes = {}
+for map_y = 0, TILEMAP_HEIGHT - 1 do
+    for map_x = 0, TILEMAP_WIDTH - 1 do
+        map_bytes[#map_bytes + 1] = map_x < tile_columns
+            and (map_y % tile_rows) * tile_columns + map_x or 0
+    end
+end
+
+@@main
+    init()
+    copy("twister_tiles", VRAM, #tile_bytes)
+    copy("twister_map", TILEMAP0, #map_bytes)
+    xor a
+    [frame] := a
+    hl := twister_rasters
+    a := [hl+]
+    [SCY] := a
+    lcd_enable()
+
+@_frame
+    -- The first slice is installed during VBlank (or before the first frame).
+    -- Each following value is written in the preceding line's HBlank, so it is
+    -- already active when the PPU begins fetching the next scanline.
+    vblank_waitend()
+    b := SCREEN_HEIGHT_PX - 1
+
+@_scanline
+    hblank_waitbegin()
+    a := [hl+]
+    [SCY] := a
+    b--
+    jr.nz _scanline
+
+    vblank_waitbegin()
+    a := [frame]
+    a++
+    a &= animation_frames - 1
+    [frame] := a
+    jr.nz _next_frame
+    hl := twister_rasters
+
+@_next_frame
+    a := [hl+]
+    [SCY] := a
+    jr _frame
+
+@@twister_tiles
+    dc.b !tile_bytes
+
+@@twister_map
+    dc.b !map_bytes
+
+@@twister_rasters
+    dc.b !raster_bytes
+
+writebin(filename .. '.gb')
+writesym(filename .. '.sym', 'rgbds')
+print(stats)

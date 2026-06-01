@@ -1,0 +1,37 @@
+require'gb'
+
+mappers.ROM{ title = "GB HELPERS", entry = "main" }
+
+hram("hJoypad")
+
+dbg_group("helpers", "GB helper checks")
+dbg_watch(hJoypad, "ww", 'message "Joypad state changed to {@value, 2$}"')
+dbg_watch("loop", "xx", "break", "@a = $ff")
+
+@@main
+    dbg_log("Initializing helpers")
+    init()
+    oam_dma_install()
+    oamcache_clear()
+    oamcache_set{
+        index = 1,
+        y = 64,
+        x = 72,
+        tile = 0,
+    }
+    lcd_enable()
+
+@loop
+    runtime_assert("@sp >= $ff80", "Stack escaped HRAM")
+    vblank_waitbegin()
+    oamcache_flush()
+    read_joy(hJoypad)
+    vblank_waitend()
+    jr loop
+
+end_dbg_group()
+
+writebin(filename .. '.gb')
+writesym(filename .. '.sym', 'rgbds')
+writedebug(filename .. '.dbg', { symfile = filename .. '.sym' })
+print(stats)
