@@ -63,6 +63,12 @@ static int open_image(lua_State *L)
                 b += 9;
             } break;
             case CHUNK_NAM('I','D','A','T'): {
+                if (chunk.len < 0 || (size_t)d_sz + (size_t)chunk.len < (size_t)d_sz) {
+                    free(png); if (d) free(d);
+                    lua_pushnil(L);
+                    lua_pushfstring(L, "invalid PNG file %s", filename);
+                    return 2;
+                }
                 d = realloc(d, d_sz + chunk.len);
                 memcpy(d + d_sz, b, chunk.len);
                 d_sz += chunk.len;
