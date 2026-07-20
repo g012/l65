@@ -54,7 +54,7 @@ local Keywords_6502 = {
     'lax', 'rla', 'rra', 'sax', 'sbx', 'sha', 'shs', 'shx',
     'shy', 'slo', 'sre',
 }
-local Registers_6502 = { a=8, x=8, y=8, s=8 }
+local Registers_6502 = lookupify{ 'a', 'x', 'y', 'sp' }
 
 local syntax6502_on
 local function syntax6502(on)
@@ -64,11 +64,6 @@ local function syntax6502(on)
     lookupify(Keywords_6502, Keywords, not on)
 end
 syntax6502(true)
-
-local syntax6502k_on
-local function syntax6502k(on)
-    syntax6502k_on = on
-end
 
 local opcode_arg_encapsulate_on
 local function opcode_arg_encapsulate(on)
@@ -435,17 +430,25 @@ local function LexLua(src)
                     end
                     table.insert(leading, { Type = 'Whitespace', Line = line, Char = char, Data = nl })
                 elseif c == '-' and peek(1) == '-' then
-                    --comment
-                    get()
-                    get()
-                    leadingWhite = leadingWhite .. '--'
-                    local _, wholeText = tryGetLongString()
-                    if wholeText then
-                        leadingWhite = leadingWhite..wholeText
-                        longStr = true
+                    local previous = tokens[#tokens]
+                    local postfix = syntax6502_on and #leading == 0 and previous
+                        and (previous.Type == 'Ident' or previous.Type == 'Number'
+                            or previous.Data == ')' or previous.Data == ']')
+                    if postfix then
+                        break
                     else
-                        while peek() ~= '\n' and peek() ~= '' do
-                            leadingWhite = leadingWhite..get()
+                        -- comment
+                        get()
+                        get()
+                        leadingWhite = leadingWhite .. '--'
+                        local _, wholeText = tryGetLongString()
+                        if wholeText then
+                            leadingWhite = leadingWhite..wholeText
+                            longStr = true
+                        else
+                            while peek() ~= '\n' and peek() ~= '' do
+                                leadingWhite = leadingWhite..get()
+                            end
                         end
                     end
                 else
@@ -490,9 +493,6 @@ local function LexLua(src)
                 if dat == 'syntax6502' then
                     onoff(syntax6502)
                     toEmit = {Type = 'Symbol', Data = ';'}
-                elseif dat == 'syntax6502k' then
-                    onoff(function() end)
-                    toEmit = {Type = 'Keyword', Data = 'syntax6502k_' .. opt}
                 elseif dat == 'encapsulate' then
                     local opcode = onoff(function() end, true)
                     if opcode then
@@ -602,12 +602,21 @@ local function LexLua(src)
                     toEmit = {Type = 'Symbol', Data = '['}
                 end
 
+            elseif syntax6502_on and (peek_n(3) == '<<=' or peek_n(3) == '>>=') then
+                toEmit = {Type = 'Symbol', Data = peek_n(3)}
+                get_n(3)
+
             elseif c == '<' and peek(1) == c then
                 get() get()
                 toEmit = {Type = 'Symbol', Data = '<<'}
             elseif c == '>' and peek(1) == c then
                 get() get()
                 toEmit = {Type = 'Symbol', Data = '>>'}
+
+            elseif syntax6502_on and (c == '+' or c == '-' or c == '&'
+                   or c == '|' or c == '^' or c == '?')
+               and (peek(1) == '=' or ((c == '+' or c == '-') and peek(1) == c)) then
+                toEmit = {Type = 'Symbol', Data = get() .. get()}
 
             elseif consume('>=<') then
                 toEmit = {Type = 'Symbol', Data = consume('=') and c..'=' or c}
@@ -627,7 +636,8 @@ local function LexLua(src)
                 end
 
             elseif consume(':') then
-                toEmit = {Type = 'Symbol', Data = consume(':') and '::' or ':'}
+                if consume('=') then toEmit = {Type = 'Symbol', Data = ':='}
+                else toEmit = {Type = 'Symbol', Data = consume(':') and '::' or ':'} end
             elseif consume('/') then
                 toEmit = {Type = 'Symbol', Data = consume('/') and '//' or '/'}
 
@@ -828,10 +838,17 @@ local function ParseLua(src, src_name)
 
     local ParseExpr
     local ParseStatementList
-    local ParseSimpleExpr, 
+    local ParseSimpleExpr,
             ParseSubExpr,
             ParsePrimaryExpr,
             ParseSuffixedExpr
+
+    local function starts_new_line(token)
+        for _, white in ipairs(token.LeadingWhite or {}) do
+            if white.Data and white.Data:find("\n", 1, true) then return true end
+        end
+        return false
+    end
 
     local function ParseFunctionArgsAndBody(scope, tokenList)
         local funcScope = CreateScope(scope)
@@ -951,7 +968,11 @@ local function ParseLua(src, src_name)
                 --
                 prim = nodeIndex
 
-            elseif not onlyDotColon and tok:ConsumeSymbol('[', tokenList) then
+            -- A bracket beginning a new line is an operator-syntax indirect
+            -- destination, not a Lua index suffix on the previous line.
+            elseif not onlyDotColon and tok:IsSymbol('[')
+               and not starts_new_line(tok:Peek()) then
+                tok:Get(tokenList)
                 local st, ex = ParseExpr(scope)
                 if not st then return false, ex end
                 if not tok:ConsumeSymbol(']', tokenList) then
@@ -1271,8 +1292,6 @@ local function ParseLua(src, src_name)
     local pragma_map = {
         encapsulate_on = function() opcode_arg_encapsulate(true) end,
         encapsulate_off = function() opcode_arg_encapsulate(false) end,
-        syntax6502k_on = function() syntax6502k(true) end,
-        syntax6502k_off = function() syntax6502k(false) end,
     }
     local function ParseStatement(scope)
         local stat = nil
@@ -1282,8 +1301,6 @@ local function ParseLua(src, src_name)
         local p = function(t,n) return function() return '<' .. t .. string.rep(' ', 7-#t) .. ' ' .. n .. ' >' end end
         local t = function(t,s,w) return { Type=t, Data=s, Print=p(t,s), Char=c(), Line=l(), LeadingWhite=w or {} } end
         local no_encapsulation = { Function=true, NumberExpr=true, StringExpr=true }
-        local reg = function(e) local t=e.Tokens[1] if t then return Registers_6502[t.Data] end end
-
         local function emit_call(params)
             local name,args,inverse_encapsulate = params.name, params.args or {}, params.inverse_encapsulate
             if not params.func_white then params.func_white = tokenList[1].LeadingWhite end
@@ -1456,80 +1473,211 @@ local function ParseLua(src, src_name)
             stat = emit_call{name=func, args=exprs, inverse_encapsulate=inverse_encapsulate}
         end end
 
-        -- k65 style syntax
-        if not stat and syntax6502k_on then
-            -- *=[a,x,y,s]=?
-            do
-                tok:Save()
-                local exprs = {}
-                while true do
-                    local st, expr = ParseExpr(scope)
-                    if not st then break end
-                    table.insert(exprs, expr)
-                    if not tok:ConsumeSymbol('=', tokenList) then break end
-                end
-                if #exprs < 2 then
-                    tok:Restore()
-                else
-                    local hasreg
-                    for e in exprs do hasreg=reg(e) if hasreg then break end end
-                    if not hasreg then
-                        tok:Restore()
-                    else
-                        tok:Commit()
-                        local skip
-                        for i=#exprs-1,1,-1 do
-                            if skip then
-                                skip = false
-                            else
-                                local src,dst = exprs[i+1],exprs[i]
-                                local src_reg,dst_reg = reg(src),reg(dst)
-                                local op,arg
-                                if src_reg=='s' then
-                                    if dst_reg=='x' then 
-                                        op = 'tsximp'
-                                    end
-                                elseif dst_reg=='s' then
-                                    if src_reg=='x' then
-                                        op = 'txsimp'
-                                    end
-                                elseif src_reg and not dst_reg then
-                                    arg = i
-                                    op = 'st'..src_reg
-                                elseif dst_reg and not src_reg then
-                                    arg = i+1
-                                    if dst_reg=='x' and i > 1 and reg(exprs[i-1])=='a' then
-                                        op='lax' skip=true
-                                    else
-                                        op = 'ld'..src_reg
-                                    end
-                                end
-                                if not op then
-                                    return false, GenerateError("no opcode for assignment")
-                                end
-                                if arg then
-                                    arg = exprs[arg]
-                                end
-                            end
-                        end
-                    end
+        -- 6502 operator syntax. This is a second spelling of the regular
+        -- instructions; addressing-mode selection still goes through the
+        -- same emitters as mnemonic syntax.
+        if not stat then
+            local operator_symbols = lookupify{
+                ':=', '+=', '-=', '&=', '|=', '^=', '?=',
+                '<<=', '>>=', '++', '--',
+            }
 
-                    local t,r,rexpr,rexpr_ix
-                    rexpr_ix=#exprs rexpr=exprs[rexprs_ix] t=#rexpr.Tokens[1] if t then r=Registers_6502[t.Data] end
-                    if not r then rexpr_ix=#exprs-1 rexpr=exprs[rexprs_ix] t=#rexpr.Tokens[1] if t then r=Registers_6502[t.Data] end end
-                    if r then
+            local function operator_operand(allow_immediate)
+                if allow_immediate and tok:ConsumeSymbol('#', tokenList) then
+                    local st, expr = ParseExpr(scope)
+                    if not st then return false, expr end
+                    return true, { kind='immediate', expr=expr }
+                end
+
+                if tok:ConsumeSymbol('[', tokenList) then
+                    local st, expr = ParseExpr(scope)
+                    if not st then return false, expr end
+                    if tok:ConsumeSymbol(',', tokenList) then
+                        if not tok:Is('Ident') or tok:Peek().Data ~= 'x' then
+                            return false, GenerateError("'[zp,x]' requires X")
+                        end
+                        tok:Get(tokenList)
+                        if not tok:ConsumeSymbol(']', tokenList) then
+                            return false, GenerateError("']' expected")
+                        end
+                        return true, { kind='memory', mode='inx', expr=expr }
+                    end
+                    if not tok:ConsumeSymbol(']', tokenList) then
+                        return false, GenerateError("']' expected")
+                    end
+                    if not tok:ConsumeSymbol(',', tokenList)
+                       or not tok:Is('Ident') or tok:Peek().Data ~= 'y' then
+                        return false, GenerateError("indirect operand must be '[zp,x]' or '[zp],y'")
+                    end
+                    tok:Get(tokenList)
+                    return true, { kind='memory', mode='iny', expr=expr }
+                end
+
+                if tok:Is('Ident') and Registers_6502[tok:Peek().Data] then
+                    local register = tok:Get(tokenList)
+                    return true, { kind='register', register=register.Data }
+                end
+
+                local st, expr = ParseExpr(scope)
+                if not st then return false, expr end
+                local mode = 'direct'
+                if tok:ConsumeSymbol(',', tokenList) then
+                    if not tok:Is('Ident')
+                       or (tok:Peek().Data ~= 'x' and tok:Peek().Data ~= 'y') then
+                        return false, GenerateError("index register X or Y expected")
+                    end
+                    mode = tok:Get(tokenList).Data
+                end
+                return true, { kind='memory', mode=mode, expr=expr }
+            end
+
+            local function operator_opcode(op, operand)
+                if operand.kind == 'register' then
+                    return false, GenerateError("register operand is not supported by " .. op)
+                end
+
+                local suffix
+                if operand.kind == 'immediate' then
+                    if not opcode_immediate[op] then
+                        return false, GenerateError("Opcode " .. op .. " doesn't support immediate addressing mode")
+                    end
+                    suffix = 'imm'
+                elseif operand.mode == 'inx' then
+                    if not opcode_indirect_x[op] then
+                        return false, GenerateError("Opcode " .. op .. " doesn't support [zp,x] addressing mode")
+                    end
+                    suffix = 'inx'
+                elseif operand.mode == 'iny' then
+                    if not opcode_indirect_y[op] then
+                        return false, GenerateError("Opcode " .. op .. " doesn't support [zp],y addressing mode")
+                    end
+                    suffix = 'iny'
+                elseif operand.mode == 'direct' then
+                    if opcode_zeropage[op] and opcode_absolute[op] then suffix = 'zab'
+                    elseif opcode_zeropage[op] then suffix = 'zpg'
+                    elseif opcode_absolute[op] then suffix = 'abs'
+                    else return false, GenerateError("Opcode " .. op .. " doesn't support memory addressing") end
+                elseif operand.mode == 'x' then
+                    if opcode_zeropage_x[op] and opcode_absolute_x[op] then suffix = 'zax'
+                    elseif opcode_zeropage_x[op] then suffix = 'zpx'
+                    elseif opcode_absolute_x[op] then suffix = 'abx'
+                    else return false, GenerateError("Opcode " .. op .. " doesn't support address,X addressing mode") end
+                elseif operand.mode == 'y' then
+                    if opcode_zeropage_y[op] and opcode_absolute_y[op] then suffix = 'zay'
+                    elseif opcode_zeropage_y[op] then suffix = 'zpy'
+                    elseif opcode_absolute_y[op] then suffix = 'aby'
+                    else return false, GenerateError("Opcode " .. op .. " doesn't support address,Y addressing mode") end
+                else
+                    return false, GenerateError("internal error: invalid operator addressing mode")
+                end
+                return true, emit_call{name=op .. suffix, args={operand.expr}}
+            end
+
+            local function operator_implied(op)
+                return true, emit_call{name=op .. 'imp'}
+            end
+
+            local function operator_statement()
+                local st, target = operator_operand(false)
+                if not st then return false, target end
+                local operator = tok:Peek().Data
+                if not operator_symbols[operator] then return nil end
+                tok:Get(tokenList)
+
+                if operator == '++' or operator == '--' then
+                    if target.kind == 'register' then
+                        local names = {
+                            ['x++']='inx', ['x--']='dex',
+                            ['y++']='iny', ['y--']='dey',
+                        }
+                        local name = names[target.register .. operator]
+                        if not name then
+                            return false, GenerateError(operator .. " is only valid on X, Y, or memory")
+                        end
+                        return operator_implied(name)
+                    end
+                    return operator_opcode(operator == '++' and 'inc' or 'dec', target)
+                end
+
+                if operator == '<<=' or operator == '>>=' then
+                    local name = operator == '<<=' and 'asl' or 'lsr'
+                    if target.kind == 'register' then
+                        if target.register ~= 'a' then
+                            return false, GenerateError(operator .. " register destination must be A")
+                        end
+                        return operator_implied(name)
+                    end
+                    return operator_opcode(name, target)
+                end
+
+                local rhs_st, rhs = operator_operand(true)
+                if not rhs_st then return false, rhs end
+
+                if operator == ':=' then
+                    if target.kind == 'register' then
+                        if rhs.kind == 'register' then
+                            local transfers = {
+                                ['a:x']='txa', ['a:y']='tya',
+                                ['x:a']='tax', ['y:a']='tay',
+                                ['x:sp']='tsx', ['sp:x']='txs',
+                            }
+                            local name = transfers[target.register .. ':' .. rhs.register]
+                            if not name then
+                                return false, GenerateError("no 6502 transfer for " .. target.register .. " := " .. rhs.register)
+                            end
+                            return operator_implied(name)
+                        end
+                        if target.register == 'sp' then
+                            return false, GenerateError("SP can only be assigned from X")
+                        end
+                        return operator_opcode('ld' .. target.register, rhs)
+                    end
+                    if rhs.kind ~= 'register'
+                       or (rhs.register ~= 'a' and rhs.register ~= 'x' and rhs.register ~= 'y') then
+                        return false, GenerateError("memory assignment source must be A, X, or Y")
+                    end
+                    return operator_opcode('st' .. rhs.register, target)
+                end
+
+                if target.kind ~= 'register' then
+                    return false, GenerateError(operator .. " destination must be a register")
+                end
+                if operator == '?=' then
+                    local compares = { a='cmp', x='cpx', y='cpy' }
+                    local name = compares[target.register]
+                    if not name then return false, GenerateError("?= destination must be A, X, or Y") end
+                    return operator_opcode(name, rhs)
+                end
+                if target.register ~= 'a' then
+                    return false, GenerateError(operator .. " destination must be A")
+                end
+                local arithmetic = {
+                    ['+=']='adc', ['-=']='sbc', ['&=']='and',
+                    ['|=']='ora', ['^=']='eor',
+                }
+                return operator_opcode(arithmetic[operator], rhs)
+            end
+
+            local function operator_candidate()
+                local depth = 0
+                for offset = 0, math.huge do
+                    local token = tok:Peek(offset)
+                    if token.Type == 'Eof' then return false end
+                    if offset > 0 and depth == 0 and starts_new_line(token) then return false end
+                    if depth == 0 and operator_symbols[token.Data] then return true end
+                    if depth == 0 and token.Data == ';' then return false end
+                    if token.Data == '(' or token.Data == '[' or token.Data == '{' then
+                        depth = depth + 1
+                    elseif token.Data == ')' or token.Data == ']' or token.Data == '}' then
+                        depth = math.max(depth - 1, 0)
                     end
                 end
             end
 
-            if tok:Is('Ident') and tok:Peek(1).Data == '=' then
-                local reg = tok:Peek(2).Data
-                if Registers_6502[reg] then
-                    local st, arg = ParseExpr(scope)
-                    tok:Get(tokenList) tok:Get(tokenList)
-                    arg.Tokens[1].LeadingWhite,tokenList[1].LeadingWhite = tokenList[1].LeadingWhite,arg.Tokens[1].LeadingWhite
-                    stat = emit_call{name = 'st'..reg..'zab', args = {arg}}
-                end
+            if operator_candidate() then
+                local st, operator_stat = operator_statement()
+                if not st then return false, operator_stat end
+                stat = operator_stat
             end
         end
 

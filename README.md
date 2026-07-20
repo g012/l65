@@ -103,6 +103,7 @@ Options:
 ## Samples - Getting Started
 
 Have a look at these files in the `samples` folder to get started with l65:
+ * `l65_operator_syntax.l65`: a self-validating comparison of 6502 mnemonic and operator syntax encodings.
  * `vcs_basic.l65`: a 2Kb VCS ROM which just shows color bands.
  * `vcs_hooks.l65`: shows how to insert your own instructions into the pipeline, here to get the cycle count and size of the kernel. Also, it does not use the main loop helpers nor mapper functions to show the actual code involved.
  * `vcs_hello.l65`: a VCS 'Hello World' using the playfield.
@@ -142,6 +143,45 @@ Since anonymous functions are core to l65, the extension syntax such as `\a,b(a+
 #### Binary Numbers
 
 A simple parsing of number literals in the form of `0b11011` converts this base-2 / binary number into a decimal number after the l65 pass. There is no support for them in other places though - no format type for `string.format` or anything else.
+
+#### 6502 Operator Syntax
+
+l65 provides operator syntax as a second spelling for common data movement,
+arithmetic, comparison, shift, increment, and decrement instructions. Mnemonic
+syntax remains available. Immediate operands use `#`, ordinary expressions are
+memory addresses, and square brackets select the 6502 indirect modes:
+
+| Operator syntax | Mnemonic syntax |
+|---|---|
+| `a := #value` | `lda #value` |
+| `a := address` | `lda address` |
+| `a := address,x` | `lda address,x` |
+| `a := address,y` | `lda address,y` |
+| `a := [zp,x]` | `lda (zp,x)` |
+| `a := [zp],y` | `lda (zp),y` |
+| `address := a` | `sta address` |
+| `address,x := a` | `sta address,x` |
+| `[zp,x] := a` | `sta (zp,x)` |
+| `[zp],y := a` | `sta (zp),y` |
+| `x := #value`, `y := #value` | `ldx #value`, `ldy #value` |
+| `x := a`, `a := x` | `tax`, `txa` |
+| `y := a`, `a := y` | `tay`, `tya` |
+| `x := sp`, `sp := x` | `tsx`, `txs` |
+| `a += operand`, `a -= operand` | `adc operand`, `sbc operand` |
+| `a &= operand`, `a \|= operand`, `a ^= operand` | `and operand`, `ora operand`, `eor operand` |
+| `a ?= operand`, `x ?= operand`, `y ?= operand` | `cmp operand`, `cpx operand`, `cpy operand` |
+| `a <<=`, `a >>=` | `asl`, `lsr` |
+| `address <<=`, `address >>=` | `asl address`, `lsr address` |
+| `address++`, `address--` | `inc address`, `dec address` |
+| `x++`, `x--`, `y++`, `y--` | `inx`, `dex`, `iny`, `dey` |
+
+All memory forms use the same addressing-mode resolution as mnemonic syntax,
+including automatic zero-page versus absolute selection, delayed operand
+evaluation, and the safe absolute fallback for addresses not known while
+sections are sized. The operators lower directly to their listed instructions
+and do not introduce instruction-sequence optimizations. An attached `--` is
+the decrement operator; put whitespace before `--` when beginning a comment
+after an operand.
 
 ### Globals
 
@@ -831,7 +871,6 @@ Install the "l65" extension from the marketplace or check [l65-vscode](https://g
 
 ## TODO List
 
- * [k65](http://devkk.net/wiki/index.php?title=K65) style syntax
  * helpers to inter-operate with cc/ca65 and dasm
 
 ## Credits

@@ -17,10 +17,11 @@ syn case match
 " syncing method
 syntax sync fromstart
 
-" Comments
+" Comments. An attached -- is the 6502 postfix decrement operator; use
+" whitespace before -- to begin a comment after an operand.
 syn keyword luaTodo            contained TODO FIXME XXX
-syn match   luaComment         "--.*$" contains=luaTodo,@Spell
-syn region luaComment        matchgroup=luaComment start="--\[\z(=*\)\[" end="\]\z1\]" contains=luaTodo,@Spell
+syn match   luaComment         "\S\@<!--.*$" contains=luaTodo,@Spell
+syn region luaComment        matchgroup=luaComment start="\S\@<!--\[\z(=*\)\[" end="\]\z1\]" contains=luaTodo,@Spell
 
 " First line may start with #!
 syn match luaComment "\%^#!.*"
@@ -77,6 +78,11 @@ syn match l65SChar "[#!\\]"
 syn match l65SFunc "[\\]"
 syn keyword luaOperator and or not
 syn keyword luaConstant nil true false
+
+" 6502 operator syntax.
+syn keyword l65Register a x y sp
+syn match l65Operator "\%(:=\|+=\|-=\|&=\||=\|\^=\|?=\|<<=\|>>=\)"
+syn match l65Operator "\S\@<=\%(++\|--\)"
 
 syn region	l65PreProc	start="^#\s*\(pragma\>\)" skip="\\$" end="$" keepend
   
@@ -629,6 +635,8 @@ if version >= 508 || !exists("did_l65_syntax_inits")
   HiLink l65Label		Special
   HiLink l65Keyword		Identifier
   HiLink l65Opcode		Type
+  HiLink l65Operator		Operator
+  HiLink l65Register		Identifier
   HiLink l65SChar		Operator
   HiLink l65SFunc		Function
 
