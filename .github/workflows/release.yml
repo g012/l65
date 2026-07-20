@@ -1,0 +1,65 @@
+name: Draft release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Cross-build and create draft release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2.2.1
+        with:
+          version: 0.15.1
+
+      - name: Cross-build release binaries
+        run: zig build --release=small
+
+      - name: Package release archives
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          for target in \
+            x86_64-linux-musl \
+            aarch64-linux \
+            x86_64-macos.10.7 \
+            aarch64-macos.11.0
+          do
+            tar -czf \
+              "${GITHUB_WORKSPACE}/dist/l65-${VERSION}-${target}.tar.gz" \
+              -C "zig-out/${target}" .
+          done
+
+          for target in x86_64-windows aarch64-windows
+          do
+            zip -j \
+              "dist/l65-${VERSION}-${target}.zip" \
+              "zig-out/${target}/l65.exe" \
+              "zig-out/${target}/l7801.exe" \
+              "zig-out/${target}/lz80.exe"
+          done
+
+          cd dist
+          sha256sum ./* > SHA256SUMS
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*
