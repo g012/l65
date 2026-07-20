@@ -1,10 +1,19 @@
 # l65
 
-l65 is a 6502 assembler, operating from within Lua and written in Lua. This means assembler mnemonics become regular Lua statements anywhere in the middle of Lua code.
+A family of lightweight cross-assemblers:
 
-l7801 is a µPD7801 assembler, using l65 framework, created and maintained by [@MooZ] (https://github.com/BlockoS).
+- `l65` — 6502
+- `lz80` — Z80 / SM83
+- `l7801` — NEC 7801
 
-lz80 is a GameBoy SM83 assembler, using l65 framework.
+The assemblers operate from within Lua, and are written in Lua. This means assembler mnemonics become regular Lua statements anywhere in the middle of Lua code. Lua then acts as a dynamic preprocessor of itself, the assembler and linker.
+
+l65 is a 6502 assembler, with libraries for Atari 2600 VCS and NES.
+
+lz80 is a Z80 assembler, with libraries for GameBoy SM83.
+
+l7801 is a NEC µPD7801 assembler, with samples for Super Cassette Vision, created and maintained by [@MooZ] (https://github.com/BlockoS).
+
 
 Table of Contents
 =================
