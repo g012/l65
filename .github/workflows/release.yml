@@ -18,12 +18,26 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install Zig
-        uses: mlugg/setup-zig@v2.2.1
-        with:
-          version: 0.15.1
+        shell: bash
+        env:
+          ZIG_VERSION: 0.15.1
+        run: |
+          set -euo pipefail
+          archive="zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+          install_dir="${RUNNER_TEMP}/zig-${ZIG_VERSION}"
+
+          curl --fail --location --retry 3 \
+            --output "${RUNNER_TEMP}/${archive}" \
+            "https://ziglang.org/download/${ZIG_VERSION}/${archive}"
+          mkdir -p "${install_dir}"
+          tar -xJf "${RUNNER_TEMP}/${archive}" \
+            --strip-components=1 \
+            -C "${install_dir}"
+          "${install_dir}/zig" version
+          echo "${install_dir}" >> "${GITHUB_PATH}"
 
       - name: Cross-build release binaries
-        run: zig build --release=small
+        run: zig build release --release=small
 
       - name: Package release archives
         shell: bash
