@@ -10,7 +10,8 @@ The assemblers operate from within Lua, and are written in Lua. This means assem
 
 l65 is a 6502 assembler, with libraries for Atari 2600 VCS and NES.
 
-lz80 is a Z80 assembler, with libraries for Game Boy SM83 and ZX Spectrum.
+lz80 is a Z80 assembler, with libraries for Game Boy SM83, ZX Spectrum, and
+Amstrad CPC.
 
 l7801 is a NEC µPD7801 assembler, with samples for Super Cassette Vision, created and maintained by [@MooZ] (https://github.com/BlockoS).
 
@@ -81,6 +82,7 @@ Table of Contents
      * [Platform Modules](#platform-modules)
   * [LZ80](#lz80)
      * [ZX Spectrum](#zx-spectrum)
+     * [Amstrad CPC](#amstrad-cpc)
   * [Building](#building)
      * [Windows](#windows)
      * [Linux](#linux)
@@ -140,6 +142,7 @@ Have a look at these files in the `samples` folder to get started with l65:
  * `gb_timer_serial.lz80`: divider, programmable timer, and serial transfer helpers.
  * `gb_twister.lz80`: a Game Boy raster twister that selects a separately projected, shaded cuboid slice during every scanline's HBlank.
  * `zx_hello.lz80`: a ZX Spectrum 48K TAP with an autostart BASIC loader and ROM-printed greeting.
+ * `cpc_hello.lz80`: an Amstrad CPC AMSDOS binary using firmware text, palette, and keyboard helpers.
 
 There's also `vcspal.act`, a palette file for authoring software for VCS. Use this palette or a similar one to create 8b PNG for `l65.image` and helper loaders depending on it. You can generate such a palette, or a GPL one for GIMP using [vcsconv](https://github.com/g012/vcsconv) `authpalette` command.
 
@@ -847,6 +850,43 @@ write_tap(filename .. ".tap")
 Set `loader = false` in either `zx.program` or `write_tap` to emit only the
 CODE header and data blocks. `zx.read_key(zx.KEY_SPACE)` leaves A masked and
 sets Z while the active-low key is pressed.
+
+### Amstrad CPC
+
+`cpc.lz80` targets the CPC 464, 664, and 6128 through their common firmware
+jumpblock. Load it with `require'cpc'`. It defines the standard screen layout,
+Gate Array, CRTC, PPI and peripheral ports, firmware and hardware colour
+numbers, joystick masks, and commonly used keyboard, text, screen, and machine
+firmware calls.
+
+The high-level helpers `cpc.set_mode`, `cpc.set_ink`, `cpc.set_border`,
+`cpc.set_pen`, `cpc.set_paper`, `cpc.print_string`, `cpc.wait_key`, and
+`cpc.wait_vsync` keep the firmware state synchronized. Direct hardware access
+is available through `cpc.ga_select_pen`, `cpc.ga_set_colour`,
+`cpc.ga_set_ink`, `cpc.ga_set_mode`, and `cpc.crtc_write`.
+
+Declare a program with `cpc.program`; its default origin is 16384. The
+`write_amsdos` helper emits the official
+[128-byte AMSDOS header](https://cpctech.cpcwiki.de/docs/manual/s968se09.pdf)
+with binary type, load address, entry address, lengths, and checksum, followed
+by the linked code. The resulting file can be started with `RUN"filename"`
+after placing it on a CPC disk or loading it in an emulator:
+
+```lua
+require'cpc'
+
+cpc.program{ name = "LZ80CPC", org = 0x4000, entry = "start" }
+
+@start
+    cpc.set_mode(1)
+    cpc.set_ink(0, BLUE)
+    cpc.set_ink(1, BRIGHT_YELLOW)
+    cpc.set_border(BLUE)
+    cpc.print_string("HELLO FROM LZ80 ON AMSTRAD CPC!")
+    ret
+
+write_amsdos(filename .. ".bin")
+```
 
 ## Building
 

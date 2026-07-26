@@ -1,0 +1,25 @@
+require 'cpc'
+
+assert(cpc.screen_address(0, 0) == 0xc000)
+assert(cpc.screen_address(79, 199) == 0xffcf)
+
+cpc.program{
+    name = "LZ80CPC",
+    extension = "BIN",
+    org = 0x4000,
+    entry = "start",
+}
+
+@start
+    cpc.set_mode(1)
+    cpc.set_ink(0, BLUE)
+    cpc.set_ink(1, BRIGHT_YELLOW)
+    cpc.set_border(BLUE)
+    cpc.set_paper(0)
+    cpc.set_pen(1)
+    cpc.print_string("HELLO FROM LZ80 ON AMSTRAD CPC!\r\nPRESS A KEY")
+    cpc.wait_key()
+    cpc.set_border(RED)
+    ret
+
+write_amsdos(filename .. '.bin')

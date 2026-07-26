@@ -166,6 +166,7 @@ set(LZ80_SCRIPTS
         ${L65_SOURCE_DIR}/gb.lz80
         ${L65_SOURCE_DIR}/hUGEDriver.lz80
         ${L65_SOURCE_DIR}/zx.lz80
+        ${L65_SOURCE_DIR}/cpc.lz80
     )
 
 add_custom_command(

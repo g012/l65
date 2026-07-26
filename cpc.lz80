@@ -1,0 +1,371 @@
+cpu = require 'z80'
+setmetatable(_ENV, cpu)
+
+cpc = {
+    RAM                    = 0x0000,
+    SCREEN                 = 0xc000,
+    SCREEN_SIZE            = 0x4000,
+    SCREEN_WIDTH_BYTES     = 80,
+    SCREEN_HEIGHT          = 200,
+    MODE0_WIDTH            = 160,
+    MODE0_COLOURS          = 16,
+    MODE1_WIDTH            = 320,
+    MODE1_COLOURS          = 4,
+    MODE2_WIDTH            = 640,
+    MODE2_COLOURS          = 2,
+
+    GA_PORT                = 0x7f00,
+    CRTC_SELECT_PORT       = 0xbc00,
+    CRTC_DATA_PORT         = 0xbd00,
+    PPI_PORT_A             = 0xf400,
+    PPI_PORT_B             = 0xf500,
+    PPI_PORT_C             = 0xf600,
+    PPI_CONTROL_PORT       = 0xf700,
+    ROM_SELECT_PORT        = 0xdf00,
+    PRINTER_PORT           = 0xef00,
+
+    GA_SELECT_BORDER       = 0x10,
+    GA_SET_COLOUR          = 0x40,
+    GA_SET_MODE            = 0x80,
+    GA_DISABLE_LOWER_ROM   = 0x04,
+    GA_DISABLE_UPPER_ROM   = 0x08,
+    GA_RESET_INTERRUPT     = 0x10,
+    GA_SET_RAM             = 0xc0,
+
+    -- Firmware colour numbers, as used by BASIC and SCR SET INK.
+    BLACK                  = 0,
+    BLUE                   = 1,
+    BRIGHT_BLUE            = 2,
+    RED                    = 3,
+    MAGENTA                = 4,
+    MAUVE                  = 5,
+    BRIGHT_RED             = 6,
+    PURPLE                 = 7,
+    BRIGHT_MAGENTA         = 8,
+    GREEN                  = 9,
+    CYAN                   = 10,
+    SKY_BLUE               = 11,
+    YELLOW                 = 12,
+    WHITE                  = 13,
+    PASTEL_BLUE            = 14,
+    ORANGE                 = 15,
+    PINK                   = 16,
+    PASTEL_MAGENTA         = 17,
+    BRIGHT_GREEN           = 18,
+    SEA_GREEN              = 19,
+    BRIGHT_CYAN            = 20,
+    LIME                   = 21,
+    PASTEL_GREEN           = 22,
+    PASTEL_CYAN            = 23,
+    BRIGHT_YELLOW          = 24,
+    PASTEL_YELLOW          = 25,
+    BRIGHT_WHITE           = 26,
+
+    -- Gate Array hardware colour numbers for direct palette writes.
+    GA_WHITE               = 0,
+    GA_SEA_GREEN           = 2,
+    GA_PASTEL_YELLOW       = 3,
+    GA_BLUE                = 4,
+    GA_PURPLE              = 5,
+    GA_CYAN                = 6,
+    GA_PINK                = 7,
+    GA_BRIGHT_YELLOW       = 10,
+    GA_BRIGHT_WHITE        = 11,
+    GA_BRIGHT_RED          = 12,
+    GA_BRIGHT_MAGENTA      = 13,
+    GA_ORANGE              = 14,
+    GA_PASTEL_MAGENTA      = 15,
+    GA_BRIGHT_GREEN        = 18,
+    GA_BRIGHT_CYAN         = 19,
+    GA_BLACK               = 20,
+    GA_BRIGHT_BLUE         = 21,
+    GA_GREEN               = 22,
+    GA_SKY_BLUE            = 23,
+    GA_MAGENTA             = 24,
+    GA_PASTEL_GREEN        = 25,
+    GA_LIME                = 26,
+    GA_PASTEL_CYAN         = 27,
+    GA_RED                 = 28,
+    GA_MAUVE               = 29,
+    GA_YELLOW              = 30,
+    GA_PASTEL_BLUE         = 31,
+
+    JOY_UP                 = 0x01,
+    JOY_DOWN               = 0x02,
+    JOY_LEFT               = 0x04,
+    JOY_RIGHT              = 0x08,
+    JOY_FIRE1              = 0x10,
+    JOY_FIRE2              = 0x20,
+
+    -- Firmware jumpblock addresses common to the CPC 464/664/6128.
+    FW_KM_INITIALISE       = 0xbb00,
+    FW_KM_RESET            = 0xbb03,
+    FW_KM_WAIT_CHAR        = 0xbb06,
+    FW_KM_READ_CHAR        = 0xbb09,
+    FW_KM_WAIT_KEY         = 0xbb18,
+    FW_KM_READ_KEY         = 0xbb1b,
+    FW_KM_TEST_KEY         = 0xbb1e,
+    FW_KM_GET_JOYSTICK     = 0xbb24,
+    FW_TXT_INITIALISE      = 0xbb4e,
+    FW_TXT_RESET           = 0xbb51,
+    FW_TXT_OUTPUT          = 0xbb5a,
+    FW_TXT_WR_CHAR         = 0xbb5d,
+    FW_TXT_CLEAR_WINDOW    = 0xbb6c,
+    FW_TXT_SET_COLUMN      = 0xbb6f,
+    FW_TXT_SET_ROW         = 0xbb72,
+    FW_TXT_SET_CURSOR      = 0xbb75,
+    FW_TXT_SET_PEN         = 0xbb90,
+    FW_TXT_SET_PAPER       = 0xbb96,
+    FW_SCR_INITIALISE      = 0xbbff,
+    FW_SCR_RESET           = 0xbc02,
+    FW_SCR_SET_OFFSET      = 0xbc05,
+    FW_SCR_SET_BASE        = 0xbc08,
+    FW_SCR_SET_MODE        = 0xbc0e,
+    FW_SCR_CLEAR           = 0xbc14,
+    FW_SCR_SET_INK         = 0xbc32,
+    FW_SCR_SET_BORDER      = 0xbc38,
+    FW_MC_START_PROGRAM    = 0xbd16,
+    FW_MC_WAIT_FLYBACK     = 0xbd19,
+}
+
+for name, value in pairs(cpc) do
+    if type(value) == "number" then cpu.symbols[name] = value end
+end
+
+local function integer(value, minimum, maximum, description)
+    assert(type(value) == "number" and value % 1 == 0
+        and value >= minimum and value <= maximum,
+        description .. " must be an integer in " .. minimum .. ".." .. maximum)
+    return value
+end
+
+-- Return the default-screen address for byte column x and pixel row y.
+function cpc.screen_address(x, y)
+    integer(x, 0, SCREEN_WIDTH_BYTES - 1, "screen x")
+    integer(y, 0, SCREEN_HEIGHT - 1, "screen y")
+    return SCREEN + ((y & 0x07) << 11)
+        + ((y >> 3) * SCREEN_WIDTH_BYTES) + x
+end
+
+function cpc.set_mode(mode)
+    integer(mode, 0, 2, "screen mode")
+    a := !mode
+    call FW_SCR_SET_MODE
+end
+
+function cpc.set_pen(pen)
+    integer(pen, 0, 15, "text pen")
+    a := !pen
+    call FW_TXT_SET_PEN
+end
+
+function cpc.set_paper(paper)
+    integer(paper, 0, 15, "text paper")
+    a := !paper
+    call FW_TXT_SET_PAPER
+end
+
+function cpc.set_ink(pen, colour, alternate)
+    integer(pen, 0, 15, "ink pen")
+    integer(colour, 0, 26, "ink colour")
+    if alternate == nil then alternate = colour end
+    integer(alternate, 0, 26, "alternate ink colour")
+    a := !pen
+    b := !colour
+    c := !alternate
+    call FW_SCR_SET_INK
+end
+
+function cpc.set_border(colour, alternate)
+    integer(colour, 0, 26, "border colour")
+    if alternate == nil then alternate = colour end
+    integer(alternate, 0, 26, "alternate border colour")
+    b := !colour
+    c := !alternate
+    call FW_SCR_SET_BORDER
+end
+
+-- Print a build-time string through the current firmware text stream.
+function cpc.print_string(text)
+    assert(type(text) == "string", "print_string requires a string")
+    for i = 1, #text do
+        a := !text:byte(i)
+        call FW_TXT_OUTPUT
+    end
+end
+
+function cpc.wait_key()
+    call FW_KM_WAIT_CHAR
+end
+
+function cpc.read_key()
+    call FW_KM_READ_CHAR
+end
+
+function cpc.get_joystick()
+    call FW_KM_GET_JOYSTICK
+end
+
+function cpc.wait_vsync()
+    call FW_MC_WAIT_FLYBACK
+end
+
+local function ga_output(value)
+    bc := GA_PORT
+    a := !value
+    cpu.out(cpu.mem("c"), "a")
+end
+
+function cpc.ga_select_pen(pen)
+    integer(pen, 0, 16, "Gate Array pen")
+    ga_output(pen)
+end
+
+function cpc.ga_set_colour(colour)
+    integer(colour, 0, 31, "Gate Array colour")
+    ga_output(GA_SET_COLOUR | colour)
+end
+
+function cpc.ga_set_ink(pen, colour)
+    cpc.ga_select_pen(pen)
+    cpc.ga_set_colour(colour)
+end
+
+function cpc.ga_set_mode(mode, lower_rom, upper_rom, reset_interrupt)
+    integer(mode, 0, 2, "Gate Array mode")
+    assert(lower_rom == nil or type(lower_rom) == "boolean",
+        "lower_rom must be boolean")
+    assert(upper_rom == nil or type(upper_rom) == "boolean",
+        "upper_rom must be boolean")
+    assert(reset_interrupt == nil or type(reset_interrupt) == "boolean",
+        "reset_interrupt must be boolean")
+
+    local value = GA_SET_MODE | mode
+    if lower_rom == false then value = value | GA_DISABLE_LOWER_ROM end
+    if upper_rom == false then value = value | GA_DISABLE_UPPER_ROM end
+    if reset_interrupt then value = value | GA_RESET_INTERRUPT end
+    ga_output(value)
+end
+
+function cpc.crtc_write(register, value)
+    integer(register, 0, 31, "CRTC register")
+    integer(value, 0, 255, "CRTC value")
+    bc := CRTC_SELECT_PORT
+    a := !register
+    cpu.out(cpu.mem("c"), "a")
+    bc := CRTC_DATA_PORT
+    a := !value
+    cpu.out(cpu.mem("c"), "a")
+end
+
+cpc.program_config = nil
+
+-- Declare a CPC machine-code program. The default origin is 16384.
+function cpc.program(options)
+    options = options or {}
+    assert(type(options) == "table", "program options must be a table")
+    assert(cpc.program_config == nil, "a CPC program is already declared")
+
+    local config = {}
+    for name, value in pairs(options) do config[name] = value end
+    config.org = config.org or config.origin or 0x4000
+    integer(config.org, RAM, 0xffff, "program origin")
+    config.entry = config.entry or config.org
+    config.name = config.name or "LZ80CPC"
+    config.extension = config.extension or "BIN"
+
+    cpc.program_config = config
+    location{ config.org, name = "CPC RAM" }
+    return section{ config.section or "code", org = config.org }
+end
+
+local function put_word(bytes, offset, value)
+    integer(value, 0, 0xffff, "word")
+    bytes[offset + 1] = value & 0xff
+    bytes[offset + 2] = (value >> 8) & 0xff
+end
+
+local function amsdos_component(value, width, description)
+    value = tostring(value or ""):upper():gsub("[^A-Z0-9!#$&'+@^_{}~-]", "_")
+    value = value:sub(1, width)
+    assert(value ~= "", description .. " cannot be empty")
+    return value .. string.rep(" ", width - #value)
+end
+
+local function output_name(output)
+    local base = output:match("([^/\\]+)$") or output
+    local name, extension = base:match("^(.*)%.([^.]*)$")
+    return name or base, extension
+end
+
+local function write_data(file, data)
+    for i = 1, #data, 0x4000 do
+        file:write(string.char(table.unpack(data, i, math.min(i + 0x3fff, #data))))
+    end
+end
+
+local function resolve_address(value, description)
+    local ok, resolved = pcall(cpu.op_resolve, value)
+    assert(ok, description .. " is unresolved: " .. tostring(value))
+    return integer(resolved, 0, 0xffff, description)
+end
+
+-- Write a 128-byte AMSDOS binary header followed by the linked program.
+-- Options override cpc.program: name, extension, user, org/origin, entry, bin.
+function cpc.write_amsdos(output, options)
+    assert(type(output) == "string" and output ~= "", "AMSDOS filename is required")
+    options = options or {}
+    assert(type(options) == "table", "write_amsdos options must be a table")
+
+    local config = cpc.program_config or {}
+    local bin = options.bin or cpu.genbin()
+    assert(type(bin) == "table" and #bin > 0, "CPC program is empty")
+    assert(#bin <= 0xffff, "AMSDOS binary is too large")
+    cpu.bin_finalizer(bin)
+
+    local first_location = cpu.locations[1]
+    local origin = options.org or options.origin or config.org or config.origin
+        or (first_location and first_location.start)
+    origin = resolve_address(origin, "program origin")
+    assert(origin + #bin <= 0x10000, "CPC program extends past 65535")
+
+    local entry = resolve_address(options.entry or config.entry or origin,
+        "program entry")
+    assert(entry >= origin and entry < origin + #bin,
+        "program entry must be inside the binary")
+
+    local path_name, path_extension = output_name(output)
+    local name = amsdos_component(options.name or config.name or path_name,
+        8, "AMSDOS name")
+    local extension = amsdos_component(options.extension or config.extension
+        or path_extension or "BIN", 3, "AMSDOS extension")
+    local user = integer(options.user or config.user or 0, 0, 15, "AMSDOS user")
+
+    local header = {}
+    for i = 1, 128 do header[i] = 0 end
+    header[1] = user
+    for i = 1, 8 do header[i + 1] = name:byte(i) end
+    for i = 1, 3 do header[i + 9] = extension:byte(i) end
+    header[19] = 2
+    put_word(header, 19, #bin)
+    put_word(header, 21, origin)
+    header[24] = 0xff
+    put_word(header, 24, #bin)
+    put_word(header, 26, entry)
+    header[65] = #bin & 0xff
+    header[66] = (#bin >> 8) & 0xff
+    header[67] = (#bin >> 16) & 0xff
+
+    local checksum = 0
+    for i = 1, 67 do checksum = checksum + header[i] end
+    put_word(header, 67, checksum & 0xffff)
+
+    local file = assert(io.open(output, "wb"), "failed to open " .. output .. " for writing")
+    write_data(file, header)
+    write_data(file, bin)
+    file:close()
+end
+
+for name, value in pairs(cpc) do
+    if type(value) == "function" then rawset(_ENV, name, value) end
+end
