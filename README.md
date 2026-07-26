@@ -8,7 +8,8 @@ A family of lightweight cross-assemblers:
 
 The assemblers operate from within Lua, and are written in Lua. This means assembler mnemonics become regular Lua statements anywhere in the middle of Lua code. Lua then acts as a dynamic preprocessor of itself, the assembler and linker.
 
-l65 is a 6502 assembler, with libraries for Atari 2600 VCS and NES.
+l65 is a 6502 assembler, with libraries for Atari 8-bit computers, Atari 2600
+VCS, and NES.
 
 lz80 is a Z80 assembler, with libraries for GameBoy SM83.
 
@@ -113,6 +114,7 @@ Options:
 
 Have a look at these files in the `samples` folder to get started with l65:
  * `l65_operator_syntax.l65`: a self-validating comparison of 6502 mnemonic and operator syntax encodings.
+ * `atari_hello.l65`: an Atari 8-bit XEX that prints through the OS screen editor and animates the background color.
  * `vcs_basic.l65`: a 2Kb VCS ROM which just shows color bands.
  * `vcs_hooks.l65`: shows how to insert your own instructions into the pipeline, here to get the cycle count and size of the kernel. Also, it does not use the main loop helpers nor mapper functions to show the actual code involved.
  * `vcs_hello.l65`: a VCS 'Hello World' using the playfield.
@@ -694,6 +696,15 @@ defaults to HRAM and can be relocated by setting `pb16_byte0` before emitting
 the routines.
 
 ### Platform Modules
+
+`atari.l65` supports the Atari 400/800, XL, XE, and XEGS family. It exposes
+the common OS variables and entry points, IOCB/DCB fields, and the GTIA,
+POKEY, PIA, and ANTIC registers and control bits. `atari.xex{}` declares a
+single load segment (default `$2000`) and makes the normal `writebin()` path
+emit a DOS 2 binary-load file with a `RUNAD` record. `atari.cio{}` emits a
+general CIO call, while `atari.put()` and `atari.wait_vblank()` cover common
+screen output and frame synchronization tasks. See `samples/atari_hello.l65`
+for a complete XEX.
 
 `vcs.l65` is a helper file for developing on Atari 2600 VCS. It's embedded into the l65 executable. It sets the 6502.lua module as metatable of the current `_ENV`, defines all TIA and PIA symbols, some helper constants and functions, as well as mapper helpers and automatic cross bank call functions. See the samples directory for usage examples, and browse vcs.l65 directly for the list of self-explanatory helpers.
 

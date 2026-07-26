@@ -51,6 +51,7 @@ pub fn build(b: *std.Build) !void {
     embed.addFileArg(b.path("l65.lua"));
     embed.addFileArg(b.path("pb.lua"));
     embed.addFileArg(b.path("re.lua"));
+    embed.addFileArg(b.path("atari.l65"));
     embed.addFileArg(b.path("nes.l65"));
     embed.addFileArg(b.path("pce.l65"));
     embed.addFileArg(b.path("vcs.l65"));

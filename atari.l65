@@ -1,0 +1,398 @@
+-- Atari 8-bit computer helpers (400/800, XL, XE, and XEGS)
+cpu = require "6502"
+setmetatable(_ENV, cpu)
+
+atari = {
+    NTSC_CLOCK = 1789773,
+    PAL_CLOCK  = 1773447,
+
+    -- Common OS zero-page variables
+    DOSVEC  = 0x000a,
+    DOSINI  = 0x000c,
+    APPMHI  = 0x000e,
+    POKMSK  = 0x0010,
+    BRKKEY  = 0x0011,
+    RTCLOK  = 0x0012,
+    STATUS  = 0x0030,
+    ATRACT  = 0x004d,
+    COLRSH  = 0x004f,
+    LMARGN  = 0x0052,
+    RMARGN  = 0x0053,
+    ROWCRS  = 0x0054,
+    COLCRS  = 0x0055,
+    DINDEX  = 0x0057,
+    SAVMSC  = 0x0058,
+    PALNTS  = 0x0062,
+    RAMTOP  = 0x006a,
+
+    -- OS page two variables and vectors
+    VDSLST  = 0x0200,
+    VPRCED  = 0x0202,
+    VINTER  = 0x0204,
+    VBREAK  = 0x0206,
+    VKEYBD  = 0x0208,
+    VSERIN  = 0x020a,
+    VSEROR  = 0x020c,
+    VSEROC  = 0x020e,
+    VTIMR1  = 0x0210,
+    VTIMR2  = 0x0212,
+    VTIMR4  = 0x0214,
+    VIMIRQ  = 0x0216,
+    VVBLKI  = 0x0222,
+    VVBLKD  = 0x0224,
+    SDMCTL  = 0x022f,
+    SDLSTL  = 0x0230,
+    SDLSTH  = 0x0231,
+    SSKCTL  = 0x0232,
+    GPRIOR  = 0x026f,
+    PADDL0  = 0x0270,
+    PADDL1  = 0x0271,
+    PADDL2  = 0x0272,
+    PADDL3  = 0x0273,
+    PADDL4  = 0x0274,
+    PADDL5  = 0x0275,
+    PADDL6  = 0x0276,
+    PADDL7  = 0x0277,
+    STICK0  = 0x0278,
+    STICK1  = 0x0279,
+    STICK2  = 0x027a,
+    STICK3  = 0x027b,
+    PTRIG0  = 0x027c,
+    PTRIG1  = 0x027d,
+    PTRIG2  = 0x027e,
+    PTRIG3  = 0x027f,
+    PTRIG4  = 0x0280,
+    PTRIG5  = 0x0281,
+    PTRIG6  = 0x0282,
+    PTRIG7  = 0x0283,
+    STRIG0  = 0x0284,
+    STRIG1  = 0x0285,
+    STRIG2  = 0x0286,
+    STRIG3  = 0x0287,
+    PCOLR0  = 0x02c0,
+    PCOLR1  = 0x02c1,
+    PCOLR2  = 0x02c2,
+    PCOLR3  = 0x02c3,
+    COLOR0  = 0x02c4,
+    COLOR1  = 0x02c5,
+    COLOR2  = 0x02c6,
+    COLOR3  = 0x02c7,
+    COLOR4  = 0x02c8,
+    RUNAD   = 0x02e0,
+    INITAD  = 0x02e2,
+    RAMSIZ  = 0x02e4,
+    MEMTOP  = 0x02e5,
+    MEMLO   = 0x02e7,
+    CRSINH  = 0x02f0,
+    CHACT   = 0x02f3,
+    CHBAS   = 0x02f4,
+    CH      = 0x02fc,
+
+    -- Device control block
+    DCB     = 0x0300,
+    DDEVIC  = 0x0300,
+    DUNIT   = 0x0301,
+    DCOMND  = 0x0302,
+    DSTATS  = 0x0303,
+    DBUFLO  = 0x0304,
+    DBUFHI  = 0x0305,
+    DTIMLO  = 0x0306,
+    DBYTLO  = 0x0308,
+    DBYTHI  = 0x0309,
+    DAUX1   = 0x030a,
+    DAUX2   = 0x030b,
+
+    -- I/O control blocks. Add channel * IOCBSZ to these addresses.
+    IOCB    = 0x0340,
+    ICHID   = 0x0340,
+    ICDNO   = 0x0341,
+    ICCOM   = 0x0342,
+    ICSTA   = 0x0343,
+    ICBAL   = 0x0344,
+    ICBAH   = 0x0345,
+    ICPTL   = 0x0346,
+    ICPTH   = 0x0347,
+    ICBLL   = 0x0348,
+    ICBLH   = 0x0349,
+    ICAX1   = 0x034a,
+    ICAX2   = 0x034b,
+    ICAX3   = 0x034c,
+    ICAX4   = 0x034d,
+    ICAX5   = 0x034e,
+    ICAX6   = 0x034f,
+    IOCBSZ  = 0x0010,
+
+    -- CIO commands and common values
+    OPEN    = 0x03,
+    GETREC  = 0x05,
+    GETCHR  = 0x07,
+    PUTREC  = 0x09,
+    PUTCHR  = 0x0b,
+    CLOSE   = 0x0c,
+    STATIS  = 0x0d,
+    SPECIAL = 0x0e,
+    OPNIN   = 0x04,
+    OPNOT   = 0x08,
+    EOL     = 0x9b,
+
+    -- CTIA/GTIA ($d000)
+    GTIA    = 0xd000,
+    M0PF    = 0xd000,
+    M1PF    = 0xd001,
+    M2PF    = 0xd002,
+    M3PF    = 0xd003,
+    P0PF    = 0xd004,
+    P1PF    = 0xd005,
+    P2PF    = 0xd006,
+    P3PF    = 0xd007,
+    M0PL    = 0xd008,
+    M1PL    = 0xd009,
+    M2PL    = 0xd00a,
+    M3PL    = 0xd00b,
+    P0PL    = 0xd00c,
+    P1PL    = 0xd00d,
+    P2PL    = 0xd00e,
+    P3PL    = 0xd00f,
+    TRIG0   = 0xd010,
+    TRIG1   = 0xd011,
+    TRIG2   = 0xd012,
+    TRIG3   = 0xd013,
+    PAL     = 0xd014,
+    CONSOL  = 0xd01f,
+    HPOSP0  = 0xd000,
+    HPOSP1  = 0xd001,
+    HPOSP2  = 0xd002,
+    HPOSP3  = 0xd003,
+    HPOSM0  = 0xd004,
+    HPOSM1  = 0xd005,
+    HPOSM2  = 0xd006,
+    HPOSM3  = 0xd007,
+    SIZEP0  = 0xd008,
+    SIZEP1  = 0xd009,
+    SIZEP2  = 0xd00a,
+    SIZEP3  = 0xd00b,
+    SIZEM   = 0xd00c,
+    GRAFP0  = 0xd00d,
+    GRAFP1  = 0xd00e,
+    GRAFP2  = 0xd00f,
+    GRAFP3  = 0xd010,
+    GRAFM   = 0xd011,
+    COLPM0  = 0xd012,
+    COLPM1  = 0xd013,
+    COLPM2  = 0xd014,
+    COLPM3  = 0xd015,
+    COLPF0  = 0xd016,
+    COLPF1  = 0xd017,
+    COLPF2  = 0xd018,
+    COLPF3  = 0xd019,
+    COLBK   = 0xd01a,
+    PRIOR   = 0xd01b,
+    VDELAY  = 0xd01c,
+    GRACTL  = 0xd01d,
+    HITCLR  = 0xd01e,
+
+    -- POKEY ($d200)
+    POKEY   = 0xd200,
+    POT0    = 0xd200,
+    POT1    = 0xd201,
+    POT2    = 0xd202,
+    POT3    = 0xd203,
+    POT4    = 0xd204,
+    POT5    = 0xd205,
+    POT6    = 0xd206,
+    POT7    = 0xd207,
+    ALLPOT  = 0xd208,
+    KBCODE  = 0xd209,
+    RANDOM  = 0xd20a,
+    SERIN   = 0xd20d,
+    IRQST   = 0xd20e,
+    SKSTAT  = 0xd20f,
+    AUDF1   = 0xd200,
+    AUDC1   = 0xd201,
+    AUDF2   = 0xd202,
+    AUDC2   = 0xd203,
+    AUDF3   = 0xd204,
+    AUDC3   = 0xd205,
+    AUDF4   = 0xd206,
+    AUDC4   = 0xd207,
+    AUDCTL  = 0xd208,
+    STIMER  = 0xd209,
+    SKRES   = 0xd20a,
+    POTGO   = 0xd20b,
+    SEROUT  = 0xd20d,
+    IRQEN   = 0xd20e,
+    SKCTL   = 0xd20f,
+
+    -- PIA and XL/XE memory control ($d300)
+    PIA     = 0xd300,
+    PORTA   = 0xd300,
+    PORTB   = 0xd301,
+    PACTL   = 0xd302,
+    PBCTL   = 0xd303,
+
+    -- ANTIC ($d400)
+    ANTIC   = 0xd400,
+    VCOUNT  = 0xd40b,
+    PENH    = 0xd40c,
+    PENV    = 0xd40d,
+    NMIST   = 0xd40f,
+    DMACTL  = 0xd400,
+    DLISTL  = 0xd402,
+    DLISTH  = 0xd403,
+    HSCROL  = 0xd404,
+    VSCROL  = 0xd405,
+    PMBASE  = 0xd407,
+    CHBASE  = 0xd409,
+    WSYNC   = 0xd40a,
+    NMIEN   = 0xd40e,
+    NMIRES  = 0xd40f,
+
+    -- Stable OS entry points
+    DISKIV  = 0xe450,
+    DSKINV  = 0xe453,
+    CIOV    = 0xe456,
+    SIOV    = 0xe459,
+    SETVBV  = 0xe45c,
+    SYSVBV  = 0xe45f,
+    XITVBV  = 0xe462,
+    WARMSV  = 0xe474,
+    COLDSV  = 0xe477,
+
+    -- ANTIC display-list instructions and modifiers
+    DL_JMP          = 0x01,
+    DL_JVB          = 0x41,
+    DL_BLK1         = 0x00,
+    DL_BLK2         = 0x10,
+    DL_BLK3         = 0x20,
+    DL_BLK4         = 0x30,
+    DL_BLK5         = 0x40,
+    DL_BLK6         = 0x50,
+    DL_BLK7         = 0x60,
+    DL_BLK8         = 0x70,
+    DL_CHR40x8x1    = 0x02,
+    DL_CHR40x10x1   = 0x03,
+    DL_CHR40x8x4    = 0x04,
+    DL_CHR40x16x4   = 0x05,
+    DL_CHR20x8x2    = 0x06,
+    DL_CHR20x16x2   = 0x07,
+    DL_MAP40x8x4    = 0x08,
+    DL_MAP80x4x2    = 0x09,
+    DL_MAP80x4x4    = 0x0a,
+    DL_MAP160x2x2   = 0x0b,
+    DL_MAP160x1x2   = 0x0c,
+    DL_MAP160x2x4   = 0x0d,
+    DL_MAP160x1x4   = 0x0e,
+    DL_MAP320x1x1   = 0x0f,
+    DL_HSCROL       = 0x10,
+    DL_VSCROL       = 0x20,
+    DL_LMS          = 0x40,
+    DL_DLI          = 0x80,
+
+    -- Hardware control bits
+    DMACTL_NARROW   = 0x01,
+    DMACTL_NORMAL   = 0x02,
+    DMACTL_WIDE     = 0x03,
+    DMACTL_MISSILES = 0x04,
+    DMACTL_PLAYERS  = 0x08,
+    DMACTL_PM       = 0x0c,
+    DMACTL_DLIST    = 0x20,
+    NMIEN_RESET     = 0x20,
+    NMIEN_VBI       = 0x40,
+    NMIEN_DLI       = 0x80,
+    GRACTL_MISSILES = 0x01,
+    GRACTL_PLAYERS  = 0x02,
+    GRACTL_TRIGGERS = 0x04,
+    CONSOL_START    = 0x01,
+    CONSOL_SELECT   = 0x02,
+    CONSOL_OPTION   = 0x04,
+    STICK_UP        = 0x01,
+    STICK_DOWN      = 0x02,
+    STICK_LEFT      = 0x04,
+    STICK_RIGHT     = 0x08,
+    STICK_NONE      = 0x0f,
+    AUDC_VOLUME     = 0x0f,
+    AUDC_VOLUME_ONLY= 0x10,
+    AUDC_PURE       = 0x20,
+    AUDC_POLY4      = 0x40,
+    AUDC_NOTPOLY5   = 0x80,
+    AUDCTL_15KHZ    = 0x01,
+    AUDCTL_FILTER2  = 0x02,
+    AUDCTL_FILTER1  = 0x04,
+    AUDCTL_JOIN34   = 0x08,
+    AUDCTL_JOIN12   = 0x10,
+    AUDCTL_HICLK3   = 0x20,
+    AUDCTL_HICLK1   = 0x40,
+    AUDCTL_POLY9    = 0x80,
+}
+
+do
+    local symbols = cpu.symbols
+    for k,v in pairs(atari) do symbols[k] = v end
+end
+
+-- Declare a single-segment DOS 2 binary load file. The regular writebin()
+-- path adds the XEX segment header and RUNAD record after linking.
+atari.xex = function(t)
+    if type(t) == 'number' then t = { start=t } end
+    t = t or {}
+    assert(#cpu.locations == 0, "atari.xex must be declared before any locations")
+    local start = t.start or 0x2000
+    assert(math.type(start) == 'integer' and start >= 0 and start <= 0xffff,
+        "invalid XEX load address")
+    if t.finish then
+        assert(math.type(t.finish) == 'integer' and t.finish >= start and t.finish <= 0xffff,
+            "invalid XEX end address")
+    end
+
+    program = location{start, t.finish, name=t.name or 'program'}
+    local run = t.run or 'main'
+    cpu.bin_finalizer = function(bin)
+        assert(#bin > 0, "cannot write an empty XEX segment")
+        local finish = start + #bin - 1
+        assert(finish <= 0xffff, "XEX segment exceeds the 6502 address space")
+        local run_address = op_resolve(run)
+        assert(run_address >= 0 and run_address <= 0xffff, "invalid XEX run address")
+
+        local header = { 0xff, 0xff, start&0xff, start>>8, finish&0xff, finish>>8 }
+        for i=#header,1,-1 do table.insert(bin, 1, header[i]) end
+        bin[#bin+1] = RUNAD&0xff
+        bin[#bin+1] = RUNAD>>8
+        bin[#bin+1] = (RUNAD+1)&0xff
+        bin[#bin+1] = (RUNAD+1)>>8
+        bin[#bin+1] = run_address&0xff
+        bin[#bin+1] = run_address>>8
+    end
+    return program
+end
+
+-- Emit a CIO call. X and Y have the usual CIO return values afterwards.
+atari.cio = function(t)
+    assert(type(t) == 'table' and t.command, "atari.cio requires a command")
+    local channel = t.channel or 0
+    assert(math.type(channel) == 'integer' and channel >= 0 and channel < 8,
+        "invalid CIO channel")
+    ldx #channel*IOCBSZ
+    lda #t.command sta ICCOM,x
+    if t.buffer then
+        lda #op_resolve(t.buffer)&0xff sta ICBAL,x
+        lda #op_resolve(t.buffer)>>8 sta ICBAH,x
+    end
+    if t.length then
+        lda #op_resolve(t.length)&0xff sta ICBLL,x
+        lda #op_resolve(t.length)>>8 sta ICBLH,x
+    end
+    if t.aux1 then lda #t.aux1 sta ICAX1,x end
+    if t.aux2 then lda #t.aux2 sta ICAX2,x end
+    jsr CIOV
+end
+
+atari.put = function(buffer, length, channel)
+    atari.cio{ command=PUTCHR, buffer=buffer, length=length, channel=channel }
+end
+
+atari.wait_vblank = function()
+    local wait = label()
+    lda RTCLOK+2
+    cmp RTCLOK+2
+    beq wait
+end

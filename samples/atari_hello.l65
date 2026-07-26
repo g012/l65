@@ -1,0 +1,19 @@
+require'atari'
+
+atari.xex{ start=0x2000, run='main' }
+
+local greeting = "HELLO ATARI 8-BIT!"
+@@message byte(greeting) dc.b EOL
+
+@@main
+    -- IOCB 0 is the screen editor opened by the OS.
+    atari.put(message, #greeting+1)
+    lda #0x34 sta COLOR2
+@_loop
+    atari.wait_vblank()
+    inc COLOR4
+    jmp _loop
+
+writebin(filename..'.xex')
+writesym(filename..'.sym')
+print(stats)
