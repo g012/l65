@@ -149,6 +149,7 @@ static struct script { const char *name; int t;  const char *data; size_t sz; } 
     SRC_LZ80(hUGEDriver),
     SRC_LZ80(zx),
     SRC_LZ80(cpc),
+    SRC_LZ80(mz),
 };
 #undef SRC_LUA
 #undef SRC_LZ80

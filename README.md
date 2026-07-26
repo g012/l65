@@ -10,8 +10,8 @@ The assemblers operate from within Lua, and are written in Lua. This means assem
 
 l65 is a 6502 assembler, with libraries for Atari 2600 VCS and NES.
 
-lz80 is a Z80 assembler, with libraries for Game Boy SM83, ZX Spectrum, and
-Amstrad CPC.
+lz80 is a Z80 assembler, with libraries for Game Boy SM83, ZX Spectrum,
+Amstrad CPC, and Sharp MZ-700.
 
 l7801 is a NEC µPD7801 assembler, with samples for Super Cassette Vision, created and maintained by [@MooZ] (https://github.com/BlockoS).
 
@@ -83,6 +83,7 @@ Table of Contents
   * [LZ80](#lz80)
      * [ZX Spectrum](#zx-spectrum)
      * [Amstrad CPC](#amstrad-cpc)
+     * [Sharp MZ-700](#sharp-mz-700)
   * [Building](#building)
      * [Windows](#windows)
      * [Linux](#linux)
@@ -143,6 +144,7 @@ Have a look at these files in the `samples` folder to get started with l65:
  * `gb_twister.lz80`: a Game Boy raster twister that selects a separately projected, shaded cuboid slice during every scanline's HBlank.
  * `zx_hello.lz80`: a ZX Spectrum 48K TAP with an autostart BASIC loader and ROM-printed greeting.
  * `cpc_hello.lz80`: an Amstrad CPC AMSDOS binary using firmware text, palette, and keyboard helpers.
+ * `mz_hello.lz80`: a Sharp MZ-700 MZF object using monitor text, keyboard, and bell helpers.
 
 There's also `vcspal.act`, a palette file for authoring software for VCS. Use this palette or a similar one to create 8b PNG for `l65.image` and helper loaders depending on it. You can generate such a palette, or a GPL one for GIMP using [vcsconv](https://github.com/g012/vcsconv) `authpalette` command.
 
@@ -886,6 +888,42 @@ cpc.program{ name = "LZ80CPC", org = 0x4000, entry = "start" }
     ret
 
 write_amsdos(filename .. ".bin")
+```
+
+### Sharp MZ-700
+
+`mz.lz80` targets the Sharp MZ-700 monitor ABI and also suits an MZ-800 or
+MZ-1500 running in MZ-700 mode. Load it with `require'mz'`. It defines the
+40-by-25 character and colour VRAM layout, memory-mapped PPI and timer ports,
+bank-switching ports, colour attributes, and the standard 1Z-013A monitor entry
+points documented in the
+[MZ-700 owner's manual](https://sharpmz.no/original/mz-700/download/mz-700_owners_manual.pdf).
+
+Use `mz.print_char`, `mz.print_string`, `mz.newline`, `mz.get_key`, and
+`mz.bell` for monitor-based I/O. For direct hardware access,
+`mz.screen_address`, `mz.colour_address`, and `mz.attribute` calculate VRAM
+values, while `mz.map_low_ram`, `mz.map_high_ram`, `mz.map_monitor_rom`, and
+`mz.map_vram_io` emit the documented bank-switch operations. Disable interrupts
+around direct VRAM access and restore high RAM with `mz.map_high_ram` when done.
+
+`mz.program` defaults to address 4608 (`$1200`), immediately after the monitor
+work area. `write_mzf` emits an MZF object with the standard 128-byte information
+block, including its filename, byte count, load address, execution address, and
+optional comment. An emulator can load the resulting file directly:
+
+```lua
+require'mz'
+
+mz.program{ name = "LZ80 MZ-700", org = 0x1200, entry = "start" }
+
+@start
+    mz.print_string("HELLO FROM LZ80 ON SHARP MZ-700!")
+    mz.newline()
+@@forever
+    halt
+    jr forever
+
+write_mzf(filename .. ".mzf")
 ```
 
 ## Building

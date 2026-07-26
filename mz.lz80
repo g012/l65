@@ -1,0 +1,284 @@
+cpu = require 'z80'
+setmetatable(_ENV, cpu)
+
+mz = {
+    RAM                    = 0x0000,
+    MONITOR_ROM            = 0x0000,
+    MONITOR_SIZE           = 0x1000,
+    MONITOR_WORK           = 0x1000,
+    PROGRAM_RAM            = 0x1200,
+
+    CHARACTER_VRAM         = 0xd000,
+    COLOUR_VRAM            = 0xd800,
+    SCREEN_COLUMNS         = 40,
+    SCREEN_ROWS            = 25,
+    SCREEN_CELLS           = 1000,
+
+    PPI_PORT_A             = 0xe000,
+    PPI_PORT_B             = 0xe001,
+    PPI_PORT_C             = 0xe002,
+    PPI_CONTROL            = 0xe003,
+    TIMER_CHANNEL_0        = 0xe004,
+    TIMER_CHANNEL_1        = 0xe005,
+    TIMER_CHANNEL_2        = 0xe006,
+    TIMER_CONTROL          = 0xe007,
+    TEMPO_JOYSTICK         = 0xe008,
+
+    MAP_LOW_RAM_PORT       = 0xe0,
+    MAP_HIGH_RAM_PORT      = 0xe1,
+    MAP_MONITOR_ROM_PORT   = 0xe2,
+    MAP_VRAM_IO_PORT       = 0xe3,
+    RESET_MEMORY_MAP_PORT  = 0xe4,
+    INHIBIT_HIGH_PORT      = 0xe5,
+    RESTORE_HIGH_PORT      = 0xe6,
+
+    BLACK                  = 0,
+    BLUE                   = 1,
+    RED                    = 2,
+    PURPLE                 = 3,
+    GREEN                  = 4,
+    CYAN                   = 5,
+    LIGHT_BLUE             = 5,
+    YELLOW                 = 6,
+    WHITE                  = 7,
+    BACKGROUND_MASK        = 0x07,
+    FOREGROUND_MASK        = 0x70,
+    FOREGROUND_SHIFT       = 4,
+    ALTERNATE_CHARACTER_SET = 0x80,
+
+    MZF_OBJECT             = 0x01,
+
+    -- Monitor entry points from the MZ-700 1Z-013A ROM.
+    MONITOR                = 0x0000,
+    MON_GET_LINE           = 0x0003,
+    MON_NEW_LINE           = 0x0006,
+    MON_NEW_LINE_ONLY      = 0x0009,
+    MON_PRINT_SPACE        = 0x000c,
+    MON_PRINT_TAB          = 0x000f,
+    MON_PRINT_CHAR         = 0x0012,
+    MON_PRINT_MESSAGE      = 0x0015,
+    MON_PRINT_MESSAGE_X    = 0x0018,
+    MON_GET_KEY            = 0x001b,
+    MON_BREAK_KEY          = 0x001e,
+    MON_WRITE_INFO         = 0x0021,
+    MON_WRITE_DATA         = 0x0024,
+    MON_READ_INFO          = 0x0027,
+    MON_READ_DATA          = 0x002a,
+    MON_VERIFY             = 0x002d,
+    MON_MELODY             = 0x0030,
+    MON_TIME_SET           = 0x0033,
+    MON_TIME_READ          = 0x003b,
+    MON_BELL               = 0x003e,
+    MON_TEMPO              = 0x0041,
+    MON_MELODY_START       = 0x0044,
+    MON_MELODY_STOP        = 0x0047,
+}
+
+for name, value in pairs(mz) do
+    if type(value) == "number" then cpu.symbols[name] = value end
+end
+
+local function integer(value, minimum, maximum, description)
+    assert(type(value) == "number" and value % 1 == 0
+        and value >= minimum and value <= maximum,
+        description .. " must be an integer in " .. minimum .. ".." .. maximum)
+    return value
+end
+
+function mz.screen_address(column, row)
+    integer(column, 0, SCREEN_COLUMNS - 1, "screen column")
+    integer(row, 0, SCREEN_ROWS - 1, "screen row")
+    return CHARACTER_VRAM + row * SCREEN_COLUMNS + column
+end
+
+function mz.colour_address(column, row)
+    return mz.screen_address(column, row) + (COLOUR_VRAM - CHARACTER_VRAM)
+end
+
+function mz.attribute(foreground, background, alternate_character_set)
+    integer(foreground, 0, 7, "foreground colour")
+    integer(background, 0, 7, "background colour")
+    assert(alternate_character_set == nil
+        or type(alternate_character_set) == "boolean",
+        "alternate_character_set must be boolean")
+    return (foreground << FOREGROUND_SHIFT) | background
+        | (alternate_character_set and ALTERNATE_CHARACTER_SET or 0)
+end
+
+function mz.print_char(character)
+    integer(character, 0, 255, "character")
+    a := !character
+    call MON_PRINT_CHAR
+end
+
+function mz.print_string(value)
+    assert(type(value) == "string", "print_string requires a string")
+    for i = 1, #value do
+        a := !value:byte(i)
+        call MON_PRINT_CHAR
+    end
+end
+
+function mz.newline()
+    call MON_NEW_LINE_ONLY
+end
+
+function mz.get_key()
+    call MON_GET_KEY
+end
+
+function mz.break_key()
+    call MON_BREAK_KEY
+end
+
+function mz.bell()
+    call MON_BELL
+end
+
+function mz.start_melody()
+    call MON_MELODY_START
+end
+
+function mz.stop_melody()
+    call MON_MELODY_STOP
+end
+
+local function map_output(port)
+    cpu.out(cpu.mem(port), "a")
+end
+
+-- Bank switching ignores the value in A and leaves it unchanged.
+function mz.map_low_ram()
+    map_output(MAP_LOW_RAM_PORT)
+end
+
+function mz.map_high_ram()
+    map_output(MAP_HIGH_RAM_PORT)
+end
+
+function mz.map_monitor_rom()
+    map_output(MAP_MONITOR_ROM_PORT)
+end
+
+function mz.map_vram_io()
+    map_output(MAP_VRAM_IO_PORT)
+end
+
+function mz.reset_memory_map()
+    map_output(RESET_MEMORY_MAP_PORT)
+end
+
+function mz.inhibit_high_memory()
+    map_output(INHIBIT_HIGH_PORT)
+end
+
+function mz.restore_high_memory()
+    map_output(RESTORE_HIGH_PORT)
+end
+
+mz.program_config = nil
+
+-- Declare an MZ-700 machine-code program. The default origin is 4608 ($1200),
+-- immediately after the monitor work area.
+function mz.program(options)
+    options = options or {}
+    assert(type(options) == "table", "program options must be a table")
+    assert(mz.program_config == nil, "an MZ program is already declared")
+
+    local config = {}
+    for name, value in pairs(options) do config[name] = value end
+    config.org = config.org or config.origin or PROGRAM_RAM
+    integer(config.org, RAM, 0xffff, "program origin")
+    config.entry = config.entry or config.org
+    config.name = config.name or "LZ80 MZ-700"
+    config.attribute = config.attribute or MZF_OBJECT
+
+    mz.program_config = config
+    location{ config.org, name = "Sharp MZ RAM" }
+    return section{ config.section or "code", org = config.org }
+end
+
+local function put_word(bytes, offset, value)
+    integer(value, 0, 0xffff, "word")
+    bytes[offset + 1] = value & 0xff
+    bytes[offset + 2] = (value >> 8) & 0xff
+end
+
+local function mzf_name(value)
+    value = tostring(value or "LZ80 MZ-700"):upper():gsub("[^ -~]", "?")
+    value = value:sub(1, 16)
+    assert(value ~= "", "MZF name cannot be empty")
+    return value
+end
+
+local function mzf_comment(value)
+    value = tostring(value or ""):gsub("[^ -~]", "?")
+    return value:sub(1, 104)
+end
+
+local function output_name(output)
+    local base = output:match("([^/\\]+)$") or output
+    return base:gsub("%.[^.]*$", "")
+end
+
+local function write_data(file, data)
+    for i = 1, #data, 0x4000 do
+        file:write(string.char(table.unpack(data, i, math.min(i + 0x3fff, #data))))
+    end
+end
+
+local function resolve_address(value, description)
+    local ok, resolved = pcall(cpu.op_resolve, value)
+    assert(ok, description .. " is unresolved: " .. tostring(value))
+    return integer(resolved, 0, 0xffff, description)
+end
+
+-- Write a 128-byte MZF information block followed by the linked program.
+-- Options override mz.program: name, comment, attribute, org/origin, entry, bin.
+function mz.write_mzf(output, options)
+    assert(type(output) == "string" and output ~= "", "MZF filename is required")
+    options = options or {}
+    assert(type(options) == "table", "write_mzf options must be a table")
+
+    local config = mz.program_config or {}
+    local bin = options.bin or cpu.genbin()
+    assert(type(bin) == "table" and #bin > 0, "MZ program is empty")
+    assert(#bin <= 0xffff, "MZF object is too large")
+    cpu.bin_finalizer(bin)
+
+    local first_location = cpu.locations[1]
+    local origin = options.org or options.origin or config.org or config.origin
+        or (first_location and first_location.start)
+    origin = resolve_address(origin, "program origin")
+    assert(origin + #bin <= 0x10000, "MZ program extends past 65535")
+
+    local entry = resolve_address(options.entry or config.entry or origin,
+        "program entry")
+    assert(entry >= origin and entry < origin + #bin,
+        "program entry must be inside the object")
+
+    local name = mzf_name(options.name or config.name or output_name(output))
+    local comment = mzf_comment(options.comment or config.comment)
+    local attribute = integer(options.attribute or config.attribute or MZF_OBJECT,
+        0, 255, "MZF attribute")
+
+    local header = {}
+    for i = 1, 128 do header[i] = 0 end
+    header[1] = attribute
+    for i = 1, #name do header[i + 1] = name:byte(i) end
+    header[#name + 2] = 0x0d
+    put_word(header, 18, #bin)
+    put_word(header, 20, origin)
+    put_word(header, 22, entry)
+    for i = 1, #comment do header[i + 24] = comment:byte(i) end
+
+    local file = assert(io.open(output, "wb"),
+        "failed to open " .. output .. " for writing")
+    write_data(file, header)
+    write_data(file, bin)
+    file:close()
+end
+
+for name, value in pairs(mz) do
+    if type(value) == "function" then rawset(_ENV, name, value) end
+end

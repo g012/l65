@@ -1,0 +1,29 @@
+require 'mz'
+
+assert(mz.screen_address(0, 0) == 0xd000)
+assert(mz.screen_address(39, 24) == 0xd3e7)
+assert(mz.colour_address(39, 24) == 0xdbe7)
+assert(mz.attribute(WHITE, BLUE) == 0x71)
+
+mz.program{
+    name = "LZ80 MZ-700",
+    org = 0x1200,
+    entry = "start",
+    comment = "BUILT WITH LZ80",
+}
+
+@start
+    mz.print_string("HELLO FROM LZ80 ON SHARP MZ-700!")
+    mz.newline()
+    mz.print_string("PRESS A KEY")
+@@wait_key
+    mz.get_key()
+    cp #0
+    jr.z wait_key
+    mz.bell()
+    mz.newline()
+    mz.print_string("RETURNING TO THE MONITOR")
+    mz.newline()
+    jp MONITOR
+
+write_mzf(filename .. '.mzf')

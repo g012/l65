@@ -81,6 +81,7 @@ pub fn build(b: *std.Build) !void {
     embed_z80.addFileArg(b.path("hUGEDriver.lz80"));
     embed_z80.addFileArg(b.path("zx.lz80"));
     embed_z80.addFileArg(b.path("cpc.lz80"));
+    embed_z80.addFileArg(b.path("mz.lz80"));
 
     ///////////////////////////////////////////////////////////////////////////
     // Build for current machine
