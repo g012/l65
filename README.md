@@ -10,7 +10,7 @@ The assemblers operate from within Lua, and are written in Lua. This means assem
 
 l65 is a 6502 assembler, with libraries for Atari 2600 VCS and NES.
 
-lz80 is a Z80 assembler, with libraries for GameBoy SM83.
+lz80 is a Z80 assembler, with libraries for Game Boy SM83 and ZX Spectrum.
 
 l7801 is a NEC µPD7801 assembler, with samples for Super Cassette Vision, created and maintained by [@MooZ] (https://github.com/BlockoS).
 
@@ -80,6 +80,7 @@ Table of Contents
            * [image(filename)](#imagefilename)
      * [Platform Modules](#platform-modules)
   * [LZ80](#lz80)
+     * [ZX Spectrum](#zx-spectrum)
   * [Building](#building)
      * [Windows](#windows)
      * [Linux](#linux)
@@ -138,6 +139,7 @@ Have a look at these files in the `samples` folder to get started with l65:
  * `gb_mbc5.lz80`: a Game Boy ROM using MBC5 9-bit ROM bank switching and RAM bank switching.
  * `gb_timer_serial.lz80`: divider, programmable timer, and serial transfer helpers.
  * `gb_twister.lz80`: a Game Boy raster twister that selects a separately projected, shaded cuboid slice during every scanline's HBlank.
+ * `zx_hello.lz80`: a ZX Spectrum 48K TAP with an autostart BASIC loader and ROM-printed greeting.
 
 There's also `vcspal.act`, a palette file for authoring software for VCS. Use this palette or a similar one to create 8b PNG for `l65.image` and helper loaders depending on it. You can generate such a palette, or a GPL one for GIMP using [vcsconv](https://github.com/g012/vcsconv) `authpalette` command.
 
@@ -813,6 +815,38 @@ any single raw line from the specification for directives or commands that do
 not need a dedicated helper. `getdebugfile` returns the generated text, while
 `writedebug` writes it to disk; both accept either a symfile path or an options
 table containing `symfile` and an optional `version`.
+
+### ZX Spectrum
+
+`zx.lz80` targets the ZX Spectrum 48K and is loaded with `require'zx'`. It
+defines the display-file layout, ULA and Kempston ports, colours, common ROM
+entry points, the standard 48K system variables, and keyboard descriptors.
+Helpers include `zx.attribute`, `zx.screen_address`, `zx.attribute_address`,
+`zx.border`, `zx.read_key`, and `zx.print_string`.
+
+Declare a machine-code program with `zx.program`. It creates a fixed code
+section at `org` (32768 by default). `write_tap` writes a
+[standard Spectrum TAP](https://worldofspectrum.net/zx-modules/fileformats/tapformat.html)
+with an autostart BASIC loader followed by the CODE header and data blocks:
+
+```lua
+require'zx'
+
+zx.program{ name = "LZ80 ZX", org = 0x8000, entry = "start" }
+
+@start
+    zx.border(BLUE)
+    zx.print_string("HELLO FROM LZ80!")
+@@loop
+    halt
+    jr loop
+
+write_tap(filename .. ".tap")
+```
+
+Set `loader = false` in either `zx.program` or `write_tap` to emit only the
+CODE header and data blocks. `zx.read_key(zx.KEY_SPACE)` leaves A masked and
+sets Z while the active-low key is pressed.
 
 ## Building
 

@@ -147,6 +147,7 @@ static struct script { const char *name; int t;  const char *data; size_t sz; } 
     SRC_LUA(re),
     SRC_LZ80(gb),
     SRC_LZ80(hUGEDriver),
+    SRC_LZ80(zx),
 };
 #undef SRC_LUA
 #undef SRC_LZ80
@@ -220,4 +221,3 @@ int main(int argc, char *argv[])
     lua_close(L);
     return status;
 }
-

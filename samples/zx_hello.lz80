@@ -1,0 +1,30 @@
+require 'zx'
+
+assert(zx.screen_address(0, 0) == 0x4000)
+assert(zx.screen_address(31, 191) == 0x57ff)
+assert(zx.attribute_address(31, 191) == 0x5aff)
+
+zx.program{
+    name = "LZ80 ZX",
+    org = 0x8000,
+    entry = "start",
+}
+
+@start
+    a := zx.attribute(YELLOW, BLUE, true)
+    [ATTR_P] := a
+    [ATTR_T] := a
+    zx.border(BLUE)
+    call ROM_CLS
+    zx.print_string("HELLO FROM LZ80! PRESS SPACE")
+
+@@wait_for_space
+    zx.read_key(zx.KEY_SPACE)
+    jr.nz wait_for_space
+    zx.border(RED)
+
+@@forever
+    halt
+    jr forever
+
+write_tap(filename .. '.tap')

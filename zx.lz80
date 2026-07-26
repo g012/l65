@@ -1,0 +1,374 @@
+cpu = require 'z80'
+setmetatable(_ENV, cpu)
+
+zx = {
+    ROM                    = 0x0000,
+    RAM                    = 0x4000,
+    SCREEN                 = 0x4000,
+    BITMAP                 = 0x4000,
+    ATTRIBUTES             = 0x5800,
+    PRINTER_BUFFER         = 0x5b00,
+    SYSTEM_VARIABLES       = 0x5c00,
+    BASIC_RAM              = 0x5ccb,
+
+    SCREEN_WIDTH           = 256,
+    SCREEN_HEIGHT          = 192,
+    SCREEN_COLUMNS         = 32,
+    SCREEN_ROWS            = 24,
+    CHARACTER_WIDTH        = 8,
+    CHARACTER_HEIGHT       = 8,
+    BITMAP_SIZE            = 0x1800,
+    ATTRIBUTES_SIZE        = 0x0300,
+    SCREEN_SIZE            = 0x1b00,
+
+    ULA_PORT               = 0xfe,
+    KEMPSTON_PORT          = 0x1f,
+
+    BLACK                  = 0,
+    BLUE                   = 1,
+    RED                    = 2,
+    MAGENTA                = 3,
+    GREEN                  = 4,
+    CYAN                   = 5,
+    YELLOW                 = 6,
+    WHITE                  = 7,
+    INK_MASK               = 0x07,
+    PAPER_MASK             = 0x38,
+    PAPER_SHIFT            = 3,
+    ATTR_BRIGHT            = 0x40,
+    ATTR_FLASH             = 0x80,
+
+    -- Standard 48K ROM entry points.
+    ROM_PRINT_CHAR         = 0x0010,
+    ROM_BEEPER             = 0x03b5,
+    ROM_CLS                = 0x0daf,
+
+    -- Standard 48K system variables.
+    KSTATE                 = 0x5c00,
+    LAST_K                 = 0x5c08,
+    REPDEL                 = 0x5c09,
+    REPPER                 = 0x5c0a,
+    DEFADD                 = 0x5c0b,
+    K_DATA                 = 0x5c0d,
+    TVDATA                 = 0x5c0e,
+    STRMS                  = 0x5c10,
+    CHARS                  = 0x5c36,
+    RASP                   = 0x5c38,
+    PIP                    = 0x5c39,
+    ERR_NR                 = 0x5c3a,
+    FLAGS                  = 0x5c3b,
+    TV_FLAG                = 0x5c3c,
+    ERR_SP                 = 0x5c3d,
+    LIST_SP                = 0x5c3f,
+    MODE                   = 0x5c41,
+    NEWPPC                 = 0x5c42,
+    NSPPC                  = 0x5c44,
+    PPC                    = 0x5c45,
+    SUBPPC                 = 0x5c47,
+    BORDCR                 = 0x5c48,
+    E_PPC                  = 0x5c49,
+    VARS                   = 0x5c4b,
+    DEST                   = 0x5c4d,
+    CHANS                  = 0x5c4f,
+    CURCHL                 = 0x5c51,
+    PROG                   = 0x5c53,
+    NXTLIN                 = 0x5c55,
+    DATADD                 = 0x5c57,
+    E_LINE                 = 0x5c59,
+    K_CUR                  = 0x5c5b,
+    CH_ADD                 = 0x5c5d,
+    X_PTR                  = 0x5c5f,
+    WORKSP                 = 0x5c61,
+    STKBOT                 = 0x5c63,
+    STKEND                 = 0x5c65,
+    BREG                   = 0x5c67,
+    MEM                    = 0x5c68,
+    FLAGS2                 = 0x5c6a,
+    DF_SZ                  = 0x5c6b,
+    S_TOP                  = 0x5c6c,
+    OLDPPC                 = 0x5c6e,
+    OSPCC                  = 0x5c70,
+    FLAGX                  = 0x5c71,
+    STRLEN                 = 0x5c72,
+    T_ADDR                 = 0x5c74,
+    SEED                   = 0x5c76,
+    FRAMES                 = 0x5c78,
+    UDG                    = 0x5c7b,
+    COORDS                 = 0x5c7d,
+    P_POSN                 = 0x5c7f,
+    PR_CC                  = 0x5c80,
+    ECHO_E                 = 0x5c82,
+    DF_CC                  = 0x5c84,
+    DF_CCL                 = 0x5c86,
+    S_POSN                 = 0x5c88,
+    SPOSNL                 = 0x5c8a,
+    SCR_CT                 = 0x5c8c,
+    ATTR_P                 = 0x5c8d,
+    MASK_P                 = 0x5c8e,
+    ATTR_T                 = 0x5c8f,
+    MASK_T                 = 0x5c90,
+    P_FLAG                 = 0x5c91,
+    MEMBOT                 = 0x5c92,
+    NMIADD                 = 0x5cb0,
+    RAMTOP                 = 0x5cb2,
+    P_RAMT                 = 0x5cb4,
+}
+
+for name, value in pairs(zx) do
+    if type(value) == "number" then cpu.symbols[name] = value end
+end
+
+local function key(port, mask)
+    return { port = port, mask = mask }
+end
+
+-- Keys are active low. read_key leaves A masked and Z set while pressed.
+zx.KEY_CAPS_SHIFT   = key(0xfefe, 0x01)
+zx.KEY_Z            = key(0xfefe, 0x02)
+zx.KEY_X            = key(0xfefe, 0x04)
+zx.KEY_C            = key(0xfefe, 0x08)
+zx.KEY_V            = key(0xfefe, 0x10)
+zx.KEY_A            = key(0xfdfe, 0x01)
+zx.KEY_S            = key(0xfdfe, 0x02)
+zx.KEY_D            = key(0xfdfe, 0x04)
+zx.KEY_F            = key(0xfdfe, 0x08)
+zx.KEY_G            = key(0xfdfe, 0x10)
+zx.KEY_Q            = key(0xfbfe, 0x01)
+zx.KEY_W            = key(0xfbfe, 0x02)
+zx.KEY_E            = key(0xfbfe, 0x04)
+zx.KEY_R            = key(0xfbfe, 0x08)
+zx.KEY_T            = key(0xfbfe, 0x10)
+zx.KEY_1            = key(0xf7fe, 0x01)
+zx.KEY_2            = key(0xf7fe, 0x02)
+zx.KEY_3            = key(0xf7fe, 0x04)
+zx.KEY_4            = key(0xf7fe, 0x08)
+zx.KEY_5            = key(0xf7fe, 0x10)
+zx.KEY_0            = key(0xeffe, 0x01)
+zx.KEY_9            = key(0xeffe, 0x02)
+zx.KEY_8            = key(0xeffe, 0x04)
+zx.KEY_7            = key(0xeffe, 0x08)
+zx.KEY_6            = key(0xeffe, 0x10)
+zx.KEY_P            = key(0xdffe, 0x01)
+zx.KEY_O            = key(0xdffe, 0x02)
+zx.KEY_I            = key(0xdffe, 0x04)
+zx.KEY_U            = key(0xdffe, 0x08)
+zx.KEY_Y            = key(0xdffe, 0x10)
+zx.KEY_ENTER        = key(0xbffe, 0x01)
+zx.KEY_L            = key(0xbffe, 0x02)
+zx.KEY_K            = key(0xbffe, 0x04)
+zx.KEY_J            = key(0xbffe, 0x08)
+zx.KEY_H            = key(0xbffe, 0x10)
+zx.KEY_SPACE        = key(0x7ffe, 0x01)
+zx.KEY_SYMBOL_SHIFT = key(0x7ffe, 0x02)
+zx.KEY_M            = key(0x7ffe, 0x04)
+zx.KEY_N            = key(0x7ffe, 0x08)
+zx.KEY_B            = key(0x7ffe, 0x10)
+
+local function integer(value, minimum, maximum, description)
+    assert(type(value) == "number" and value % 1 == 0
+        and value >= minimum and value <= maximum,
+        description .. " must be an integer in " .. minimum .. ".." .. maximum)
+    return value
+end
+
+function zx.attribute(ink, paper, bright, flash)
+    integer(ink, 0, 7, "ink")
+    integer(paper, 0, 7, "paper")
+    assert(bright == nil or type(bright) == "boolean", "bright must be boolean")
+    assert(flash == nil or type(flash) == "boolean", "flash must be boolean")
+    return ink | (paper << PAPER_SHIFT)
+        | (bright and ATTR_BRIGHT or 0)
+        | (flash and ATTR_FLASH or 0)
+end
+
+-- Return the display-file address for byte column x and pixel row y.
+function zx.screen_address(x, y)
+    integer(x, 0, SCREEN_COLUMNS - 1, "screen x")
+    integer(y, 0, SCREEN_HEIGHT - 1, "screen y")
+    return SCREEN
+        | ((y & 0xc0) << 5)
+        | ((y & 0x07) << 8)
+        | ((y & 0x38) << 2)
+        | x
+end
+
+-- Return the attribute address for character column x and pixel row y.
+function zx.attribute_address(x, y)
+    integer(x, 0, SCREEN_COLUMNS - 1, "attribute x")
+    integer(y, 0, SCREEN_HEIGHT - 1, "attribute y")
+    return ATTRIBUTES + ((y >> 3) * SCREEN_COLUMNS) + x
+end
+
+function zx.border(colour)
+    integer(colour, 0, 7, "border colour")
+    a := !colour
+    cpu.out(cpu.mem(ULA_PORT), "a")
+end
+
+function zx.read_key(key_value)
+    assert(type(key_value) == "table"
+        and type(key_value.port) == "number"
+        and type(key_value.mask) == "number", "invalid ZX key")
+    bc := !key_value.port
+    cpu["in"]("a", cpu.mem("c"))
+    ana #!key_value.mask
+end
+
+-- Print a build-time string through the current ROM channel.
+function zx.print_string(text)
+    assert(type(text) == "string", "print_string requires a string")
+    for i = 1, #text do
+        a := !text:byte(i)
+        rst #ROM_PRINT_CHAR
+    end
+end
+
+zx.program_config = nil
+
+-- Declare a 48K Spectrum machine-code program. The default origin is 32768.
+function zx.program(options)
+    options = options or {}
+    assert(type(options) == "table", "program options must be a table")
+    assert(zx.program_config == nil, "a ZX program is already declared")
+
+    local config = {}
+    for name, value in pairs(options) do config[name] = value end
+    config.org = config.org or config.origin or 0x8000
+    integer(config.org, RAM, 0xffff, "program origin")
+    config.entry = config.entry or config.org
+    config.name = config.name or "LZ80"
+    if config.loader == nil then config.loader = true end
+    assert(type(config.loader) == "boolean", "loader must be boolean")
+
+    zx.program_config = config
+    location{ config.org, name = "ZX RAM" }
+    return section{ config.section or "code", org = config.org }
+end
+
+local function little_word(value)
+    integer(value, 0, 0xffff, "word")
+    return string.char(value & 0xff, (value >> 8) & 0xff)
+end
+
+local function tap_name(value)
+    value = tostring(value or "LZ80"):upper()
+    value = value:gsub("[^ -~]", "?"):sub(1, 10)
+    return value .. string.rep(" ", 10 - #value)
+end
+
+local function tap_header(block_type, name, length, parameter1, parameter2)
+    return string.char(block_type) .. tap_name(name) .. little_word(length)
+        .. little_word(parameter1) .. little_word(parameter2)
+end
+
+local function write_data(file, data)
+    if type(data) == "string" then
+        file:write(data)
+        return
+    end
+    for i = 1, #data, 0x4000 do
+        file:write(string.char(table.unpack(data, i, math.min(i + 0x3fff, #data))))
+    end
+end
+
+local function write_tap_block(file, flag, data)
+    local length = #data
+    assert(length <= 0xfffd, "TAP data block is too large")
+    file:write(little_word(length + 2), string.char(flag))
+
+    local checksum = flag
+    if type(data) == "string" then
+        for i = 1, length do checksum = checksum ~ data:byte(i) end
+    else
+        for i = 1, length do checksum = checksum ~ data[i] end
+    end
+    write_data(file, data)
+    file:write(string.char(checksum & 0xff))
+end
+
+local function basic_number(value)
+    local decimal = tostring(value)
+    return decimal .. string.char(0x0e, 0x00, 0x00,
+        value & 0xff, (value >> 8) & 0xff, 0x00)
+end
+
+local function basic_line(number, body)
+    body = body .. string.char(0x0d)
+    return string.char((number >> 8) & 0xff, number & 0xff)
+        .. little_word(#body) .. body
+end
+
+local function basic_loader(clear, entry)
+    return basic_line(10, string.char(0xfd) .. " " .. basic_number(clear))
+        .. basic_line(20, string.char(0xef) .. " \"\" " .. string.char(0xaf))
+        .. basic_line(30, string.char(0xf9) .. " " .. string.char(0xc0)
+            .. " " .. basic_number(entry))
+end
+
+local function resolve_address(value, description)
+    local ok, resolved = pcall(cpu.op_resolve, value)
+    assert(ok, description .. " is unresolved: " .. tostring(value))
+    return integer(resolved, 0, 0xffff, description)
+end
+
+-- Write a standard TAP containing an optional autostart BASIC loader and one
+-- CODE block. Options override zx.program: name, org/origin, entry, clear,
+-- loader, and bin.
+function zx.write_tap(output, options)
+    assert(type(output) == "string" and output ~= "", "TAP filename is required")
+    options = options or {}
+    assert(type(options) == "table", "write_tap options must be a table")
+
+    local config = zx.program_config or {}
+    local bin = options.bin or cpu.genbin()
+    assert(type(bin) == "table" and #bin > 0, "ZX program is empty")
+    cpu.bin_finalizer(bin)
+
+    local first_location = cpu.locations[1]
+    local origin = options.org or options.origin or config.org or config.origin
+        or (first_location and first_location.start)
+    origin = resolve_address(origin, "program origin")
+    assert(origin >= RAM, "program origin must be in RAM")
+    assert(origin + #bin <= 0x10000, "ZX program extends past 65535")
+
+    local entry = resolve_address(options.entry or config.entry or origin,
+        "program entry")
+    assert(entry >= origin and entry < origin + #bin,
+        "program entry must be inside the CODE block")
+
+    local name = options.name or config.name
+    if not name then
+        name = output:match("([^/\\]+)$") or output
+        name = name:gsub("%.[^.]*$", "")
+    end
+
+    local loader = options.loader
+    if loader == nil then loader = config.loader end
+    if loader == nil then loader = true end
+    assert(type(loader) == "boolean", "loader must be boolean")
+
+    local file = assert(io.open(output, "wb"), "failed to open " .. output .. " for writing")
+    if loader then
+        assert(origin >= 0x6000,
+            "the BASIC loader requires a program origin of at least 24576")
+        local clear = resolve_address(options.clear or config.clear or (origin - 1),
+            "CLEAR address")
+        assert(clear >= BASIC_RAM and clear < origin,
+            "CLEAR address must be between BASIC RAM and the CODE origin")
+        local basic = basic_loader(clear, entry)
+        write_tap_block(file, 0x00,
+            tap_header(0, name, #basic, 10, #basic))
+        write_tap_block(file, 0xff, basic)
+    end
+
+    write_tap_block(file, 0x00,
+        tap_header(3, name, #bin, origin, 0x8000))
+    write_tap_block(file, 0xff, bin)
+    file:close()
+end
+
+-- Match the other platform modules: helpers are also available directly in
+-- the assembler environment, while constants resolve through cpu.symbols.
+for name, value in pairs(zx) do
+    if type(value) == "function" then rawset(_ENV, name, value) end
+end
